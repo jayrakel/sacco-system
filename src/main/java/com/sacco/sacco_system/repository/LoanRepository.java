@@ -13,7 +13,7 @@ import java.util.UUID;
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, UUID> {
     Optional<Loan> findByLoanNumber(String loanNumber);
-    List<Loan> findByMemberId(Long memberId);
+    List<Loan> findByMemberId(UUID memberId);
     List<Loan> findByStatus(Loan.LoanStatus status);
     
     @Query("SELECT SUM(l.principalAmount) FROM Loan l WHERE l.status = 'DISBURSED'")

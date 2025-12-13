@@ -96,6 +96,9 @@ public class User implements UserDetails {
         return enabled;
     }
 
+    @Column(nullable = false)
+    private boolean mustChangePassword = false;
+
     // Roles matching your Node.js system
     public enum Role {
         MEMBER,

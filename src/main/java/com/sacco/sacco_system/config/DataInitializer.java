@@ -43,6 +43,7 @@ public class DataInitializer implements CommandLineRunner {
                     .password(passwordEncoder.encode(adminPassword)) // Hash the password!
                     .role(User.Role.ADMIN)
                     .enabled(true)
+                    .mustChangePassword(true)
                     .build();
 
             userRepository.save(admin);
