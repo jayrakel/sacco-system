@@ -1,6 +1,8 @@
 package com.sacco.sacco_system.service;
 
+import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
+import com.sacco.sacco_system.entity.Guarantor;
 import com.sacco.sacco_system.entity.Loan;
 import com.sacco.sacco_system.entity.LoanRepayment;
 import com.sacco.sacco_system.entity.Member;
@@ -30,6 +32,16 @@ public class LoanService {
                                BigDecimal interestRate, Integer durationMonths) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        // --- NEW LOGIC: Enforce 3x Limit ---
+        // A member can borrow max 3 times their (Savings + Shares)
+        BigDecimal totalDeposits = member.getTotalSavings().add(member.getTotalShares());
+        BigDecimal maxLoanLimit = totalDeposits.multiply(BigDecimal.valueOf(3));
+        
+        if (principalAmount.compareTo(maxLoanLimit) > 0) {
+            throw new RuntimeException("Loan refused. Maximum limit is " + maxLoanLimit + 
+                                     " (3x your savings of " + totalDeposits + ")");
+        }        
         
         // Calculate total interest and monthly repayment
         BigDecimal totalInterest = principalAmount
@@ -127,6 +139,42 @@ public class LoanService {
         loan.setStatus(Loan.LoanStatus.REJECTED);
         Loan savedLoan = loanRepository.save(loan);
         return convertToDTO(savedLoan);
+    }
+
+    public GuarantorDTO addGuarantor(Long loanId, Long guarantorMemberId, BigDecimal amount) {
+        // 1. Find the Loan
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        // 2. Find the Member who will be the guarantor
+        Member guarantorMember = memberRepository.findById(guarantorMemberId)
+                .orElseThrow(() -> new RuntimeException("Guarantor not found"));
+
+        // 3. Validation: A member cannot guarantee their own loan
+        if (loan.getMember().getId().equals(guarantorMember.getId())) {
+            throw new RuntimeException("You cannot guarantee your own loan.");
+        }
+
+        // 4. Create and Save the Guarantor record
+        Guarantor guarantor = Guarantor.builder()
+                .loan(loan)
+                .member(guarantorMember)
+                .guaranteeAmount(amount)
+                .build();
+        
+        // Note: We need a GuarantorRepository to save this directly, 
+        // OR we can add it to the loan's list if we set up the relationship correctly.
+        // For simplicity, let's assume we added a GuarantorRepository (Step 2.5 below).
+        // For now, let's use the loan's list which cascades the save:
+        loan.getGuarantors().add(guarantor);
+        loanRepository.save(loan);
+
+        return GuarantorDTO.builder()
+                .loanId(loan.getId())
+                .memberId(guarantorMember.getId())
+                .memberName(guarantorMember.getFirstName() + " " + guarantorMember.getLastName())
+                .guaranteeAmount(amount)
+                .build();
     }
     
     public void recordRepayment(Long repaymentId, BigDecimal amount) {

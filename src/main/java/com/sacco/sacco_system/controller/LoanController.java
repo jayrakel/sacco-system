@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.controller;
 
+import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.Loan;
 import com.sacco.sacco_system.service.LoanService;
@@ -32,6 +33,30 @@ public class LoanController {
             response.put("success", true);
             response.put("data", loan);
             response.put("message", "Loan application submitted successfully");
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+    }
+
+    @PostMapping("/{loanId}/guarantors")
+    public ResponseEntity<Map<String, Object>> addGuarantor(
+            @PathVariable Long loanId,
+            @RequestBody GuarantorDTO request) {
+        try {
+            GuarantorDTO responseDTO = loanService.addGuarantor(
+                loanId, 
+                request.getMemberId(), 
+                request.getGuaranteeAmount()
+            );
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", responseDTO);
+            response.put("message", "Guarantor added successfully");
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
             Map<String, Object> response = new HashMap<>();
