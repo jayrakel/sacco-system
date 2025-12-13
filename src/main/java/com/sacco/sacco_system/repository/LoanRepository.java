@@ -1,0 +1,26 @@
+package com.sacco.sacco_system.repository;
+
+import com.sacco.sacco_system.entity.Loan;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface LoanRepository extends JpaRepository<Loan, Long> {
+    Optional<Loan> findByLoanNumber(String loanNumber);
+    List<Loan> findByMemberId(Long memberId);
+    List<Loan> findByStatus(Loan.LoanStatus status);
+    
+    @Query("SELECT SUM(l.principalAmount) FROM Loan l WHERE l.status = 'DISBURSED'")
+    BigDecimal getTotalDisbursedLoans();
+    
+    @Query("SELECT SUM(l.loanBalance) FROM Loan l WHERE l.status IN ('DISBURSED', 'DEFAULTED')")
+    BigDecimal getTotalOutstandingLoans();
+    
+    @Query("SELECT SUM(l.totalInterest) FROM Loan l WHERE l.status != 'REJECTED'")
+    BigDecimal getTotalInterest();
+}
