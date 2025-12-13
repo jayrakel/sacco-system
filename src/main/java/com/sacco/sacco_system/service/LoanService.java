@@ -176,6 +176,39 @@ public class LoanService {
                 .guaranteeAmount(amount)
                 .build();
     }
+
+    public LoanRepayment repayLoan(Long loanId, BigDecimal amount) {
+        // 1. Find the next unpaid installment (PENDING)
+        LoanRepayment repayment = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
+                        loanId, LoanRepayment.RepaymentStatus.PENDING)
+                .orElseThrow(() -> new RuntimeException("No pending repayments found. Loan might be fully paid!"));
+
+        // 2. Validate payment amount
+        // (In a real system, you'd handle partial payments, but let's keep it strict for now)
+        BigDecimal dueAmount = repayment.getLoan().getMonthlyRepayment();
+        if (amount.compareTo(dueAmount) < 0) {
+            throw new RuntimeException("Insufficient amount. Monthly installment is: " + dueAmount);
+        }
+
+        // 3. Mark as PAID
+        repayment.setPrincipalPaid(amount);
+        repayment.setTotalPaid(amount);
+        repayment.setStatus(LoanRepayment.RepaymentStatus.PAID);
+        repayment.setPaymentDate(LocalDate.now());
+        loanRepaymentRepository.save(repayment);
+
+        // 4. Update the Main Loan Balance
+        Loan loan = repayment.getLoan();
+        loan.setLoanBalance(loan.getLoanBalance().subtract(amount));
+
+        // 5. Check if Loan is fully finished
+        if (loan.getLoanBalance().compareTo(BigDecimal.ZERO) <= 0) {
+            loan.setStatus(Loan.LoanStatus.COMPLETED);
+        }
+        loanRepository.save(loan);
+
+        return repayment;
+    }
     
     public void recordRepayment(Long repaymentId, BigDecimal amount) {
         LoanRepayment repayment = loanRepaymentRepository.findById(repaymentId)

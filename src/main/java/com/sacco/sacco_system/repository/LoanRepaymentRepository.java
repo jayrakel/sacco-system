@@ -7,11 +7,13 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, Long> {
     List<LoanRepayment> findByLoanId(Long loanId);
     List<LoanRepayment> findByStatus(LoanRepayment.RepaymentStatus status);
+    Optional<LoanRepayment> findFirstByLoanIdAndStatusOrderByDueDateAsc(Long loanId, LoanRepayment.RepaymentStatus status);
     
     @Query("SELECT SUM(lr.totalPaid) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
     BigDecimal getTotalRepaidAmount();

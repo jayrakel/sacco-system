@@ -3,6 +3,7 @@ package com.sacco.sacco_system.controller;
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.Loan;
+import com.sacco.sacco_system.entity.LoanRepayment;
 import com.sacco.sacco_system.service.LoanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -95,6 +96,26 @@ public class LoanController {
             response.put("success", false);
             response.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        }
+    }
+
+    @PostMapping("/{id}/repay")
+    public ResponseEntity<Map<String, Object>> repayLoan(
+            @PathVariable Long id,
+            @RequestParam BigDecimal amount) {
+        try {
+            LoanRepayment repayment = loanService.repayLoan(id, amount);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Repayment processed successfully");
+            response.put("installmentNumber", repayment.getRepaymentNumber());
+            response.put("remainingLoanBalance", repayment.getLoan().getLoanBalance());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }
     
