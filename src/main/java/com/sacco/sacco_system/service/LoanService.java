@@ -17,7 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.UUID;
+import java.util.UUID; // Ensure this is imported
 import java.util.stream.Collectors;
 
 @Service
@@ -194,7 +194,7 @@ public class LoanService {
         return repayment;
     }
 
-    // ✅ FIXED: Changed Long to UUID
+    // ✅ FIXED: Changed Long to UUID to match Repository
     public void recordRepayment(UUID repaymentId, BigDecimal amount) {
         LoanRepayment repayment = loanRepaymentRepository.findById(repaymentId)
                 .orElseThrow(() -> new RuntimeException("Repayment not found"));

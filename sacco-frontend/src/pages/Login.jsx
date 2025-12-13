@@ -12,36 +12,43 @@ export default function Login() {
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+      e.preventDefault();
+      setLoading(true);
+      setError('');
 
-    try {
-      const response = await loginUser({ email, password });
+      try {
+        // 1. Get the data from the backend
+        // The "response" IS the user object now (it contains token, role, etc.)
+        const userData = await loginUser({ email, password });
 
-      // Java returns: { success: true, token: "...", user: {...} }
-      const { user, token } = response;
+        // 2. Validate we got a token
+        if (!userData.token) {
+          throw new Error("Login failed: No token received.");
+        }
 
-      // 1. Save Token (CRITICAL)
-      localStorage.setItem('sacco_token', token);
+        // 3. Save to LocalStorage
+        localStorage.setItem('sacco_token', userData.token);
+        localStorage.setItem('sacco_user', JSON.stringify(userData));
 
-      // 2. Save User info
-      localStorage.setItem('sacco_user', JSON.stringify(user));
+        // 4. Force Password Change Check (New Feature we added)
+        if (userData.mustChangePassword) {
+          navigate('/change-password');
+          return;
+        }
 
-      // 3. Navigate based on role
-      if (user.role === 'ADMIN') {
-          navigate('/admin-dashboard');
-      } else {
-          navigate('/dashboard');
+        // 5. Navigate based on role (accessed directly from userData)
+        if (userData.role === 'ADMIN') {
+            navigate('/admin-dashboard');
+        } else {
+            navigate('/dashboard');
+        }
+
+      } catch (err) {
+        console.error("Login Error:", err);
+        setError(err.response?.data?.message || "Connection failed.");
       }
-
-    } catch (err) {
-      console.error("Login Error:", err);
-      // Java backend sends error messages in the 'message' field
-      setError(err.response?.data?.message || "Connection failed. Is the backend running?");
-    }
-    setLoading(false);
-  };
+      setLoading(false);
+    };
 
   return (
     <div className="min-h-screen flex bg-slate-50 font-sans">
