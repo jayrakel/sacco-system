@@ -6,8 +6,9 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
-public interface FinancialReportRepository extends JpaRepository<FinancialReport, Long> {
+public interface FinancialReportRepository extends JpaRepository<FinancialReport, UUID> {
     Optional<FinancialReport> findByReportDate(LocalDate reportDate);
 }

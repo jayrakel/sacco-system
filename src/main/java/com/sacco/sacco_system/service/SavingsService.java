@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -24,7 +25,7 @@ public class SavingsService {
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
 
-    public SavingsAccountDTO createSavingsAccount(Long memberId) {
+    public SavingsAccountDTO createSavingsAccount(UUID memberId) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
@@ -41,7 +42,7 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
-    public SavingsAccountDTO getSavingsAccountById(Long id) {
+    public SavingsAccountDTO getSavingsAccountById(UUID id) {
         SavingsAccount account = savingsAccountRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Savings account not found"));
         return convertToDTO(account);
@@ -53,7 +54,7 @@ public class SavingsService {
         return convertToDTO(account);
     }
 
-    public List<SavingsAccountDTO> getSavingsAccountsByMemberId(Long memberId) {
+    public List<SavingsAccountDTO> getSavingsAccountsByMemberId(UUID memberId) {
         return savingsAccountRepository.findByMemberId(memberId)
                 .stream()
                 .map(this::convertToDTO)

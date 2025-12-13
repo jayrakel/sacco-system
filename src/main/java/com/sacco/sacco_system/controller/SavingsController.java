@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/savings")
@@ -20,7 +21,7 @@ public class SavingsController {
     private final SavingsService savingsService;
     
     @PostMapping("/account")
-    public ResponseEntity<Map<String, Object>> createSavingsAccount(@RequestParam Long memberId) {
+    public ResponseEntity<Map<String, Object>> createSavingsAccount(@RequestParam UUID memberId) {
         try {
             SavingsAccountDTO account = savingsService.createSavingsAccount(memberId);
             Map<String, Object> response = new HashMap<>();
@@ -37,7 +38,7 @@ public class SavingsController {
     }
     
     @GetMapping("/account/{id}")
-    public ResponseEntity<Map<String, Object>> getSavingsAccountById(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getSavingsAccountById(@PathVariable UUID id) {
         try {
             SavingsAccountDTO account = savingsService.getSavingsAccountById(id);
             Map<String, Object> response = new HashMap<>();
@@ -69,7 +70,7 @@ public class SavingsController {
     }
     
     @GetMapping("/member/{memberId}")
-    public ResponseEntity<Map<String, Object>> getSavingsAccountsByMemberId(@PathVariable Long memberId) {
+    public ResponseEntity<Map<String, Object>> getSavingsAccountsByMemberId(@PathVariable UUID memberId) {
         List<SavingsAccountDTO> accounts = savingsService.getSavingsAccountsByMemberId(memberId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);

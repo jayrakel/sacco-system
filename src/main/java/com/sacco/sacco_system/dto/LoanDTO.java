@@ -7,15 +7,16 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class LoanDTO {
-    private Long id;
+    private UUID id;
     private String loanNumber;
-    private Long memberId;
+    private UUID memberId;
     private String memberName;
     private BigDecimal principalAmount;
     private BigDecimal loanBalance;

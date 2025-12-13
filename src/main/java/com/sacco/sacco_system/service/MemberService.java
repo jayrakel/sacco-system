@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -41,7 +42,7 @@ public class MemberService {
         return convertToDTO(savedMember);
     }
     
-    public MemberDTO getMemberById(Long id) {
+    public MemberDTO getMemberById(UUID id) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
         return convertToDTO(member);
@@ -67,7 +68,7 @@ public class MemberService {
                 .collect(Collectors.toList());
     }
     
-    public MemberDTO updateMember(Long id, MemberDTO memberDTO) {
+    public MemberDTO updateMember(UUID id, MemberDTO memberDTO) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
         
@@ -82,7 +83,7 @@ public class MemberService {
         return convertToDTO(updatedMember);
     }
     
-    public void deleteMember(Long id) {
+    public void deleteMember(UUID id) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
         

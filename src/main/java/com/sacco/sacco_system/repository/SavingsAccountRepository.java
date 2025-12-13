@@ -8,9 +8,10 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
-public interface SavingsAccountRepository extends JpaRepository<SavingsAccount, Long> {
+public interface SavingsAccountRepository extends JpaRepository<SavingsAccount, UUID> {
     Optional<SavingsAccount> findByAccountNumber(String accountNumber);
     List<SavingsAccount> findByMemberId(Long memberId);
     List<SavingsAccount> findByStatus(SavingsAccount.AccountStatus status);

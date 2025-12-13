@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,8 +29,8 @@ public class LoanService {
     private final LoanRepaymentRepository loanRepaymentRepository;
     private final MemberRepository memberRepository;
     
-    public LoanDTO applyForLoan(Long memberId, BigDecimal principalAmount, 
-                               BigDecimal interestRate, Integer durationMonths) {
+    public LoanDTO applyForLoan(UUID memberId, BigDecimal principalAmount,
+                                BigDecimal interestRate, Integer durationMonths) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
@@ -72,7 +73,7 @@ public class LoanService {
         return convertToDTO(savedLoan);
     }
     
-    public LoanDTO getLoanById(Long id) {
+    public LoanDTO getLoanById(UUID id) {
         Loan loan = loanRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
         return convertToDTO(loan);
@@ -84,7 +85,7 @@ public class LoanService {
         return convertToDTO(loan);
     }
     
-    public List<LoanDTO> getLoansByMemberId(Long memberId) {
+    public List<LoanDTO> getLoansByMemberId(UUID memberId) {
         return loanRepository.findByMemberId(memberId)
                 .stream()
                 .map(this::convertToDTO)
@@ -105,7 +106,7 @@ public class LoanService {
                 .collect(Collectors.toList());
     }
     
-    public LoanDTO approveLoan(Long loanId) {
+    public LoanDTO approveLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
         
@@ -116,7 +117,7 @@ public class LoanService {
         return convertToDTO(savedLoan);
     }
     
-    public LoanDTO disburseLoan(Long loanId) {
+    public LoanDTO disburseLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
         
@@ -132,7 +133,7 @@ public class LoanService {
         return convertToDTO(savedLoan);
     }
     
-    public LoanDTO rejectLoan(Long loanId) {
+    public LoanDTO rejectLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
         
@@ -141,7 +142,7 @@ public class LoanService {
         return convertToDTO(savedLoan);
     }
 
-    public GuarantorDTO addGuarantor(Long loanId, Long guarantorMemberId, BigDecimal amount) {
+    public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         // 1. Find the Loan
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -177,7 +178,7 @@ public class LoanService {
                 .build();
     }
 
-    public LoanRepayment repayLoan(Long loanId, BigDecimal amount) {
+    public LoanRepayment repayLoan(UUID loanId, BigDecimal amount) {
         // 1. Find the next unpaid installment (PENDING)
         LoanRepayment repayment = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
                         loanId, LoanRepayment.RepaymentStatus.PENDING)

@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/loans")
@@ -24,7 +25,7 @@ public class LoanController {
     
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
-            @RequestParam Long memberId,
+            @RequestParam UUID memberId,
             @RequestParam BigDecimal principalAmount,
             @RequestParam BigDecimal interestRate,
             @RequestParam Integer durationMonths) {
@@ -45,7 +46,7 @@ public class LoanController {
 
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
-            @PathVariable Long loanId,
+            @PathVariable UUID loanId,
             @RequestBody GuarantorDTO request) {
         try {
             GuarantorDTO responseDTO = loanService.addGuarantor(
@@ -68,7 +69,7 @@ public class LoanController {
     }
     
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getLoanById(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getLoanById(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.getLoanById(id);
             Map<String, Object> response = new HashMap<>();
@@ -101,7 +102,7 @@ public class LoanController {
 
     @PostMapping("/{id}/repay")
     public ResponseEntity<Map<String, Object>> repayLoan(
-            @PathVariable Long id,
+            @PathVariable UUID id,
             @RequestParam BigDecimal amount) {
         try {
             LoanRepayment repayment = loanService.repayLoan(id, amount);
@@ -120,7 +121,7 @@ public class LoanController {
     }
     
     @GetMapping("/member/{memberId}")
-    public ResponseEntity<Map<String, Object>> getLoansByMemberId(@PathVariable Long memberId) {
+    public ResponseEntity<Map<String, Object>> getLoansByMemberId(@PathVariable UUID memberId) {
         List<LoanDTO> loans = loanService.getLoansByMemberId(memberId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -158,7 +159,7 @@ public class LoanController {
     }
     
     @PutMapping("/{id}/approve")
-    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.approveLoan(id);
             Map<String, Object> response = new HashMap<>();
@@ -175,7 +176,7 @@ public class LoanController {
     }
     
     @PutMapping("/{id}/disburse")
-    public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.disburseLoan(id);
             Map<String, Object> response = new HashMap<>();
@@ -192,7 +193,7 @@ public class LoanController {
     }
     
     @PutMapping("/{id}/reject")
-    public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.rejectLoan(id);
             Map<String, Object> response = new HashMap<>();

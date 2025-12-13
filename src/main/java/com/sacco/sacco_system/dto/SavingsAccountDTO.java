@@ -6,15 +6,16 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class SavingsAccountDTO {
-    private Long id;
+    private UUID id;
     private String accountNumber;
-    private Long memberId;
+    private UUID memberId;
     private String memberName;
     private BigDecimal balance;
     private BigDecimal totalDeposits;
