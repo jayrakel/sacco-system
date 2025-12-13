@@ -34,3 +34,5 @@ build/
 
 ## security ##
 .env
+
+node_modules
