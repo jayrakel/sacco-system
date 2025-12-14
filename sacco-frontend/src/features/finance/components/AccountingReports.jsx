@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { BookOpen, FileText, ArrowRightLeft, Loader2, PieChart, TrendingUp, Plus, X, Save } from 'lucide-react';
+import { BookOpen, Loader2, Plus, X, Save, Calendar, Filter, RefreshCw } from 'lucide-react';
 
 export default function AccountingReports() {
     const [accounts, setAccounts] = useState([]);
@@ -8,21 +8,40 @@ export default function AccountingReports() {
     const [view, setView] = useState('balance-sheet'); // Default View
     const [loading, setLoading] = useState(true);
 
+    // ✅ Default: No Dates (Live Data)
+    const [dateRange, setDateRange] = useState({
+        startDate: '',
+        endDate: ''
+    });
+
     // Manual Account Creation State
     const [showAddModal, setShowAddModal] = useState(false);
     const [newAccount, setNewAccount] = useState({ code: '', name: '', type: 'ASSET' });
 
+    // ✅ UPDATED: Fetch data whenever dates change
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [dateRange.endDate, dateRange.startDate]);
 
     const fetchData = async () => {
         setLoading(true);
         try {
+            let accEndpoint = '/api/accounting/accounts'; // Default: Live Data
+
+            // If user selects a date, switch to Historical Report API
+            if (dateRange.endDate) {
+                let query = `?endDate=${dateRange.endDate}`;
+                if (dateRange.startDate) {
+                    query += `&startDate=${dateRange.startDate}`;
+                }
+                accEndpoint = `/api/accounting/report${query}`;
+            }
+
             const [accRes, jourRes] = await Promise.all([
-                api.get('/api/accounting/accounts'),
+                api.get(accEndpoint),
                 api.get('/api/accounting/journal')
             ]);
+
             if(accRes.data.success) setAccounts(accRes.data.data);
             if(jourRes.data.success) setJournal(jourRes.data.data);
         } catch (error) {
@@ -32,10 +51,14 @@ export default function AccountingReports() {
         }
     };
 
+    const clearFilters = () => {
+        setDateRange({ startDate: '', endDate: '' });
+    };
+
     const toggleAccount = async (code) => {
         try {
             await api.put(`/api/accounting/accounts/${code}/toggle`);
-            fetchData(); // Refresh list to show new status
+            fetchData();
         } catch (e) {
             console.error("Failed to toggle account", e);
         }
@@ -47,21 +70,18 @@ export default function AccountingReports() {
             await api.post('/api/accounting/accounts', newAccount);
             alert("Account Created Successfully!");
             setShowAddModal(false);
-            setNewAccount({ code: '', name: '', type: 'ASSET' }); // Reset form
-            fetchData(); // Refresh list
+            setNewAccount({ code: '', name: '', type: 'ASSET' });
+            fetchData();
         } catch (error) {
             alert(error.response?.data?.message || "Failed to create account. Code might exist.");
         }
     };
 
     // --- FINANCIAL CALCULATIONS ---
-
-    // Sum of all active accounts of a specific type
     const getTotal = (type) => accounts
         .filter(a => a.type === type && a.active)
         .reduce((sum, a) => sum + parseFloat(a.balance), 0);
 
-    // Net Income = Total Income - Total Expenses
     const getNetIncome = () => getTotal('INCOME') - getTotal('EXPENSE');
 
     const formatMoney = (amount) => Number(amount).toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -71,14 +91,44 @@ export default function AccountingReports() {
     return (
         <div className="space-y-6 animate-in fade-in">
 
-            {/* HEADER & NAVIGATION */}
-            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4">
+            {/* HEADER & CONTROLS */}
+            <div className="flex flex-col xl:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
                     <BookOpen className="text-indigo-600" size={20} />
                     General Ledger
                 </h2>
 
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-col md:flex-row gap-4 items-center w-full md:w-auto">
+
+                    {/* ✅ DATE RANGE PICKERS (Optional Filter) */}
+                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                        <Filter size={16} className="text-slate-400 ml-2"/>
+
+                        {/* Start Date (Always show since user requested "From-To") */}
+                        <span className="text-xs font-bold text-slate-500">From:</span>
+                        <input
+                            type="date"
+                            className="bg-white border border-slate-300 text-slate-700 text-xs rounded px-2 py-1 outline-none focus:border-indigo-500"
+                            value={dateRange.startDate}
+                            onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
+                        />
+
+                        <span className="text-xs font-bold text-slate-500">To:</span>
+                        <input
+                            type="date"
+                            className="bg-white border border-slate-300 text-slate-700 text-xs rounded px-2 py-1 outline-none focus:border-indigo-500"
+                            value={dateRange.endDate}
+                            onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
+                        />
+
+                        {/* Reset Button */}
+                        {(dateRange.startDate || dateRange.endDate) && (
+                            <button onClick={clearFilters} className="ml-1 text-slate-400 hover:text-red-500" title="Clear Filters">
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
+
                     <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full">
                         {[
                             { id: 'balance-sheet', label: 'Balance Sheet' },
@@ -95,18 +145,21 @@ export default function AccountingReports() {
                             </button>
                         ))}
                     </div>
-
-                    {/* Add Account Button (Only visible in Chart of Accounts) */}
-                    {view === 'accounts' && (
-                        <button
-                            onClick={() => setShowAddModal(true)}
-                            className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition whitespace-nowrap"
-                        >
-                            <Plus size={16} /> Add New
-                        </button>
-                    )}
                 </div>
             </div>
+
+            {/* MESSAGE: FILTER STATUS */}
+            {(dateRange.startDate || dateRange.endDate) ? (
+                <div className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm border border-indigo-100 flex items-center gap-2">
+                    <Filter size={16}/>
+                    Viewing <strong>Historical Report</strong>: {dateRange.startDate || 'Start'} to {dateRange.endDate || 'Now'}
+                </div>
+            ) : (
+                <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-lg text-sm border border-emerald-100 flex items-center gap-2">
+                    <RefreshCw size={16}/>
+                    Viewing <strong>Live Balances</strong> (Real-time System State)
+                </div>
+            )}
 
             {/* ADD ACCOUNT MODAL */}
             {showAddModal && (
@@ -207,7 +260,6 @@ export default function AccountingReports() {
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                             <div className="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
                                 <h3 className="font-bold text-blue-800">Equity</h3>
-                                {/* Total Equity = Equity Accounts + Net Income */}
                                 <span className="bg-white px-2 py-1 rounded text-blue-700 text-xs font-bold">
                                     Total: KES {formatMoney(getTotal('EQUITY') + getNetIncome())}
                                 </span>
@@ -254,6 +306,13 @@ export default function AccountingReports() {
                     <div className="p-6 border-b border-slate-100 text-center">
                         <h3 className="text-xl font-bold text-slate-800">Income Statement</h3>
                         <p className="text-slate-400 text-sm">Profit & Loss Overview</p>
+
+                        {/* Info Message if no start date */}
+                        {!dateRange.startDate && !dateRange.endDate && (
+                            <p className="mt-2 text-xs text-blue-600 bg-blue-50 inline-block px-3 py-1 rounded-full">
+                                ℹ️ Showing all-time data. Set "From/To" dates to filter.
+                            </p>
+                        )}
                     </div>
 
                     <div className="p-6 space-y-6">
@@ -294,8 +353,8 @@ export default function AccountingReports() {
                         {/* Net Income */}
                         <div className="flex justify-between items-center py-4 border-t-2 border-slate-900 mt-4">
                             <span className="text-lg font-extrabold text-slate-900">NET INCOME</span>
-                            <span className={`text-xl font-mono font-extrabold ${getNetIncome() >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                {formatMoney(getNetIncome())}
+                            <span className={`text-xl font-mono font-extrabold ${getTotal('INCOME') - getTotal('EXPENSE') >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {formatMoney(getTotal('INCOME') - getTotal('EXPENSE'))}
                             </span>
                         </div>
                     </div>
@@ -305,6 +364,20 @@ export default function AccountingReports() {
             {/* --- VIEW 3: CHART OF ACCOUNTS (Editable) --- */}
             {view === 'accounts' && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    {/* ✅ HEADER INSIDE CARD WITH ADD BUTTON */}
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div>
+                            <h3 className="font-bold text-slate-800">Chart of Accounts</h3>
+                            <p className="text-xs text-slate-500">Manage your system's financial buckets.</p>
+                        </div>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
+                        >
+                            <Plus size={16} /> Add Account
+                        </button>
+                    </div>
+
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
                             <tr>
@@ -356,7 +429,7 @@ export default function AccountingReports() {
             {/* --- VIEW 4: JOURNAL ENTRIES --- */}
             {view === 'journal' && (
                 <div className="space-y-4">
-                    {journal.map(entry => (
+                    {journal.length === 0 ? <p className="text-center text-slate-400 py-10 italic">No journal entries found.</p> : journal.map(entry => (
                         <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition">
                             <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-2">
                                 <div>

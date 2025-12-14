@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.entity.accounting;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -19,6 +20,8 @@ public class JournalLine {
 
     @ManyToOne
     @JoinColumn(name = "journal_entry_id")
+    @JsonIgnore // ✅ FIX: Stops infinite loop during JSON conversion
+    @ToString.Exclude // ✅ FIX: Stops infinite loop in Logs
     private JournalEntry journalEntry;
 
     @ManyToOne
