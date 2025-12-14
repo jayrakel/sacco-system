@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom'; // ✅ Added Link
-import { useSettings } from '../context/SettingsContext';
+import { useNavigate, Link } from 'react-router-dom';
+import { useSettings } from '../context/SettingsContext'; // ✅ Import Settings
 import api from '../api';
-import { Users, Settings, Wallet, CreditCard, TrendingUp, LogOut, UserPlus } from 'lucide-react'; // ✅ Added UserPlus
+import { Users, Settings, Wallet, CreditCard, TrendingUp, LogOut, UserPlus } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -13,8 +13,9 @@ export default function AdminDashboard() {
   });
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const navigate = useNavigate();
-  const { settings, getImageUrl } = useSettings(); /
+  const { settings, getImageUrl } = useSettings(); // ✅ Typo fixed here
   const logoUrl = getImageUrl(settings.SACCO_LOGO);
 
   useEffect(() => {
@@ -23,7 +24,6 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch stats and members in parallel
       const [reportRes, membersRes] = await Promise.all([
         api.get('/api/reports/today'),
         api.get('/api/members')
@@ -48,18 +48,18 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-slate-100 font-sans">
       <nav className="bg-slate-900 text-white p-4 shadow-lg flex justify-between items-center sticky top-0 z-10">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
             {/* ✅ Dynamic Dashboard Logo */}
-                      {logoUrl ? (
-                         <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain bg-white rounded p-0.5" />
-                      ) : (
-                         <TrendingUp className="text-emerald-400" />
-                      )}
-                      <h1 className="text-xl font-bold">{settings.SACCO_NAME} <span className="text-slate-400 text-sm font-normal">| Admin Portal</span></h1>
-                    </div>
-          <TrendingUp className="text-emerald-400" />
-          <h1 className="text-xl font-bold">Admin Portal</h1>
+            {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain bg-white rounded p-0.5" />
+            ) : (
+                <TrendingUp className="text-emerald-400" />
+            )}
+            <h1 className="text-xl font-bold">
+                {settings.SACCO_NAME} <span className="text-slate-400 text-sm font-normal">| Admin Portal</span>
+            </h1>
         </div>
+
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 text-sm bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition"
@@ -67,9 +67,6 @@ export default function AdminDashboard() {
           <LogOut size={16} /> Logout
         </button>
       </nav>
-      <Link to="/admin/settings" className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition">
-          <Settings size={16} /> Configuration
-      </Link>
 
       <div className="max-w-7xl mx-auto p-8">
 
@@ -107,12 +104,17 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-bold text-slate-800">Recent Members</h2>
 
             <div className="flex gap-4">
-                {/* ✅ New Member Button */}
+                {/* Configuration Button */}
+                <Link to="/admin/settings" className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-200 transition border border-slate-300">
+                    <Settings size={16} /> Configuration
+                </Link>
+
+                {/* New Member Button */}
                 <Link to="/add-member" className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 transition">
                     <UserPlus size={16} /> New Member
                 </Link>
 
-                <button onClick={fetchData} className="text-sm text-blue-600 hover:underline">Refresh Data</button>
+                <button onClick={fetchData} className="text-sm text-blue-600 hover:underline">Refresh</button>
             </div>
           </div>
 
@@ -158,7 +160,6 @@ export default function AdminDashboard() {
   );
 }
 
-// ✅ StatCard Helper Component (Now correctly outside the main function)
 function StatCard({ icon, label, value, color }) {
   return (
     <div className={`p-6 rounded-xl border ${color} shadow-sm`}>
