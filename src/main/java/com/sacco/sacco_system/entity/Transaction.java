@@ -1,10 +1,9 @@
 package com.sacco.sacco_system.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,21 +21,17 @@ public class Transaction {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true, nullable = false)
     private String transactionId;
 
-    private String referenceCode;
-
-    @Enumerated(EnumType.STRING)
-    private PaymentMethod paymentMethod;
-
-    @ManyToOne
-    @JoinColumn(name = "member_id", nullable = false)
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "member_id")
+    @JsonIgnoreProperties({"transactions", "loans", "savingsAccounts", "guaranteedLoans"})
     private Member member;
 
-    // ✅ FIX 1: 'nullable = true' allows Registration Fees (which have no savings account)
     @ManyToOne
-    @JoinColumn(name = "savings_account_id", nullable = true)
+    @JoinColumn(name = "savings_account_id")
+    @JsonIgnoreProperties("member")
     private SavingsAccount savingsAccount;
 
     @Enumerated(EnumType.STRING)
@@ -44,29 +39,43 @@ public class Transaction {
 
     private BigDecimal amount;
 
-    private BigDecimal balanceAfter;
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
 
-    private LocalDateTime transactionDate;
-
+    private String referenceCode; // M-Pesa Code or Check No
     private String description;
 
-    private LocalDateTime createdAt;
+    @CreationTimestamp
+    private LocalDateTime transactionDate;
+
+    private BigDecimal balanceAfter;
 
     @PrePersist
     protected void onCreate() {
-        this.transactionDate = LocalDateTime.now();
-        this.createdAt = LocalDateTime.now();
-        if (this.transactionId == null) {
-            this.transactionId = "TRX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        if (transactionId == null) {
+            transactionId = "TRX-" + System.currentTimeMillis();
         }
     }
 
-    // ✅ FIX 2: All Transaction Types Included
     public enum TransactionType {
-        DEPOSIT, WITHDRAWAL, LOAN_DISBURSEMENT, LOAN_REPAYMENT, REGISTRATION_FEE, FINE, DIVIDEND_PAYOUT
+        DEPOSIT,
+        WITHDRAWAL,
+        REGISTRATION_FEE,
+        LOAN_DISBURSEMENT,
+        LOAN_REPAYMENT,
+
+        // ✅ NEW TYPES ADDED
+        TRANSFER,       // Member to Member
+        REVERSAL,       // Correction
+        INTEREST_EARNED, // Savings Interest
+        BANK_CHARGE      // Fees
     }
 
     public enum PaymentMethod {
-        CASH, MPESA, BANK_TRANSFER
+        CASH,
+        BANK_TRANSFER,
+        MPESA,
+        CHECK,
+        SYSTEM // For automated things like Interest
     }
 }

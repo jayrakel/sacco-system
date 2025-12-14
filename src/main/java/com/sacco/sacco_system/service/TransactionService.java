@@ -1,12 +1,16 @@
 package com.sacco.sacco_system.service;
 
+import com.sacco.sacco_system.entity.SavingsAccount;
 import com.sacco.sacco_system.entity.Transaction;
+import com.sacco.sacco_system.repository.SavingsAccountRepository;
 import com.sacco.sacco_system.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -16,10 +20,70 @@ import java.util.List;
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
+    private final SavingsAccountRepository savingsAccountRepository;
+    private final AccountingService accountingService;
 
     public List<Transaction> getAllTransactions() {
         // Return latest transactions first
         return transactionRepository.findAll(Sort.by(Sort.Direction.DESC, "transactionDate"));
+    }
+
+    /**
+     * REVERSE A TRANSACTION
+     * Undo a Deposit or Withdrawal, creating a Reversal Record and GL entry.
+     */
+    @Transactional
+    public void reverseTransaction(String transactionId, String reason) {
+        Transaction originalTx = transactionRepository.findByTransactionId(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        if (originalTx.getType() == Transaction.TransactionType.REVERSAL) {
+            throw new RuntimeException("Cannot reverse a reversal.");
+        }
+
+        // Logic for Savings Reversal
+        if (originalTx.getSavingsAccount() != null) {
+            SavingsAccount acc = originalTx.getSavingsAccount();
+            BigDecimal amount = originalTx.getAmount();
+
+            if (originalTx.getType() == Transaction.TransactionType.DEPOSIT) {
+                // Reversing Deposit -> Deduct money
+                if (acc.getBalance().compareTo(amount) < 0) {
+                    throw new RuntimeException("Cannot reverse: Insufficient balance.");
+                }
+                acc.setBalance(acc.getBalance().subtract(amount));
+                acc.setTotalDeposits(acc.getTotalDeposits().subtract(amount));
+
+                // GL Reversal: Debit Savings (2002), Credit Cash (1001)
+                accountingService.postDoubleEntry("Reversal: " + transactionId, "REV-" + transactionId, "2002", "1001", amount);
+
+            } else if (originalTx.getType() == Transaction.TransactionType.WITHDRAWAL) {
+                // Reversing Withdrawal -> Add money back
+                acc.setBalance(acc.getBalance().add(amount));
+                acc.setTotalWithdrawals(acc.getTotalWithdrawals().subtract(amount));
+
+                // GL Reversal: Debit Cash (1001), Credit Savings (2002)
+                accountingService.postDoubleEntry("Reversal: " + transactionId, "REV-" + transactionId, "1001", "2002", amount);
+            }
+
+            savingsAccountRepository.save(acc);
+        } else {
+            throw new RuntimeException("Reversal not supported for this transaction type yet.");
+        }
+
+        // Create Reversal Record
+        Transaction reversalTx = Transaction.builder()
+                .member(originalTx.getMember())
+                .savingsAccount(originalTx.getSavingsAccount())
+                .type(Transaction.TransactionType.REVERSAL)
+                .paymentMethod(Transaction.PaymentMethod.SYSTEM)
+                .amount(originalTx.getAmount()) // Keep positive for record keeping
+                .referenceCode("REV-" + originalTx.getReferenceCode())
+                .description("Reversal of " + originalTx.getTransactionId() + ": " + reason)
+                .balanceAfter(originalTx.getSavingsAccount().getBalance())
+                .build();
+
+        transactionRepository.save(reversalTx);
     }
 
     public ByteArrayInputStream generateCsvStatement() {

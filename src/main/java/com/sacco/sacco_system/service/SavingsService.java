@@ -24,7 +24,9 @@ public class SavingsService {
     private final SavingsAccountRepository savingsAccountRepository;
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
-    private final AccountingService accountingService; // ✅ Inject AccountingService
+    private final AccountingService accountingService;
+
+    // --- EXISTING METHODS ---
 
     public SavingsAccountDTO createSavingsAccount(UUID memberId) {
         Member member = memberRepository.findById(memberId)
@@ -43,7 +45,6 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
-    // ... (Keep getSavingsAccountById, getSavingsAccountByNumber, getSavingsAccountsByMemberId, getAllSavingsAccounts exactly as is) ...
     public SavingsAccountDTO getSavingsAccountById(UUID id) {
         SavingsAccount account = savingsAccountRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Savings account not found"));
@@ -93,7 +94,7 @@ public class SavingsService {
 
         transactionRepository.save(transaction);
 
-        // 4. ✅ POST TO GL (Double Entry)
+        // 4. POST TO GL (Double Entry)
         // Debit: Cash (1001) | Credit: Member Savings Liability (2001)
         accountingService.postDoubleEntry(
                 "Deposit - " + account.getAccountNumber(),
@@ -139,7 +140,7 @@ public class SavingsService {
 
         transactionRepository.save(transaction);
 
-        // 4. ✅ POST TO GL (Double Entry)
+        // 4. POST TO GL (Double Entry)
         // Debit: Member Savings Liability (2001) | Credit: Cash (1001)
         accountingService.postDoubleEntry(
                 "Withdrawal - " + account.getAccountNumber(),
@@ -152,7 +153,115 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
-    // ... (Keep remaining methods) ...
+    // --- ✅ NEW METHODS: TRANSFER & INTEREST ---
+
+    /**
+     * INTERNAL TRANSFER (Member to Member)
+     */
+    public void transferFunds(String fromAccountNum, String toAccountNum, BigDecimal amount, String description) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Amount must be positive");
+        if (fromAccountNum.equals(toAccountNum)) throw new RuntimeException("Cannot transfer to self");
+
+        SavingsAccount fromAcc = savingsAccountRepository.findByAccountNumber(fromAccountNum)
+                .orElseThrow(() -> new RuntimeException("Sender account not found"));
+        SavingsAccount toAcc = savingsAccountRepository.findByAccountNumber(toAccountNum)
+                .orElseThrow(() -> new RuntimeException("Receiver account not found"));
+
+        if (fromAcc.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Insufficient funds for transfer");
+        }
+
+        // 1. Deduct from Sender
+        fromAcc.setBalance(fromAcc.getBalance().subtract(amount));
+        fromAcc.setTotalWithdrawals(fromAcc.getTotalWithdrawals().add(amount));
+        savingsAccountRepository.save(fromAcc);
+
+        // 2. Add to Receiver
+        toAcc.setBalance(toAcc.getBalance().add(amount));
+        toAcc.setTotalDeposits(toAcc.getTotalDeposits().add(amount));
+        savingsAccountRepository.save(toAcc);
+
+        // 3. Record Transaction (Sender Side)
+        Transaction txSender = Transaction.builder()
+                .member(fromAcc.getMember())
+                .savingsAccount(fromAcc)
+                .type(Transaction.TransactionType.TRANSFER)
+                .paymentMethod(Transaction.PaymentMethod.SYSTEM)
+                .amount(amount.negate()) // Negative for sender visualization
+                .description("Transfer to " + toAcc.getMember().getFirstName() + ": " + description)
+                .balanceAfter(fromAcc.getBalance())
+                .build();
+        transactionRepository.save(txSender);
+
+        // 4. Record Transaction (Receiver Side)
+        Transaction txReceiver = Transaction.builder()
+                .member(toAcc.getMember())
+                .savingsAccount(toAcc)
+                .type(Transaction.TransactionType.TRANSFER)
+                .paymentMethod(Transaction.PaymentMethod.SYSTEM)
+                .amount(amount)
+                .description("Transfer from " + fromAcc.getMember().getFirstName() + ": " + description)
+                .balanceAfter(toAcc.getBalance())
+                .build();
+        transactionRepository.save(txReceiver);
+
+        // 5. GL Posting (Liability Transfer)
+        // Debit: Member Savings (Sender Liability Reduces) | Credit: Member Savings (Receiver Liability Increases)
+        accountingService.postDoubleEntry(
+                "Transfer " + fromAccountNum + " -> " + toAccountNum,
+                txSender.getTransactionId(),
+                "2002", // Debit Savings Control
+                "2002", // Credit Savings Control
+                amount
+        );
+    }
+
+    /**
+     * BATCH INTEREST POSTING
+     */
+    public void applyMonthlyInterest(BigDecimal annualRatePercentage) {
+        List<SavingsAccount> accounts = savingsAccountRepository.findAll();
+        BigDecimal monthlyRate = annualRatePercentage.divide(BigDecimal.valueOf(1200), 4, BigDecimal.ROUND_HALF_UP); // 5% / 100 / 12
+
+        for (SavingsAccount acc : accounts) {
+            if (acc.getBalance().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal interest = acc.getBalance().multiply(monthlyRate).setScale(2, BigDecimal.ROUND_HALF_UP);
+
+                if (interest.compareTo(BigDecimal.ZERO) > 0) {
+                    // Credit Account
+                    acc.setBalance(acc.getBalance().add(interest));
+                    savingsAccountRepository.save(acc);
+
+                    // Transaction Record
+                    Transaction tx = Transaction.builder()
+                            .member(acc.getMember())
+                            .savingsAccount(acc)
+                            .type(Transaction.TransactionType.INTEREST_EARNED)
+                            .paymentMethod(Transaction.PaymentMethod.SYSTEM)
+                            .amount(interest)
+                            .description("Monthly Interest Earned")
+                            .balanceAfter(acc.getBalance())
+                            .build();
+                    transactionRepository.save(tx);
+
+                    // GL Posting
+                    // Debit: Interest Expense (5006 - Bank Charges or create 5013 Interest Expense) | Credit: Member Savings (2002)
+                    try {
+                        accountingService.postDoubleEntry(
+                                "Interest - " + acc.getAccountNumber(),
+                                tx.getTransactionId(),
+                                "5006", // Using Bank Charges/Interest Expense account
+                                "2002", // Member Savings
+                                interest
+                        );
+                    } catch (Exception e) {
+                        System.err.println("GL Post Failed for Interest: " + e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
     public BigDecimal getTotalSavingsBalance() {
         BigDecimal total = savingsAccountRepository.getTotalActiveAccountsBalance();
         return total != null ? total : BigDecimal.ZERO;
