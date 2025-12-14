@@ -103,7 +103,7 @@ public class EmailService {
         }
     }
 
-    // 3. ✅ NEW: For New Members (Includes Login Details)
+    // 3. ✅ NEW: For New Members (Correctly placed INSIDE the class)
     @Async
     public void sendMemberWelcomeEmail(String to, String name, String tempPassword, String token) {
         try {
@@ -152,4 +152,4 @@ public class EmailService {
             throw new RuntimeException("Failed to send email");
         }
     }
-}
+} // ✅ End of Class

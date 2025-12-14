@@ -2,11 +2,9 @@ import axios from 'axios';
 
 // Create the Axios instance
 const api = axios.create({
-  // Connect to your Java Backend running on Port 8080
   baseURL: 'http://localhost:8080',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // ❌ REMOVED: headers: { 'Content-Type': 'application/json' }
+  // Axios will now auto-detect content type (JSON or File) correctly.
 });
 
 // 1. Request Interceptor: Attach Token to Every Request
@@ -26,10 +24,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      console.warn("Session expired. Redirecting to login...");
-      localStorage.removeItem('sacco_user');
-      localStorage.removeItem('sacco_token');
-      window.location.href = '/';
+      // Only redirect if we are not already on the login page
+      if (window.location.pathname !== '/') {
+          console.warn("Session expired. Redirecting to login...");
+          localStorage.removeItem('sacco_user');
+          localStorage.removeItem('sacco_token');
+          window.location.href = '/';
+      }
     }
     return Promise.reject(error);
   }

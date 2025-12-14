@@ -34,8 +34,10 @@ public class Transaction {
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
+    // ✅ FIX: Removed 'nullable = false'.
+    // Registration Fees do NOT link to a savings account.
     @ManyToOne
-    @JoinColumn(name = "savings_account_id")
+    @JoinColumn(name = "savings_account_id", nullable = true)
     private SavingsAccount savingsAccount;
 
     @Enumerated(EnumType.STRING)
@@ -45,7 +47,6 @@ public class Transaction {
 
     private BigDecimal balanceAfter;
 
-    // ✅ Ensure this is named 'transactionDate' to match your Repository query
     private LocalDateTime transactionDate;
 
     private String description;
@@ -54,7 +55,6 @@ public class Transaction {
 
     @PrePersist
     protected void onCreate() {
-        // ✅ Initialize both dates
         this.transactionDate = LocalDateTime.now();
         this.createdAt = LocalDateTime.now();
         if (this.transactionId == null) {
