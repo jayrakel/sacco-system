@@ -211,7 +211,7 @@ function OverviewTab() {
 // 2. FINANCE TAB (Real Transactions)
 // ==================================================================================
 function FinanceTab() {
-    const [viewMode, setViewMode] = useState('standard'); // 'standard' or 'accounting'
+    const [viewMode, setViewMode] = useState('standard');
     const [transactions, setTransactions] = useState([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -223,15 +223,42 @@ function FinanceTab() {
         });
     };
 
-    useEffect(() => {
-        fetchTransactions();
-    }, []);
+    useEffect(() => { fetchTransactions(); }, []);
+
+    // ✅ NEW: Handle Interest
+    const handleRunInterest = async () => {
+        const rate = prompt("Enter Annual Interest Rate % (e.g. 5 for 5%):", "5");
+        if (rate) {
+            try {
+                await api.post('/api/transactions/interest', null, { params: { rate } });
+                alert("Interest applied successfully to all accounts!");
+                fetchTransactions(); // Refresh list to show interest entries
+            } catch (error) {
+                alert("Failed to apply interest.");
+            }
+        }
+    };
+
+    // ✅ NEW: Handle Reversal
+    const handleReverse = async (txId) => {
+        if (!window.confirm("Are you sure you want to REVERSE this transaction? This cannot be undone.")) return;
+
+        const reason = prompt("Enter reason for reversal:");
+        if (!reason) return;
+
+        try {
+            await api.post(`/api/transactions/${txId}/reverse`, null, { params: { reason } });
+            alert("Transaction Reversed!");
+            fetchTransactions();
+        } catch (error) {
+            alert(error.response?.data?.message || "Reversal Failed");
+        }
+    };
 
     const handleDownload = () => {
         window.location.href = 'http://localhost:8080/api/transactions/download';
     };
 
-    // Pagination Logic
     const lastIndex = currentPage * itemsPerPage;
     const firstIndex = lastIndex - itemsPerPage;
     const currentTx = transactions.slice(firstIndex, lastIndex);
@@ -240,46 +267,30 @@ function FinanceTab() {
     return (
         <div className="space-y-6">
 
-            {/* ✅ VIEW SWITCHER (Standard vs Accounting) */}
             <div className="flex bg-slate-200/50 p-1 rounded-xl w-fit">
-                <button
-                    onClick={() => setViewMode('standard')}
-                    className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'standard' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    Transactions
-                </button>
-                <button
-                    onClick={() => setViewMode('accounting')}
-                    className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'accounting' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    Accounting Books
-                </button>
+                <button onClick={() => setViewMode('standard')} className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'standard' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Transactions</button>
+                <button onClick={() => setViewMode('accounting')} className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'accounting' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>Accounting Books</button>
             </div>
 
-            {/* ✅ CONDITIONAL RENDERING */}
             {viewMode === 'accounting' ? (
                 <AccountingReports />
             ) : (
                 <>
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center bg-slate-50/50 gap-4">
                             <div>
                                 <h2 className="text-lg font-bold text-slate-800">Financial Ledger</h2>
                                 <p className="text-slate-500 text-xs">Complete history of all fees, deposits, and transfers.</p>
                             </div>
                             <div className="flex gap-2">
-                                <button
-                                    onClick={() => setIsModalOpen(true)}
-                                    className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
-                                >
-                                    <ArrowDownLeft size={14} /> Record Transaction
+                                <button onClick={handleRunInterest} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20">
+                                    <TrendingUp size={14} /> Run Interest
                                 </button>
-
-                                <button
-                                    onClick={handleDownload}
-                                    className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20"
-                                >
-                                    <Download size={14} /> Download CSV
+                                <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20">
+                                    <ArrowDownLeft size={14} /> New Transaction
+                                </button>
+                                <button onClick={handleDownload} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20">
+                                    <Download size={14} /> CSV
                                 </button>
                             </div>
                         </div>
@@ -293,6 +304,7 @@ function FinanceTab() {
                                         <th className="p-4">Member</th>
                                         <th className="p-4">Type</th>
                                         <th className="p-4 text-right">Amount</th>
+                                        <th className="p-4 text-center">Action</th> {/* New Action Column */}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -301,29 +313,39 @@ function FinanceTab() {
                                             <td className="p-4 font-mono text-xs text-slate-500">{tx.transactionId}</td>
                                             <td className="p-4 text-slate-700">{new Date(tx.transactionDate).toLocaleDateString()}</td>
                                             <td className="p-4 font-medium text-slate-900">
-                                                {tx.member ? `${tx.member.firstName} ${tx.member.lastName}` : 'N/A'}
+                                                {tx.member ? `${tx.member.firstName} ${tx.member.lastName}` : 'System'}
                                             </td>
                                             <td className="p-4">
                                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                                                    tx.type.includes('DEPOSIT') || tx.type.includes('FEE')
-                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                    : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                    tx.type === 'DEPOSIT' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                                    tx.type === 'WITHDRAWAL' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                    tx.type === 'REVERSAL' ? 'bg-gray-100 text-gray-600 border-gray-200' :
+                                                    'bg-blue-50 text-blue-700 border-blue-100'
                                                 }`}>
-                                                    {tx.type.includes('DEPOSIT') ? <ArrowDownLeft size={10}/> : <ArrowUpRight size={10}/>}
                                                     {tx.type.replace(/_/g, ' ')}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right font-bold text-slate-800">KES {Number(tx.amount).toLocaleString()}</td>
+
+                                            {/* ✅ REVERSE BUTTON */}
+                                            <td className="p-4 text-center">
+                                                {tx.type !== 'REVERSAL' && (
+                                                    <button
+                                                        onClick={() => handleReverse(tx.transactionId)}
+                                                        className="text-xs text-red-500 hover:text-red-700 font-bold underline decoration-dotted"
+                                                        title="Reverse Transaction"
+                                                    >
+                                                        Reverse
+                                                    </button>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
-                                    {transactions.length === 0 && (
-                                        <tr><td colSpan="5" className="p-10 text-center text-slate-400 italic">No transactions found.</td></tr>
-                                    )}
+                                    {transactions.length === 0 && <tr><td colSpan="6" className="p-10 text-center text-slate-400 italic">No transactions found.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* Pagination Controls */}
                         {totalPages > 1 && (
                             <div className="p-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
                                 <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage===1} className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50"><ChevronLeft size={16}/></button>
@@ -333,11 +355,7 @@ function FinanceTab() {
                         )}
                     </div>
 
-                    <TransactionModal
-                        isOpen={isModalOpen}
-                        onClose={() => setIsModalOpen(false)}
-                        onSuccess={fetchTransactions}
-                    />
+                    <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={fetchTransactions} />
                 </>
             )}
         </div>
