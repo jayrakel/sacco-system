@@ -1,27 +1,32 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import ChangePassword from './pages/ChangePassword'; // <--- 1. Import it
+import AdminDashboard from './pages/AdminDashboard';
+import ChangePassword from './pages/ChangePassword';
+import SystemSetup from './pages/SystemSetup';
+import VerifyEmail from './pages/VerifyEmail'; // <--- 1. IMPORT THIS
 
-// Placeholder for Admin
-const AdminDashboard = () => (
-    <div className="p-10">
-        <h1 className="text-2xl font-bold text-blue-600 mb-4">Admin Dashboard</h1>
-        <p>Welcome Admin. You have full system access.</p>
-    </div>
-);
+// ... import dashboards ...
+import { LoansDashboard, FinanceDashboard, ChairpersonDashboard, SecretaryDashboard } from './pages/RoleDashboards';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
-
-        {/* 2. Add the Route here 👇 */}
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/system-setup" element={<SystemSetup />} />
 
+        {/* 👇 2. ADD THIS MISSING ROUTE 👇 */}
+        <Route path="/verify-email" element={<VerifyEmail />} />
+
+        {/* Dashboards */}
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        <Route path="/loans-dashboard" element={<LoansDashboard />} />
+        <Route path="/finance-dashboard" element={<FinanceDashboard />} />
+        <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
+        <Route path="/secretary-dashboard" element={<SecretaryDashboard />} />
 
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

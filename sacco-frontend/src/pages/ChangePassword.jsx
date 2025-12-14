@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api'; // Use our configured axios instance
+import api from '../api';
 import { Lock, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 export default function ChangePassword() {
@@ -39,7 +39,6 @@ export default function ChangePassword() {
     }
 
     try {
-      // Call the backend endpoint
       const response = await api.post('/api/auth/change-password', {
           currentPassword: passwords.currentPassword,
           newPassword: passwords.newPassword,
@@ -49,15 +48,44 @@ export default function ChangePassword() {
       if (response.data.success) {
         setSuccess("Password updated successfully! Redirecting...");
 
-        // Update local storage so we don't get forced again
+        // 1. Get current user from storage to check role
         const user = JSON.parse(localStorage.getItem('sacco_user'));
+
         if (user) {
+            // 2. Update local flag so they aren't asked again
             user.mustChangePassword = false;
             localStorage.setItem('sacco_user', JSON.stringify(user));
-        }
 
-        // Redirect to dashboard after 2 seconds
-        setTimeout(() => navigate('/dashboard'), 2000);
+            // 3. SMART REDIRECT (Matching Login.jsx logic)
+            setTimeout(() => {
+                switch (user.role) {
+                    case 'ADMIN':
+                        navigate('/admin-dashboard');
+                        break;
+                    case 'LOAN_OFFICER':
+                        navigate('/loans-dashboard');
+                        break;
+                    case 'TREASURER':
+                        navigate('/finance-dashboard');
+                        break;
+                    case 'CHAIRPERSON':
+                    case 'ASSISTANT_CHAIRPERSON':
+                        navigate('/chairperson-dashboard');
+                        break;
+                    case 'SECRETARY':
+                    case 'ASSISTANT_SECRETARY':
+                        navigate('/secretary-dashboard');
+                        break;
+                    case 'MEMBER':
+                    default:
+                        navigate('/dashboard');
+                        break;
+                }
+            }, 2000);
+        } else {
+            // Fallback
+            setTimeout(() => navigate('/'), 2000);
+        }
       }
     } catch (err) {
       console.error("Change Password Error:", err);

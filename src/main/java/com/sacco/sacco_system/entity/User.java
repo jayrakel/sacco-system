@@ -29,7 +29,7 @@ public class User implements UserDetails {
     private UUID id;
 
     @NotBlank(message = "Username is required")
-    private String username; // We can use this for display name
+    private String username;
 
     @NotBlank(message = "Password is required")
     private String password;
@@ -39,7 +39,7 @@ public class User implements UserDetails {
     private String email;
 
     @Column(unique = true)
-    private String memberNumber; // e.g., MBR0001
+    private String memberNumber;
 
     private String firstName;
     private String lastName;
@@ -49,6 +49,12 @@ public class User implements UserDetails {
     private Role role;
 
     private boolean enabled = true;
+
+    @Column(nullable = false)
+    private boolean mustChangePassword = false;
+
+    @Column(nullable = false)
+    private boolean emailVerified = false; // New Flag
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -64,47 +70,33 @@ public class User implements UserDetails {
         updatedAt = LocalDateTime.now();
     }
 
-    // --- Spring Security UserDetails Implementation ---
-
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority(role.name()));
     }
 
     @Override
-    public String getUsername() {
-        return email; // We use EMAIL as the unique identifier for login
-    }
+    public String getUsername() { return email; }
 
     @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
+    public boolean isAccountNonExpired() { return true; }
 
     @Override
-    public boolean isAccountNonLocked() {
-        return true;
-    }
+    public boolean isAccountNonLocked() { return true; }
 
     @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
-    }
+    public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() {
-        return enabled;
-    }
+    public boolean isEnabled() { return enabled; }
 
-    @Column(nullable = false)
-    private boolean mustChangePassword = false;
-
-    // Roles matching your Node.js system
     public enum Role {
         MEMBER,
-        ADMIN,
+        ADMIN, // This is YOU (IT Technician)
         CHAIRPERSON,
+        ASSISTANT_CHAIRPERSON,
         SECRETARY,
+        ASSISTANT_SECRETARY,
         TREASURER,
         LOAN_OFFICER
     }

@@ -38,12 +38,13 @@ public class DataInitializer implements CommandLineRunner {
             User admin = User.builder()
                     .firstName("System")
                     .lastName("Admin")
-                    .username("admin") // Can be same as email or separate
+                    .username("admin")
                     .email(adminEmail)
-                    .password(passwordEncoder.encode(adminPassword)) // Hash the password!
+                    .password(passwordEncoder.encode(adminPassword))
                     .role(User.Role.ADMIN)
                     .enabled(true)
                     .mustChangePassword(true)
+                    .emailVerified(true) // <--- CRITICAL: Auto-verify the fake admin email
                     .build();
 
             userRepository.save(admin);
