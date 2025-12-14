@@ -4,6 +4,7 @@ import com.sacco.sacco_system.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod; // <--- MAKE SURE THIS IS IMPORTED
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -31,10 +32,19 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ Public Endpoints (Login, Register, Verify Email, Swagger)
-                        .requestMatchers("/api/auth/**", "/api/verify/**", "/uploads/**").permitAll()
+                        // 1. Allow Static Resources (Images, Logos)
+                        .requestMatchers("/uploads/**").permitAll()
+
+                        // 2. Allow Public API Endpoints
+                        .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
+
+                        // 3. ✅ CRITICAL FIX: Allow READING settings publicly (for Login page)
+                        .requestMatchers(HttpMethod.GET, "/api/settings").permitAll()
+
+                        // 4. Allow Swagger Documentation
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        // All other API requests must be authenticated
+
+                        // 5. Everything else requires a Login
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -47,10 +57,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
-        // In production, replace "*" with your actual frontend URL
         configuration.setAllowedOrigins(List.of("*"));
-
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 

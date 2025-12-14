@@ -47,13 +47,13 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans">
-      <nav className="bg-slate-900 text-white p-4 shadow-lg flex justify-between items-center sticky top-0 z-10">
+      <nav className="bg-brand-secondary text-white p-4 shadow-lg flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-3">
             {/* ✅ Dynamic Dashboard Logo */}
             {logoUrl ? (
                 <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain bg-white rounded p-0.5" />
             ) : (
-                <TrendingUp className="text-emerald-400" />
+                <TrendingUp className="text-brand-primary" />
             )}
             <h1 className="text-xl font-bold">
                 {settings.SACCO_NAME} <span className="text-slate-400 text-sm font-normal">| Admin Portal</span>

@@ -109,6 +109,46 @@ export default function SystemSettings() {
 
         <div className="p-8 space-y-8">
 
+            {/* 0. THEME CONFIGURATION */}
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Theme & Colors</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Primary Color */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex justify-between items-center">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Primary Color</label>
+                                        <p className="text-xs text-slate-400">Main buttons, highlights, and spinners.</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-mono text-sm text-slate-600">{settings.find(s => s.key === 'BRAND_COLOR_PRIMARY')?.value}</span>
+                                        <input
+                                            type="color"
+                                            value={settings.find(s => s.key === 'BRAND_COLOR_PRIMARY')?.value || '#059669'}
+                                            onChange={(e) => handleValueChange('BRAND_COLOR_PRIMARY', e.target.value)}
+                                            className="w-12 h-12 rounded cursor-pointer border-0 p-0"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Secondary Color */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex justify-between items-center">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Secondary Color</label>
+                                        <p className="text-slate-400">Sidebars, navigation, and headers.</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-mono text-sm text-slate-600">{settings.find(s => s.key === 'BRAND_COLOR_SECONDARY')?.value}</span>
+                                        <input
+                                            type="color"
+                                            value={settings.find(s => s.key === 'BRAND_COLOR_SECONDARY')?.value || '#0f172a'}
+                                            onChange={(e) => handleValueChange('BRAND_COLOR_SECONDARY', e.target.value)}
+                                            className="w-12 h-12 rounded cursor-pointer border-0 p-0"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
             {/* 1. BRANDING SECTION */}
             <div>
                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Branding & Identity</h3>

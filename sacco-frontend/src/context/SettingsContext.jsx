@@ -6,15 +6,19 @@ const SettingsContext = createContext();
 export const useSettings = () => useContext(SettingsContext);
 
 export const SettingsProvider = ({ children }) => {
-  const [settings, setSettings] = useState({
-    SACCO_NAME: 'Sacco System',
-    SACCO_TAGLINE: 'Empowering Your Future',
-    SACCO_LOGO: '',
-    SACCO_FAVICON: ''
+  const [settings, setSettings] = useState(() => {
+      const cached = localStorage.getItem('sacco_settings');
+      return cached ? JSON.parse(cached) : {
+        SACCO_NAME: 'Sacco System',
+        SACCO_TAGLINE: 'Empowering Your Future',
+        SACCO_LOGO: '',
+        SACCO_FAVICON: '',
+        BRAND_COLOR_PRIMARY: '#059669',   // Default
+        BRAND_COLOR_SECONDARY: '#0f172a'  // Default
+      };
   });
   const [loading, setLoading] = useState(true);
 
-  // Helper to get full image URL
   const getImageUrl = (filename) => {
     return filename ? `http://localhost:8080/uploads/settings/${filename}` : null;
   };
@@ -22,18 +26,22 @@ export const SettingsProvider = ({ children }) => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await api.get('/api/settings');
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2000));
+        const apiCall = api.get('/api/settings');
+        const [response] = await Promise.all([apiCall, minLoadTime]);
+
         if (response.data.success) {
-          // Convert Array to Object for easier access
           const settingsMap = response.data.data.reduce((acc, curr) => {
             acc[curr.key] = curr.value;
             return acc;
           }, {});
 
-          setSettings(prev => ({ ...prev, ...settingsMap }));
+          const newSettings = { ...settings, ...settingsMap };
+          setSettings(newSettings);
+          localStorage.setItem('sacco_settings', JSON.stringify(newSettings));
         }
       } catch (error) {
-        console.error("Failed to load system settings", error);
+        console.error("Failed to load settings");
       } finally {
         setLoading(false);
       }
@@ -49,27 +57,37 @@ export const SettingsProvider = ({ children }) => {
   );
 };
 
-// ✅ Component to Handle Global Head (Favicon & Title)
+// Helper: Convert Hex (#ffffff) to RGB (255 255 255) for Tailwind
+const hexToRgb = (hex) => {
+    if (!hex) return null;
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ?
+        `${parseInt(result[1], 16)} ${parseInt(result[2], 16)} ${parseInt(result[3], 16)}`
+        : null;
+}
+
 export const SystemBranding = () => {
   const { settings, getImageUrl } = useSettings();
 
   useEffect(() => {
-    // 1. Update Document Title
+    // 1. Update Title & Favicon
     document.title = settings.SACCO_NAME;
-
-    // 2. Update Favicon
     if (settings.SACCO_FAVICON) {
-      const faviconUrl = getImageUrl(settings.SACCO_FAVICON);
-
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
-      link.href = faviconUrl;
+      const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+      link.rel = 'icon';
+      link.href = getImageUrl(settings.SACCO_FAVICON);
+      document.getElementsByTagName('head')[0].appendChild(link);
     }
+
+    // 2. ✅ Update CSS Variables (THEMING)
+    const root = document.documentElement;
+    const primaryRgb = hexToRgb(settings.BRAND_COLOR_PRIMARY);
+    const secondaryRgb = hexToRgb(settings.BRAND_COLOR_SECONDARY);
+
+    if (primaryRgb) root.style.setProperty('--color-primary', primaryRgb);
+    if (secondaryRgb) root.style.setProperty('--color-secondary', secondaryRgb);
+
   }, [settings, getImageUrl]);
 
-  return null; // Renders nothing visibly
+  return null;
 };

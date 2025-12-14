@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Default Fallbacks (Emerald & Slate) */
+:root {
+  --color-primary: 5 150 105; /* #059669 */
+  --color-secondary: 15 23 42; /* #0f172a */
+}
+
+/* ... keep existing styles ... */

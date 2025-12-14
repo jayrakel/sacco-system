@@ -24,16 +24,17 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // Updated Defaults
     private static final Map<String, String> DEFAULTS = Map.of(
             "REGISTRATION_FEE", "1000",
             "MIN_MONTHLY_CONTRIBUTION", "500",
             "LOAN_INTEREST_RATE", "12",
             "LOAN_LIMIT_MULTIPLIER", "3",
-            "SACCO_NAME", "Sacco System", // Default Name
-            "SACCO_TAGLINE", "Empowering Your Future", // Default Tagline
-            "SACCO_LOGO", "", // Empty by default
-            "SACCO_FAVICON", "" // Empty by default
+            "SACCO_NAME", "Sacco System",
+            "SACCO_TAGLINE", "Empowering Your Future",
+            "SACCO_LOGO", "",
+            "SACCO_FAVICON", "",
+            "BRAND_COLOR_PRIMARY", "#059669",   // Emerald 600
+            "BRAND_COLOR_SECONDARY", "#0f172a"  // Slate 900
     );
 
     @PostConstruct
