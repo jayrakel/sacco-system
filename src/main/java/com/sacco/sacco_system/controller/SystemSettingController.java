@@ -1,0 +1,48 @@
+package com.sacco.sacco_system.controller;
+
+import com.sacco.sacco_system.entity.SystemSetting;
+import com.sacco.sacco_system.service.SystemSettingService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/settings")
+@RequiredArgsConstructor
+public class SystemSettingController {
+
+    private final SystemSettingService service;
+
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getAllSettings() {
+        return ResponseEntity.ok(Map.of("success", true, "data", service.getAllSettings()));
+    }
+
+    @PutMapping("/{key}")
+    public ResponseEntity<Map<String, Object>> updateSetting(@PathVariable String key, @RequestBody Map<String, String> body) {
+        try {
+            SystemSetting updated = service.updateSetting(key, body.get("value"));
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Setting updated"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Upload Endpoint
+    @PostMapping(value = "/upload/{key}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadSettingImage(
+            @PathVariable String key,
+            @RequestPart("file") MultipartFile file
+    ) {
+        try {
+            SystemSetting updated = service.uploadSettingImage(key, file);
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Image uploaded successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+}

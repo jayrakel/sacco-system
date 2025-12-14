@@ -32,7 +32,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         // ✅ Public Endpoints (Login, Register, Verify Email, Swagger)
-                        .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/api/verify/**", "/uploads/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // All other API requests must be authenticated
                         .anyRequest().authenticated()

@@ -21,62 +21,72 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class Member {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-    
+
+
+    private String profileImageUrl;
+
     @NotBlank(message = "Member number is required")
     @Column(unique = true, nullable = false)
     private String memberNumber;
-    
+
     @NotBlank(message = "First name is required")
     private String firstName;
-    
+
     @NotBlank(message = "Last name is required")
     private String lastName;
-    
+
     @Email(message = "Email should be valid")
     @Column(unique = true, nullable = false)
     private String email;
-    
+
     @Pattern(regexp = "^\\+?[0-9]{10,13}$", message = "Phone number should be valid")
     @Column(unique = true, nullable = false)
     private String phoneNumber;
-    
+
     @NotBlank(message = "ID number is required")
     @Column(unique = true, nullable = false)
     private String idNumber;
-    
+
+    @Column(unique = true)
+    private String kraPin;
+
     private String address;
-    
+
     private LocalDate dateOfBirth;
-    
+
+    private String nextOfKinName;
+    private String nextOfKinPhone;
+    private String nextOfKinRelation;
+
     @Enumerated(EnumType.STRING)
     private MemberStatus status = MemberStatus.ACTIVE;
-    
+
     private BigDecimal totalShares = BigDecimal.ZERO;
-    
+
     private BigDecimal totalSavings = BigDecimal.ZERO;
-    
+
     private LocalDateTime joinDate;
-    
+
     private LocalDateTime createdAt;
-    
+
     private LocalDateTime updatedAt;
-    
+
     @PrePersist
     protected void onCreate() {
         joinDate = LocalDateTime.now();
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
-    
+
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-    
+
     public enum MemberStatus {
         ACTIVE, INACTIVE, SUSPENDED
     }

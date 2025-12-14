@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react'; // 1. Import useRef
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import { CheckCircle, XCircle, Loader } from 'lucide-react';
@@ -6,8 +6,11 @@ import { CheckCircle, XCircle, Loader } from 'lucide-react';
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [status, setStatus] = useState('verifying'); // verifying, success, error
+  const [status, setStatus] = useState('verifying');
   const [message, setMessage] = useState('Verifying your email...');
+
+  // 2. Add a ref to track if we already called the API
+  const hasCalledAPI = useRef(false);
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -18,6 +21,12 @@ export default function VerifyEmail() {
       return;
     }
 
+    // 3. Check if we already called the API
+    if (hasCalledAPI.current) return;
+
+    // 4. Mark as called immediately
+    hasCalledAPI.current = true;
+
     verifyToken(token);
   }, []);
 
@@ -27,10 +36,11 @@ export default function VerifyEmail() {
       if (response.data.success) {
         setStatus('success');
         setMessage('Email verified successfully!');
-        // Redirect to login after 3 seconds
         setTimeout(() => navigate('/'), 3000);
       }
     } catch (err) {
+      // Ideally, check if the error is "Token not found" but the user is already verified?
+      // For now, this logic is fine because the double-call prevention fixes the root cause.
       setStatus('error');
       setMessage(err.response?.data?.message || "Verification failed. Token may be expired.");
     }
