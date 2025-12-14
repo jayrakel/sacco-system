@@ -31,12 +31,9 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ FIX: Allow the Verification Endpoint
+                        // ✅ Public Endpoints (Login, Register, Verify Email, Swagger)
                         .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
-
-                        // Allow Swagger UI (Optional)
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-
                         // All other API requests must be authenticated
                         .anyRequest().authenticated()
                 )
@@ -51,7 +48,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // In production, replace "*" with your actual frontend URL (e.g., "http://localhost:5173")
+        // In production, replace "*" with your actual frontend URL
         configuration.setAllowedOrigins(List.of("*"));
 
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
