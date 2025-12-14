@@ -24,6 +24,7 @@ public class SavingsService {
     private final SavingsAccountRepository savingsAccountRepository;
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
+    private final AccountingService accountingService; // ✅ Inject AccountingService
 
     public SavingsAccountDTO createSavingsAccount(UUID memberId) {
         Member member = memberRepository.findById(memberId)
@@ -42,6 +43,7 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
+    // ... (Keep getSavingsAccountById, getSavingsAccountByNumber, getSavingsAccountsByMemberId, getAllSavingsAccounts exactly as is) ...
     public SavingsAccountDTO getSavingsAccountById(UUID id) {
         SavingsAccount account = savingsAccountRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Savings account not found"));
@@ -55,17 +57,11 @@ public class SavingsService {
     }
 
     public List<SavingsAccountDTO> getSavingsAccountsByMemberId(UUID memberId) {
-        return savingsAccountRepository.findByMemberId(memberId)
-                .stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        return savingsAccountRepository.findByMemberId(memberId).stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
     public List<SavingsAccountDTO> getAllSavingsAccounts() {
-        return savingsAccountRepository.findAll()
-                .stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        return savingsAccountRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
     public SavingsAccountDTO deposit(String accountNumber, BigDecimal amount, String description) {
@@ -76,19 +72,17 @@ public class SavingsService {
         SavingsAccount account = savingsAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new RuntimeException("Savings account not found"));
 
-        // 1. Update the Account Balance
+        // 1. Update Account
         account.setBalance(account.getBalance().add(amount));
         account.setTotalDeposits(account.getTotalDeposits().add(amount));
-
         SavingsAccount savedAccount = savingsAccountRepository.save(account);
 
-        // 2. CRITICAL FIX: Update the Member's Total Savings Record
-        // This ensures the "3x Loan Limit" calculation works correctly
+        // 2. Update Member Totals
         Member member = account.getMember();
         member.setTotalSavings(member.getTotalSavings().add(amount));
         memberRepository.save(member);
 
-        // 3. Record transaction
+        // 3. Record Transaction
         Transaction transaction = Transaction.builder()
                 .savingsAccount(account)
                 .type(Transaction.TransactionType.DEPOSIT)
@@ -98,6 +92,16 @@ public class SavingsService {
                 .build();
 
         transactionRepository.save(transaction);
+
+        // 4. ✅ POST TO GL (Double Entry)
+        // Debit: Cash (1001) | Credit: Member Savings Liability (2001)
+        accountingService.postDoubleEntry(
+                "Deposit - " + account.getAccountNumber(),
+                transaction.getTransactionId(),
+                "1001",
+                "2001",
+                amount
+        );
 
         return convertToDTO(savedAccount);
     }
@@ -114,18 +118,17 @@ public class SavingsService {
             throw new RuntimeException("Insufficient balance");
         }
 
-        // 1. Update Account Balance
+        // 1. Update Account
         account.setBalance(account.getBalance().subtract(amount));
         account.setTotalWithdrawals(account.getTotalWithdrawals().add(amount));
-
         SavingsAccount savedAccount = savingsAccountRepository.save(account);
 
-        // 2. CRITICAL FIX: Update the Member's Total Savings Record (Decrease)
+        // 2. Update Member Totals
         Member member = account.getMember();
         member.setTotalSavings(member.getTotalSavings().subtract(amount));
         memberRepository.save(member);
 
-        // 3. Record transaction
+        // 3. Record Transaction
         Transaction transaction = Transaction.builder()
                 .savingsAccount(account)
                 .type(Transaction.TransactionType.WITHDRAWAL)
@@ -136,9 +139,20 @@ public class SavingsService {
 
         transactionRepository.save(transaction);
 
+        // 4. ✅ POST TO GL (Double Entry)
+        // Debit: Member Savings Liability (2001) | Credit: Cash (1001)
+        accountingService.postDoubleEntry(
+                "Withdrawal - " + account.getAccountNumber(),
+                transaction.getTransactionId(),
+                "2001",
+                "1001",
+                amount
+        );
+
         return convertToDTO(savedAccount);
     }
 
+    // ... (Keep remaining methods) ...
     public BigDecimal getTotalSavingsBalance() {
         BigDecimal total = savingsAccountRepository.getTotalActiveAccountsBalance();
         return total != null ? total : BigDecimal.ZERO;

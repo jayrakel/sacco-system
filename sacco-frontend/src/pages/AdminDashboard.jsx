@@ -15,6 +15,7 @@ import DashboardHeader from '../components/DashboardHeader';
 import AddMember from './members/AddMember';
 import SystemSettings from './admin/SystemSettings';
 import TransactionModal from '../components/TransactionModal';
+import AccountingReports from '../features/finance/components/AccountingReports';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -210,9 +211,10 @@ function OverviewTab() {
 // 2. FINANCE TAB (Real Transactions)
 // ==================================================================================
 function FinanceTab() {
+    const [viewMode, setViewMode] = useState('standard'); // 'standard' or 'accounting'
     const [transactions, setTransactions] = useState([]);
     const [currentPage, setCurrentPage] = useState(1);
-    const [isModalOpen, setIsModalOpen] = useState(false); // ✅ Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const itemsPerPage = 10;
 
     const fetchTransactions = () => {
@@ -229,93 +231,116 @@ function FinanceTab() {
         window.location.href = 'http://localhost:8080/api/transactions/download';
     };
 
+    // Pagination Logic
     const lastIndex = currentPage * itemsPerPage;
     const firstIndex = lastIndex - itemsPerPage;
     const currentTx = transactions.slice(firstIndex, lastIndex);
     const totalPages = Math.ceil(transactions.length / itemsPerPage);
 
     return (
-        <>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-800">Financial Ledger</h2>
-                        <p className="text-slate-500 text-xs">Complete history of all fees, deposits, and transfers.</p>
-                    </div>
-                    <div className="flex gap-2">
-                        {/* ✅ New Transaction Button */}
-                        <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
-                        >
-                            <ArrowDownLeft size={14} /> Record Transaction
-                        </button>
+        <div className="space-y-6">
 
-                        <button
-                            onClick={handleDownload}
-                            className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20"
-                        >
-                            <Download size={14} /> Download CSV
-                        </button>
-                    </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs tracking-wider border-b border-slate-100">
-                            <tr>
-                                <th className="p-4">Ref No</th>
-                                <th className="p-4">Date</th>
-                                <th className="p-4">Member</th>
-                                <th className="p-4">Type</th>
-                                <th className="p-4 text-right">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {currentTx.map((tx) => (
-                                <tr key={tx.id} className="hover:bg-slate-50 transition duration-150">
-                                    <td className="p-4 font-mono text-xs text-slate-500">{tx.transactionId}</td>
-                                    <td className="p-4 text-slate-700">{new Date(tx.transactionDate).toLocaleDateString()}</td>
-                                    <td className="p-4 font-medium text-slate-900">
-                                        {tx.member ? `${tx.member.firstName} ${tx.member.lastName}` : 'N/A'}
-                                    </td>
-                                    <td className="p-4">
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                                            tx.type.includes('DEPOSIT') || tx.type.includes('FEE')
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                            : 'bg-amber-50 text-amber-700 border-amber-100'
-                                        }`}>
-                                            {tx.type.includes('DEPOSIT') ? <ArrowDownLeft size={10}/> : <ArrowUpRight size={10}/>}
-                                            {tx.type.replace(/_/g, ' ')}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-right font-bold text-slate-800">KES {Number(tx.amount).toLocaleString()}</td>
-                                </tr>
-                            ))}
-                            {transactions.length === 0 && (
-                                <tr><td colSpan="5" className="p-10 text-center text-slate-400 italic">No transactions found.</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="p-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
-                        <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage===1} className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50"><ChevronLeft size={16}/></button>
-                        <span className="py-2 px-4 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg">Page {currentPage} of {totalPages}</span>
-                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50"><ChevronRight size={16}/></button>
-                    </div>
-                )}
+            {/* ✅ VIEW SWITCHER (Standard vs Accounting) */}
+            <div className="flex bg-slate-200/50 p-1 rounded-xl w-fit">
+                <button
+                    onClick={() => setViewMode('standard')}
+                    className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'standard' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Transactions
+                </button>
+                <button
+                    onClick={() => setViewMode('accounting')}
+                    className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'accounting' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Accounting Books
+                </button>
             </div>
 
-            {/* ✅ Transaction Modal Instance */}
-            <TransactionModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onSuccess={fetchTransactions}
-            />
-        </>
+            {/* ✅ CONDITIONAL RENDERING */}
+            {viewMode === 'accounting' ? (
+                <AccountingReports />
+            ) : (
+                <>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-800">Financial Ledger</h2>
+                                <p className="text-slate-500 text-xs">Complete history of all fees, deposits, and transfers.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
+                                >
+                                    <ArrowDownLeft size={14} /> Record Transaction
+                                </button>
+
+                                <button
+                                    onClick={handleDownload}
+                                    className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20"
+                                >
+                                    <Download size={14} /> Download CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs tracking-wider border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-4">Ref No</th>
+                                        <th className="p-4">Date</th>
+                                        <th className="p-4">Member</th>
+                                        <th className="p-4">Type</th>
+                                        <th className="p-4 text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {currentTx.map((tx) => (
+                                        <tr key={tx.id} className="hover:bg-slate-50 transition duration-150">
+                                            <td className="p-4 font-mono text-xs text-slate-500">{tx.transactionId}</td>
+                                            <td className="p-4 text-slate-700">{new Date(tx.transactionDate).toLocaleDateString()}</td>
+                                            <td className="p-4 font-medium text-slate-900">
+                                                {tx.member ? `${tx.member.firstName} ${tx.member.lastName}` : 'N/A'}
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                                                    tx.type.includes('DEPOSIT') || tx.type.includes('FEE')
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                    : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                }`}>
+                                                    {tx.type.includes('DEPOSIT') ? <ArrowDownLeft size={10}/> : <ArrowUpRight size={10}/>}
+                                                    {tx.type.replace(/_/g, ' ')}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-right font-bold text-slate-800">KES {Number(tx.amount).toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                    {transactions.length === 0 && (
+                                        <tr><td colSpan="5" className="p-10 text-center text-slate-400 italic">No transactions found.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                            <div className="p-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+                                <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage===1} className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50"><ChevronLeft size={16}/></button>
+                                <span className="py-2 px-4 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-lg">Page {currentPage} of {totalPages}</span>
+                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50"><ChevronRight size={16}/></button>
+                            </div>
+                        )}
+                    </div>
+
+                    <TransactionModal
+                        isOpen={isModalOpen}
+                        onClose={() => setIsModalOpen(false)}
+                        onSuccess={fetchTransactions}
+                    />
+                </>
+            )}
+        </div>
     );
 }
 
