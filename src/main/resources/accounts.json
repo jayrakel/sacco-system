@@ -26,10 +26,15 @@
   { "code": "1030", "name": "Bank - Victoria Commercial Bank", "type": "ASSET" },
   { "code": "1031", "name": "Bank - UBA Kenya", "type": "ASSET" },
 
+  { "code": "1100", "name": "Inventory / Stock for Resale", "type": "ASSET" },
   { "code": "1200", "name": "Loans Receivable - Normal", "type": "ASSET" },
   { "code": "1201", "name": "Loans Receivable - Emergency", "type": "ASSET" },
   { "code": "1300", "name": "Office Furniture & Equipment", "type": "ASSET" },
   { "code": "1301", "name": "Computer Equipment", "type": "ASSET" },
+  { "code": "1302", "name": "Land", "type": "ASSET" },
+  { "code": "1303", "name": "Buildings", "type": "ASSET" },
+  { "code": "1304", "name": "Investment Property (Plots for Resale)", "type": "ASSET" },
+  { "code": "1305", "name": "Motor Vehicles", "type": "ASSET" },
   { "code": "1350", "name": "Accumulated Depreciation", "type": "ASSET" },
 
   { "code": "2001", "name": "Member Deposits (Non-Withdrawable)", "type": "LIABILITY" },

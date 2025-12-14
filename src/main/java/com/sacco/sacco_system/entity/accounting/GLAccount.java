@@ -14,7 +14,7 @@ public class GLAccount {
 
     @Id
     @Column(length = 20)
-    private String code; // e.g., "1001" for Cash, "4001" for Interest Income
+    private String code;
 
     @Column(nullable = false)
     private String name;
@@ -22,7 +22,18 @@ public class GLAccount {
     @Enumerated(EnumType.STRING)
     private AccountType type;
 
-    private BigDecimal balance = BigDecimal.ZERO; // Running Balance
+    @Builder.Default
+    private BigDecimal balance = BigDecimal.ZERO;
 
-    private boolean active = true;
+    // ✅ FIX 1: Use 'Boolean' (Wrapper) instead of 'boolean'
+    // This allows Jackson to handle missing/null values without crashing
+    @Builder.Default
+    private Boolean active = true;
+
+    // ✅ FIX 2: Add this helper method
+    // Since we changed to 'Boolean', Lombok generates 'getActive()'.
+    // This manual method ensures your Service code calling '.isActive()' still works.
+    public boolean isActive() {
+        return Boolean.TRUE.equals(this.active);
+    }
 }
