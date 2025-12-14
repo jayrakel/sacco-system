@@ -31,6 +31,9 @@ public class MemberService {
     private final VerificationTokenRepository tokenRepository;
     private final SavingsAccountRepository savingsAccountRepository;
 
+    // ✅ ADDED THIS LINE (Required for GL Posting)
+    private final AccountingService accountingService;
+
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
@@ -83,7 +86,6 @@ public class MemberService {
                 .lastName(member.getLastName())
                 .email(member.getEmail())
                 .username(member.getEmail())
-                // ✅ CRITICAL FIX: Save the Member Number to the User table
                 .memberNumber(savedMember.getMemberNumber())
                 .phoneNumber(member.getPhoneNumber())
                 .role(User.Role.MEMBER)
@@ -107,7 +109,7 @@ public class MemberService {
                 token
         );
 
-        // 6. Process Registration Fee
+        // 6. Process Registration Fee & Post to GL
         double feeAmount = systemSettingService.getDouble("REGISTRATION_FEE");
         if (feeAmount > 0) {
             Transaction registrationTx = Transaction.builder()
@@ -121,6 +123,17 @@ public class MemberService {
                     .build();
 
             transactionRepository.save(registrationTx);
+
+            // ✅ POST TO GENERAL LEDGER
+            BigDecimal amount = BigDecimal.valueOf(feeAmount);
+            String narrative = "Registration Fee - " + savedMember.getMemberNumber();
+            String ref = registrationTx.getTransactionId();
+
+            if (paymentMethod.equals("CASH")) {
+                accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount); // Debit Cash, Credit Reg Fees
+            } else {
+                accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount); // Debit Bank, Credit Reg Fees
+            }
         }
 
         // 7. Auto-Create Savings Account

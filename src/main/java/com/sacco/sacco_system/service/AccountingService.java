@@ -1,93 +1,106 @@
 package com.sacco.sacco_system.service;
 
-import com.sacco.sacco_system.entity.GLAccount;
-import com.sacco.sacco_system.entity.JournalEntry;
-import com.sacco.sacco_system.entity.JournalEntryLine;
-import com.sacco.sacco_system.repository.GLAccountRepository;
-import com.sacco.sacco_system.repository.JournalEntryRepository;
-import jakarta.annotation.PostConstruct;
+import com.sacco.sacco_system.entity.accounting.*;
+import com.sacco.sacco_system.repository.accounting.GLAccountRepository;
+import com.sacco.sacco_system.repository.accounting.JournalEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class AccountingService {
 
-    private final GLAccountRepository glAccountRepository;
-    private final JournalEntryRepository journalEntryRepository;
+    private final GLAccountRepository accountRepository;
+    private final JournalEntryRepository journalRepository;
 
-    // --- 1. Seed Default Chart of Accounts ---
-    @PostConstruct
-    public void initCoA() {
-        createAccountIfMissing("1000", "Cash / Bank", GLAccount.AccountType.ASSET);
-        createAccountIfMissing("1200", "Loans Receivable", GLAccount.AccountType.ASSET);
-        createAccountIfMissing("2000", "Member Savings", GLAccount.AccountType.LIABILITY);
-        createAccountIfMissing("2100", "Share Capital", GLAccount.AccountType.EQUITY);
-        createAccountIfMissing("4000", "Interest Income", GLAccount.AccountType.INCOME);
-        createAccountIfMissing("4100", "Fee Income", GLAccount.AccountType.INCOME);
-    }
-
-    private void createAccountIfMissing(String code, String name, GLAccount.AccountType type) {
-        if (glAccountRepository.findByCode(code).isEmpty()) {
-            glAccountRepository.save(GLAccount.builder()
-                    .code(code)
-                    .name(name)
-                    .type(type)
-                    .balance(BigDecimal.ZERO)
-                    .build());
-        }
-    }
-
-    // --- 2. Core Posting Logic ---
+    /**
+     * POSTS A DOUBLE-ENTRY TRANSACTION TO THE GL
+     * @param description Narrative
+     * @param referenceNo External Ref (TRX ID)
+     * @param debitAccountCode Code of account receiving value
+     * @param creditAccountCode Code of account giving value
+     * @param amount The value
+     */
     @Transactional
-    public void postJournalEntry(String description, String reference, List<EntryRequest> entries) {
-        // Validation: Debits must equal Credits
-        BigDecimal totalDebit = entries.stream().map(e -> e.debit).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCredit = entries.stream().map(e -> e.credit).reduce(BigDecimal.ZERO, BigDecimal::add);
+    public void postDoubleEntry(String description, String referenceNo, String debitAccountCode, String creditAccountCode, BigDecimal amount) {
 
-        if (totalDebit.compareTo(totalCredit) != 0) {
-            throw new RuntimeException("Accounting Error: Debits (" + totalDebit + ") do not equal Credits (" + totalCredit + ")");
-        }
+        GLAccount debitAcct = accountRepository.findById(debitAccountCode)
+                .orElseThrow(() -> new RuntimeException("Debit Account not found: " + debitAccountCode));
 
-        JournalEntry journal = JournalEntry.builder()
+        GLAccount creditAcct = accountRepository.findById(creditAccountCode)
+                .orElseThrow(() -> new RuntimeException("Credit Account not found: " + creditAccountCode));
+
+        // 1. Create Header
+        JournalEntry entry = JournalEntry.builder()
+                .transactionDate(LocalDateTime.now())
                 .description(description)
-                .reference(reference)
+                .referenceNo(referenceNo)
                 .build();
 
-        List<JournalEntryLine> lines = new ArrayList<>();
+        // 2. Create Debit Line
+        JournalLine debitLine = JournalLine.builder()
+                .journalEntry(entry)
+                .account(debitAcct)
+                .debit(amount)
+                .credit(BigDecimal.ZERO)
+                .build();
 
-        for (EntryRequest req : entries) {
-            GLAccount account = glAccountRepository.findByCode(req.accountCode)
-                    .orElseThrow(() -> new RuntimeException("GL Account not found: " + req.accountCode));
+        // 3. Create Credit Line
+        JournalLine creditLine = JournalLine.builder()
+                .journalEntry(entry)
+                .account(creditAcct)
+                .debit(BigDecimal.ZERO)
+                .credit(amount)
+                .build();
 
-            // Update GL Account Balance
-            // Asset/Expense: Debit increases, Credit decreases
-            // Liability/Equity/Income: Credit increases, Debit decreases
-            if (account.getType() == GLAccount.AccountType.ASSET || account.getType() == GLAccount.AccountType.EXPENSE) {
-                account.setBalance(account.getBalance().add(req.debit).subtract(req.credit));
-            } else {
-                account.setBalance(account.getBalance().add(req.credit).subtract(req.debit));
-            }
-            glAccountRepository.save(account);
+        entry.setLines(List.of(debitLine, creditLine));
 
-            JournalEntryLine line = JournalEntryLine.builder()
-                    .journalEntry(journal)
-                    .account(account)
-                    .debit(req.debit)
-                    .credit(req.credit)
-                    .build();
-            lines.add(line);
-        }
+        // 4. Update GL Balances (Simple rule: Asset/Expense increases on Debit, Liability/Income increases on Credit)
+        updateBalance(debitAcct, amount, true);
+        updateBalance(creditAcct, amount, false);
 
-        journal.setLines(lines);
-        journalEntryRepository.save(journal);
+        journalRepository.save(entry);
     }
 
-    // DTO for internal use
-    public record EntryRequest(String accountCode, BigDecimal debit, BigDecimal credit) {}
+    private void updateBalance(GLAccount account, BigDecimal amount, boolean isDebit) {
+        // Standard Accounting Equation Logic
+        if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
+            account.setBalance(isDebit ? account.getBalance().add(amount) : account.getBalance().subtract(amount));
+        } else {
+            // Liability, Equity, Income -> Credit increases balance
+            account.setBalance(isDebit ? account.getBalance().subtract(amount) : account.getBalance().add(amount));
+        }
+        accountRepository.save(account);
+    }
+
+    // Helper to Initialize Default Accounts
+    public void initChartOfAccounts() {
+        if(accountRepository.count() == 0) {
+            // Assets
+            createAccount("1001", "Cash on Hand", AccountType.ASSET);
+            createAccount("1002", "Bank - Equity Bank", AccountType.ASSET);
+            createAccount("1200", "Loans Receivable", AccountType.ASSET);
+
+            // Liabilities
+            createAccount("2001", "Member Savings Control", AccountType.LIABILITY);
+            createAccount("2002", "Suspense Account", AccountType.LIABILITY);
+
+            // Income
+            createAccount("4001", "Registration Fees", AccountType.INCOME);
+            createAccount("4002", "Loan Interest Income", AccountType.INCOME);
+            createAccount("4003", "Fines & Penalties", AccountType.INCOME);
+
+            // Expenses
+            createAccount("5001", "Office Expenses", AccountType.EXPENSE);
+        }
+    }
+
+    private void createAccount(String code, String name, AccountType type) {
+        accountRepository.save(GLAccount.builder().code(code).name(name).type(type).balance(BigDecimal.ZERO).active(true).build());
+    }
 }

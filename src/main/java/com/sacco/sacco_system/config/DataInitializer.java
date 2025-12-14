@@ -2,6 +2,7 @@ package com.sacco.sacco_system.config;
 
 import com.sacco.sacco_system.entity.User;
 import com.sacco.sacco_system.repository.UserRepository;
+import com.sacco.sacco_system.service.AccountingService; // ✅ Import AccountingService
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -16,6 +17,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AccountingService accountingService; // ✅ Inject AccountingService
 
     @Value("${app.default-admin.email}")
     private String adminEmail;
@@ -25,7 +27,16 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        // 1. Create Admin if missing
         createDefaultAdminIfNotExist();
+
+        // 2. Initialize Finance System (Chart of Accounts)
+        try {
+            accountingService.initChartOfAccounts();
+            System.out.println("✅ Chart of Accounts checked/initialized.");
+        } catch (Exception e) {
+            System.err.println("⚠️ Warning: Could not initialize Chart of Accounts: " + e.getMessage());
+        }
     }
 
     private void createDefaultAdminIfNotExist() {
