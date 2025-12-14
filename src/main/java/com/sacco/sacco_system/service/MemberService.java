@@ -83,7 +83,8 @@ public class MemberService {
                 .lastName(member.getLastName())
                 .email(member.getEmail())
                 .username(member.getEmail())
-                .memberNumber(member.getMemberNumber()) // ✅ MAKE SURE THIS LINE EXISTS
+                // ✅ CRITICAL FIX: Save the Member Number to the User table
+                .memberNumber(savedMember.getMemberNumber())
                 .phoneNumber(member.getPhoneNumber())
                 .role(User.Role.MEMBER)
                 .password(passwordEncoder.encode(tempPassword))
@@ -183,8 +184,6 @@ public class MemberService {
         Member updatedMember = memberRepository.save(member);
         return convertToDTO(updatedMember);
     }
-
-    // --- Helpers ---
 
     private String generateMemberNumber() {
         long count = memberRepository.count();
