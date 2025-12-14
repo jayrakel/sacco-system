@@ -87,10 +87,14 @@ public class AuthController {
             }
         }
 
+        // ✅ UPDATED RESPONSE BUILDER
         AuthResponse response = AuthResponse.builder()
                 .token(token)
                 .userId(user.getId())
                 .username(user.getUsername())
+                .firstName(user.getFirstName())   // ✅ Populate First Name
+                .lastName(user.getLastName())     // ✅ Populate Last Name
+                .memberNumber(user.getMemberNumber()) // ✅ Populate Member No
                 .role(user.getRole().toString())
                 .mustChangePassword(user.isMustChangePassword())
                 .systemSetupRequired(setupRequired)

@@ -34,8 +34,7 @@ public class Transaction {
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
-    // ✅ FIX: Removed 'nullable = false'.
-    // Registration Fees do NOT link to a savings account.
+    // ✅ FIX 1: 'nullable = true' allows Registration Fees (which have no savings account)
     @ManyToOne
     @JoinColumn(name = "savings_account_id", nullable = true)
     private SavingsAccount savingsAccount;
@@ -62,6 +61,7 @@ public class Transaction {
         }
     }
 
+    // ✅ FIX 2: All Transaction Types Included
     public enum TransactionType {
         DEPOSIT, WITHDRAWAL, LOAN_DISBURSEMENT, LOAN_REPAYMENT, REGISTRATION_FEE, FINE, DIVIDEND_PAYOUT
     }

@@ -83,6 +83,7 @@ public class MemberService {
                 .lastName(member.getLastName())
                 .email(member.getEmail())
                 .username(member.getEmail())
+                .memberNumber(member.getMemberNumber()) // ✅ MAKE SURE THIS LINE EXISTS
                 .phoneNumber(member.getPhoneNumber())
                 .role(User.Role.MEMBER)
                 .password(passwordEncoder.encode(tempPassword))

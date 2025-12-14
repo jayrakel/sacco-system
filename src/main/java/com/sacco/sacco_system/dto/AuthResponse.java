@@ -13,8 +13,11 @@ import java.util.UUID;
 public class AuthResponse {
     private String token;
     private UUID userId;
-    private String username;
+    private String username; // This is the email
+    private String firstName; // ✅ NEW
+    private String lastName;  // ✅ NEW
+    private String memberNumber; // ✅ NEW
     private String role;
     private boolean mustChangePassword;
-    private boolean systemSetupRequired; // New Flag
+    private boolean systemSetupRequired;
 }
