@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-
 @Entity
 @Table(name = "transactions")
 @Data
@@ -18,35 +17,56 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class Transaction {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-    
+
+    @Column(nullable = false, unique = true)
+    private String transactionId;
+
+    private String referenceCode;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
     @ManyToOne
-    @JoinColumn(name = "savings_account_id", nullable = false)
+    @JoinColumn(name = "member_id", nullable = false)
+    private Member member;
+
+    @ManyToOne
+    @JoinColumn(name = "savings_account_id")
     private SavingsAccount savingsAccount;
-    
+
     @Enumerated(EnumType.STRING)
     private TransactionType type;
-    
+
     private BigDecimal amount;
-    
-    private String description;
-    
+
     private BigDecimal balanceAfter;
-    
+
+    // ✅ Ensure this is named 'transactionDate' to match your Repository query
     private LocalDateTime transactionDate;
-    
+
+    private String description;
+
     private LocalDateTime createdAt;
-    
+
     @PrePersist
     protected void onCreate() {
-        transactionDate = LocalDateTime.now();
-        createdAt = LocalDateTime.now();
+        // ✅ Initialize both dates
+        this.transactionDate = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
+        if (this.transactionId == null) {
+            this.transactionId = "TRX-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        }
     }
-    
+
     public enum TransactionType {
-        DEPOSIT, WITHDRAWAL
+        DEPOSIT, WITHDRAWAL, LOAN_DISBURSEMENT, LOAN_REPAYMENT, REGISTRATION_FEE, FINE, DIVIDEND_PAYOUT
+    }
+
+    public enum PaymentMethod {
+        CASH, MPESA, BANK_TRANSFER
     }
 }

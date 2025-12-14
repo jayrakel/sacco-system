@@ -1,11 +1,14 @@
 package com.sacco.sacco_system.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper; // ✅ Import
 import com.sacco.sacco_system.dto.MemberDTO;
 import com.sacco.sacco_system.service.MemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType; // ✅ Import
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile; // ✅ Import
 
 import java.util.HashMap;
 import java.util.List;
@@ -16,26 +19,42 @@ import java.util.UUID;
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
 public class MemberController {
-    
+
     private final MemberService memberService;
-    
-    @PostMapping
-    public ResponseEntity<Map<String, Object>> createMember(@RequestBody MemberDTO memberDTO) {
+
+    // ✅ FIXED: Accepts Multipart File + JSON String + Payment Params
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> createMember(
+            @RequestPart("member") String memberDtoString,
+            @RequestPart(value = "file", required = false) MultipartFile file,
+            @RequestParam("paymentMethod") String paymentMethod,
+            @RequestParam("referenceCode") String referenceCode
+    ) {
         try {
-            MemberDTO created = memberService.createMember(memberDTO);
+            // Convert JSON string to DTO
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.findAndRegisterModules(); // Handle Dates
+            MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
+
+            // Call service with all 4 arguments
+            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode);
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", created);
             response.put("message", "Member created successfully");
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
+            e.printStackTrace();
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }
-    
+
+    // ... (Keep existing methods: getMemberById, etc.) ...
+
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getMemberById(@PathVariable UUID id) {
         try {
@@ -51,23 +70,7 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
         }
     }
-    
-    @GetMapping("/number/{memberNumber}")
-    public ResponseEntity<Map<String, Object>> getMemberByNumber(@PathVariable String memberNumber) {
-        try {
-            MemberDTO member = memberService.getMemberByMemberNumber(memberNumber);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", member);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-        }
-    }
-    
+
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllMembers() {
         List<MemberDTO> members = memberService.getAllMembers();
@@ -77,7 +80,7 @@ public class MemberController {
         response.put("count", members.size());
         return ResponseEntity.ok(response);
     }
-    
+
     @GetMapping("/active")
     public ResponseEntity<Map<String, Object>> getActiveMembers() {
         List<MemberDTO> members = memberService.getActiveMembers();
@@ -87,7 +90,7 @@ public class MemberController {
         response.put("count", members.size());
         return ResponseEntity.ok(response);
     }
-    
+
     @PutMapping("/{id}")
     public ResponseEntity<Map<String, Object>> updateMember(@PathVariable UUID id, @RequestBody MemberDTO memberDTO) {
         try {
@@ -104,7 +107,7 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }
-    
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> deleteMember(@PathVariable UUID id) {
         try {
@@ -120,7 +123,7 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }
-    
+
     @GetMapping("/count/active")
     public ResponseEntity<Map<String, Object>> getActiveMembersCount() {
         long count = memberService.getActiveMembersCount();

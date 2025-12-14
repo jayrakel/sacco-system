@@ -18,7 +18,8 @@ public class EmailService {
     @Value("${app.email.from}")
     private String fromEmail;
 
-    @Async // Run in background so the UI doesn't freeze
+    // 1. For System Admins (Setup Phase)
+    @Async
     public void sendVerificationEmail(String to, String firstName, String tempPassword, String token) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
@@ -53,7 +54,7 @@ public class EmailService {
                     firstName, tempPassword, verifyLink, verifyLink
             );
 
-            helper.setText(htmlContent, true); // true = HTML
+            helper.setText(htmlContent, true);
             mailSender.send(message);
             System.out.println("✅ Email sent successfully to " + to);
 
@@ -63,7 +64,7 @@ public class EmailService {
         }
     }
 
-    // ✅ ADD THIS NEW METHOD HERE 👇
+    // 2. Resend Link (General Use)
     @Async
     public void resendVerificationToken(String to, String firstName, String token) {
         try {
@@ -96,6 +97,56 @@ public class EmailService {
             helper.setText(htmlContent, true);
             mailSender.send(message);
             System.out.println("✅ Resend email sent to " + to);
+
+        } catch (MessagingException e) {
+            throw new RuntimeException("Failed to send email");
+        }
+    }
+
+    // 3. ✅ NEW: For New Members (Includes Login Details)
+    @Async
+    public void sendMemberWelcomeEmail(String to, String name, String tempPassword, String token) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(to);
+            helper.setSubject("Welcome to Sacco System - Login Details");
+
+            String verifyLink = "http://localhost:5173/verify-email?token=" + token;
+
+            String htmlContent = String.format(
+                    """
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                        <h2 style="color: #059669;">Welcome, %s!</h2>
+                        <p>Your member registration is complete. An account has been created for you.</p>
+                        
+                        <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #059669;">
+                            <p style="margin: 5px 0;"><strong>Username:</strong> %s</p>
+                            <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <span style="font-family: monospace; font-size: 16px; background: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #ddd;">%s</span></p>
+                        </div>
+    
+                        <p><strong>Action Required:</strong></p>
+                        <ol>
+                            <li>Click the button below to verify your email.</li>
+                            <li>Log in using the temporary password above.</li>
+                            <li>You will be required to set a new, secure password immediately.</li>
+                        </ol>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="%s" style="background-color: #059669; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Verify & Login</a>
+                        </div>
+                        
+                        <p style="font-size: 12px; color: #6b7280;">Link expires in 24 hours.</p>
+                    </div>
+                    """,
+                    name, to, tempPassword, verifyLink
+            );
+
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            System.out.println("✅ Member Welcome Email sent to " + to);
 
         } catch (MessagingException e) {
             throw new RuntimeException("Failed to send email");
