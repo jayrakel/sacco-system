@@ -1,12 +1,16 @@
 package com.sacco.sacco_system.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sacco.sacco_system.entity.accounting.*;
 import com.sacco.sacco_system.repository.accounting.GLAccountRepository;
 import com.sacco.sacco_system.repository.accounting.JournalEntryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,15 +21,8 @@ public class AccountingService {
 
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
+    private final ObjectMapper objectMapper; // Spring Boot automatically provides this
 
-    /**
-     * POSTS A DOUBLE-ENTRY TRANSACTION TO THE GL
-     * @param description Narrative
-     * @param referenceNo External Ref (TRX ID)
-     * @param debitAccountCode Code of account receiving value
-     * @param creditAccountCode Code of account giving value
-     * @param amount The value
-     */
     @Transactional
     public void postDoubleEntry(String description, String referenceNo, String debitAccountCode, String creditAccountCode, BigDecimal amount) {
 
@@ -60,7 +57,7 @@ public class AccountingService {
 
         entry.setLines(List.of(debitLine, creditLine));
 
-        // 4. Update GL Balances (Simple rule: Asset/Expense increases on Debit, Liability/Income increases on Credit)
+        // 4. Update GL Balances
         updateBalance(debitAcct, amount, true);
         updateBalance(creditAcct, amount, false);
 
@@ -68,39 +65,37 @@ public class AccountingService {
     }
 
     private void updateBalance(GLAccount account, BigDecimal amount, boolean isDebit) {
-        // Standard Accounting Equation Logic
         if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
             account.setBalance(isDebit ? account.getBalance().add(amount) : account.getBalance().subtract(amount));
         } else {
-            // Liability, Equity, Income -> Credit increases balance
             account.setBalance(isDebit ? account.getBalance().subtract(amount) : account.getBalance().add(amount));
         }
         accountRepository.save(account);
     }
 
-    // Helper to Initialize Default Accounts
+    // ✅ NEW: Dynamic Initialization from JSON
     public void initChartOfAccounts() {
         if(accountRepository.count() == 0) {
-            // Assets
-            createAccount("1001", "Cash on Hand", AccountType.ASSET);
-            createAccount("1002", "Bank - Equity Bank", AccountType.ASSET);
-            createAccount("1200", "Loans Receivable", AccountType.ASSET);
+            try {
+                System.out.println("📂 Loading Chart of Accounts from JSON...");
 
-            // Liabilities
-            createAccount("2001", "Member Savings Control", AccountType.LIABILITY);
-            createAccount("2002", "Suspense Account", AccountType.LIABILITY);
+                // Read the file
+                InputStream inputStream = new ClassPathResource("accounts.json").getInputStream();
+                List<GLAccount> accounts = objectMapper.readValue(inputStream, new TypeReference<List<GLAccount>>(){});
 
-            // Income
-            createAccount("4001", "Registration Fees", AccountType.INCOME);
-            createAccount("4002", "Loan Interest Income", AccountType.INCOME);
-            createAccount("4003", "Fines & Penalties", AccountType.INCOME);
+                // Save each account
+                for (GLAccount account : accounts) {
+                    account.setBalance(BigDecimal.ZERO);
+                    account.setActive(true);
+                    accountRepository.save(account);
+                }
 
-            // Expenses
-            createAccount("5001", "Office Expenses", AccountType.EXPENSE);
+                System.out.println("✅ Successfully initialized " + accounts.size() + " GL Accounts.");
+
+            } catch (Exception e) {
+                System.err.println("❌ Failed to load accounts.json: " + e.getMessage());
+                e.printStackTrace();
+            }
         }
-    }
-
-    private void createAccount(String code, String name, AccountType type) {
-        accountRepository.save(GLAccount.builder().code(code).name(name).type(type).balance(BigDecimal.ZERO).active(true).build());
     }
 }

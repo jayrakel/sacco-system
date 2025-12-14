@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper; // ✅ Needed for AccountingService
 import com.sacco.sacco_system.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +20,12 @@ public class ApplicationConfig {
 
     private final UserRepository userRepository;
 
+    // ✅ FIX 1: Define ObjectMapper bean (Solves "Parameter 2... required a bean" error)
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
+
     @Bean
     public UserDetailsService userDetailsService() {
         return username -> userRepository.findByEmail(username)
@@ -27,8 +34,9 @@ public class ApplicationConfig {
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        // FIX: Pass userDetailsService() directly to the constructor
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService());
+        // ✅ FIX 2: Pass userDetailsService() to constructor (Solves "cannot be applied to given types" error)
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(userDetailsService());
         authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }
