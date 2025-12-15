@@ -48,14 +48,11 @@ public class AccountingController {
             @RequestParam(required = false) LocalDate endDate
     ) {
         if (endDate == null) endDate = LocalDate.now();
-
         List<GLAccount> reportData = accountingService.getAccountsWithBalancesAsOf(startDate, endDate);
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("data", reportData);
-        response.put("period", (startDate != null ? startDate : "Start") + " to " + endDate);
-
         return ResponseEntity.ok(response);
     }
 
@@ -76,6 +73,17 @@ public class AccountingController {
         response.put("success", true);
         response.put("message", "Account created successfully");
         response.put("data", newAccount);
+        return ResponseEntity.ok(response);
+    }
+
+    // ✅ NEW: Endpoint for Manual Journal Entries (Expenses, Assets)
+    @PostMapping("/journal")
+    public ResponseEntity<Map<String, Object>> postManualEntry(@RequestBody AccountingService.ManualEntryRequest request) {
+        accountingService.postManualJournalEntry(request);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Journal Entry Posted Successfully");
         return ResponseEntity.ok(response);
     }
 }

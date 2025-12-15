@@ -6,6 +6,7 @@ import com.sacco.sacco_system.entity.accounting.*;
 import com.sacco.sacco_system.repository.accounting.GLAccountRepository;
 import com.sacco.sacco_system.repository.accounting.JournalEntryRepository;
 import com.sacco.sacco_system.repository.accounting.JournalLineRepository;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -28,7 +30,7 @@ public class AccountingService {
     private final ObjectMapper objectMapper;
 
     /**
-     * POSTS A DOUBLE-ENTRY TRANSACTION TO THE GL
+     * AUTO: Post a standard Double-Entry Transaction (2 legs)
      */
     @Transactional
     public void postDoubleEntry(String description, String referenceNo, String debitAccountCode, String creditAccountCode, BigDecimal amount) {
@@ -39,14 +41,12 @@ public class AccountingService {
         GLAccount creditAcct = accountRepository.findById(creditAccountCode)
                 .orElseThrow(() -> new RuntimeException("Credit Account not found: " + creditAccountCode));
 
-        // 1. Create Header
         JournalEntry entry = JournalEntry.builder()
                 .transactionDate(LocalDateTime.now())
                 .description(description)
                 .referenceNo(referenceNo)
                 .build();
 
-        // 2. Create Debit Line
         JournalLine debitLine = JournalLine.builder()
                 .journalEntry(entry)
                 .account(debitAcct)
@@ -54,7 +54,6 @@ public class AccountingService {
                 .credit(BigDecimal.ZERO)
                 .build();
 
-        // 3. Create Credit Line
         JournalLine creditLine = JournalLine.builder()
                 .journalEntry(entry)
                 .account(creditAcct)
@@ -64,15 +63,65 @@ public class AccountingService {
 
         entry.setLines(List.of(debitLine, creditLine));
 
-        // 4. Update GL Balances
         updateBalance(debitAcct, amount, true);
         updateBalance(creditAcct, amount, false);
 
         journalRepository.save(entry);
     }
 
+    /**
+     * MANUAL: Post a Multi-Line Journal Entry (Expenses, Assets, Adjustments)
+     */
+    @Transactional
+    public void postManualJournalEntry(ManualEntryRequest request) {
+        // 1. Validate Balance (Debits must equal Credits)
+        BigDecimal totalDebit = request.getLines().stream()
+                .map(ManualEntryLine::getDebit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalCredit = request.getLines().stream()
+                .map(ManualEntryLine::getCredit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalDebit.compareTo(totalCredit) != 0) {
+            throw new RuntimeException("Journal Entry is unbalanced! Total Debit: " + totalDebit + ", Total Credit: " + totalCredit);
+        }
+
+        // 2. Create Header
+        JournalEntry entry = JournalEntry.builder()
+                .transactionDate(request.getDate().atStartOfDay()) // User selected date
+                .postedDate(LocalDateTime.now())
+                .description(request.getDescription())
+                .referenceNo(request.getReference())
+                .lines(new ArrayList<>())
+                .build();
+
+        // 3. Process Lines
+        for (ManualEntryLine lineDto : request.getLines()) {
+            GLAccount account = accountRepository.findById(lineDto.getAccountCode())
+                    .orElseThrow(() -> new RuntimeException("Account not found: " + lineDto.getAccountCode()));
+
+            JournalLine line = JournalLine.builder()
+                    .journalEntry(entry)
+                    .account(account)
+                    .debit(lineDto.getDebit())
+                    .credit(lineDto.getCredit())
+                    .build();
+
+            entry.getLines().add(line);
+
+            // 4. Update Balances
+            if (lineDto.getDebit().compareTo(BigDecimal.ZERO) > 0) {
+                updateBalance(account, lineDto.getDebit(), true);
+            } else {
+                updateBalance(account, lineDto.getCredit(), false);
+            }
+        }
+
+        journalRepository.save(entry);
+    }
+
     private void updateBalance(GLAccount account, BigDecimal amount, boolean isDebit) {
-        // Asset/Expense increase on Debit. Liability/Equity/Income increase on Credit.
         if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
             account.setBalance(isDebit ? account.getBalance().add(amount) : account.getBalance().subtract(amount));
         } else {
@@ -81,17 +130,32 @@ public class AccountingService {
         accountRepository.save(account);
     }
 
-    // Toggle Account Status
+    // --- HELPER DTOs ---
+    @Data
+    public static class ManualEntryRequest {
+        private String description;
+        private String reference;
+        private LocalDate date;
+        private List<ManualEntryLine> lines;
+    }
+
+    @Data
+    public static class ManualEntryLine {
+        private String accountCode;
+        private BigDecimal debit = BigDecimal.ZERO;
+        private BigDecimal credit = BigDecimal.ZERO;
+    }
+
+    // --- OTHER METHODS (Reports, Toggle, Create, Init) ---
+
     @Transactional
     public GLAccount toggleAccountStatus(String code) {
         GLAccount account = accountRepository.findById(code)
                 .orElseThrow(() -> new RuntimeException("Account not found: " + code));
-
         account.setActive(!account.isActive());
         return accountRepository.save(account);
     }
 
-    // Create Manual Account
     @Transactional
     public GLAccount createManualAccount(GLAccount account) {
         if (accountRepository.existsById(account.getCode())) {
@@ -102,16 +166,12 @@ public class AccountingService {
         return accountRepository.save(account);
     }
 
-    // Generate Report Data (Dynamic Balances based on Date)
     public List<GLAccount> getAccountsWithBalancesAsOf(LocalDate startDate, LocalDate endDate) {
         List<GLAccount> allAccounts = accountRepository.findAll();
-
         List<Object[]> totals;
         if (startDate == null) {
-            // Balance Sheet Mode (Up to End Date)
             totals = journalLineRepository.getAccountTotalsUpToDate(endDate.atTime(LocalTime.MAX));
         } else {
-            // Income Statement Mode (Range)
             totals = journalLineRepository.getAccountTotalsInRange(startDate.atStartOfDay(), endDate.atTime(LocalTime.MAX));
         }
 
@@ -133,21 +193,17 @@ public class AccountingService {
             } else {
                 netBalance = creditSum.subtract(debitSum);
             }
-
             account.setBalance(netBalance);
         }
-
         return allAccounts;
     }
 
-    // Initialize Default Accounts
     public void initChartOfAccounts() {
         if(accountRepository.count() == 0) {
             try {
                 System.out.println("📂 Loading Chart of Accounts from JSON...");
                 InputStream inputStream = new ClassPathResource("accounts.json").getInputStream();
                 List<GLAccount> accounts = objectMapper.readValue(inputStream, new TypeReference<List<GLAccount>>(){});
-
                 for (GLAccount account : accounts) {
                     account.setBalance(BigDecimal.ZERO);
                     account.setActive(true);

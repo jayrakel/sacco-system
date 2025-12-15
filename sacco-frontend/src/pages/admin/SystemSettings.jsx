@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api';
-import { Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon } from 'lucide-react';
+import { Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon, Banknote } from 'lucide-react';
 
 export default function SystemSettings() {
   const [settings, setSettings] = useState([]);
@@ -35,7 +35,6 @@ export default function SystemSettings() {
     setSettings(settings.map(s => s.key === key ? { ...s, value: newValue } : s));
   };
 
-  // ✅ New Handler for Image Uploads
   const handleFileUpload = async (key, file) => {
     if (!file) return;
 
@@ -48,7 +47,6 @@ export default function SystemSettings() {
         });
 
         if (response.data.success) {
-            // Update local state with new filename
             setSettings(settings.map(s => s.key === key ? response.data.data : s));
             setMessage(`Image for ${key.replace(/_/g, ' ')} updated!`);
         }
@@ -61,7 +59,6 @@ export default function SystemSettings() {
     setSaving(true);
     setMessage('');
     try {
-      // Filter out image keys, we handle those separately
       const textSettings = settings.filter(s => !s.key.includes('LOGO') && !s.key.includes('FAVICON'));
 
       await Promise.all(textSettings.map(s =>
@@ -76,9 +73,12 @@ export default function SystemSettings() {
 
   if (loading) return <div className="p-8">Loading configuration...</div>;
 
-  // Separate settings
-  const brandingSettings = settings.filter(s => s.key.includes('SACCO'));
-  const financialSettings = settings.filter(s => !s.key.includes('SACCO'));
+  // ✅ Categorize Settings
+  const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
+  const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
+  const financialSettings = settings.filter(s =>
+    !s.key.includes('SACCO') && !s.key.includes('BRAND') && !s.key.includes('BANK') && !s.key.includes('PAYBILL')
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-8 font-sans flex justify-center">
@@ -89,7 +89,7 @@ export default function SystemSettings() {
             <Settings className="text-emerald-400" size={28} />
             <div>
               <h2 className="text-xl font-bold">System Configuration</h2>
-              <p className="text-slate-400 text-sm">Manage branding and financial parameters.</p>
+              <p className="text-slate-400 text-sm">Manage branding, banking, and financial parameters.</p>
             </div>
           </div>
           <button
@@ -109,46 +109,6 @@ export default function SystemSettings() {
 
         <div className="p-8 space-y-8">
 
-            {/* 0. THEME CONFIGURATION */}
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Theme & Colors</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Primary Color */}
-                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex justify-between items-center">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Primary Color</label>
-                                        <p className="text-xs text-slate-400">Main buttons, highlights, and spinners.</p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="font-mono text-sm text-slate-600">{settings.find(s => s.key === 'BRAND_COLOR_PRIMARY')?.value}</span>
-                                        <input
-                                            type="color"
-                                            value={settings.find(s => s.key === 'BRAND_COLOR_PRIMARY')?.value || '#059669'}
-                                            onChange={(e) => handleValueChange('BRAND_COLOR_PRIMARY', e.target.value)}
-                                            className="w-12 h-12 rounded cursor-pointer border-0 p-0"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Secondary Color */}
-                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex justify-between items-center">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Secondary Color</label>
-                                        <p className="text-slate-400">Sidebars, navigation, and headers.</p>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="font-mono text-sm text-slate-600">{settings.find(s => s.key === 'BRAND_COLOR_SECONDARY')?.value}</span>
-                                        <input
-                                            type="color"
-                                            value={settings.find(s => s.key === 'BRAND_COLOR_SECONDARY')?.value || '#0f172a'}
-                                            onChange={(e) => handleValueChange('BRAND_COLOR_SECONDARY', e.target.value)}
-                                            className="w-12 h-12 rounded cursor-pointer border-0 p-0"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
             {/* 1. BRANDING SECTION */}
             <div>
                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Branding & Identity</h3>
@@ -160,7 +120,6 @@ export default function SystemSettings() {
                             </label>
 
                             {setting.key.includes('LOGO') || setting.key.includes('FAVICON') ? (
-                                // File Input for Images
                                 <div className="flex items-center gap-4">
                                     <div className="w-16 h-16 bg-white border rounded-lg flex items-center justify-center overflow-hidden">
                                         {setting.value ? (
@@ -172,31 +131,52 @@ export default function SystemSettings() {
                                     <div className="flex-1">
                                         <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded text-sm flex items-center gap-2 w-fit transition">
                                             <Upload size={14} /> Upload Image
-                                            <input
-                                                type="file"
-                                                accept="image/*"
-                                                className="hidden"
-                                                onChange={(e) => handleFileUpload(setting.key, e.target.files[0])}
-                                            />
+                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(setting.key, e.target.files[0])} />
                                         </label>
                                         <p className="text-xs text-slate-400 mt-1">Recommended: PNG or JPG</p>
                                     </div>
                                 </div>
                             ) : (
-                                // Standard Text Input
-                                <input
-                                    type="text"
-                                    value={setting.value}
-                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                    className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
+                                setting.key.includes('COLOR') ? (
+                                    <div className="flex items-center gap-3">
+                                        <input type="color" value={setting.value || '#000000'} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-12 h-12 rounded cursor-pointer border-0 p-0" />
+                                        <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
+                                    </div>
+                                ) : (
+                                    <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                )
                             )}
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* 2. FINANCIAL SECTION */}
+            {/* ✅ 2. DEPOSIT ACCOUNT DETAILS (New Section) */}
+            <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                    <Banknote size={20} className="text-indigo-600"/> Deposit Account Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {bankSettings.map((setting) => (
+                        <div key={setting.key} className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                            <label className="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wide">
+                                {setting.key.replace(/_/g, ' ')}
+                            </label>
+                            <input
+                                type="text"
+                                value={setting.value}
+                                onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                className="w-full p-2 border border-indigo-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                                placeholder={setting.description}
+                            />
+                            <p className="text-xs text-indigo-400 mt-2">{setting.description}</p>
+                        </div>
+                    ))}
+                    {bankSettings.length === 0 && <p className="text-slate-400 italic text-sm">No bank details configured. Restart backend to initialize.</p>}
+                </div>
+            </div>
+
+            {/* 3. FINANCIAL PARAMETERS */}
             <div>
                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Financial Parameters</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
