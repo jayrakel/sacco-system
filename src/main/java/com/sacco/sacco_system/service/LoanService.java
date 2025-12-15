@@ -27,7 +27,7 @@ public class LoanService {
     private final TransactionRepository transactionRepository;
     private final AccountingService accountingService;
     private final GuarantorRepository guarantorRepository;
-    private final ChargeRepository chargeRepository; // ✅ ADDED: For Fees
+    private final ChargeRepository chargeRepository;
 
     // ========================================================================
     // 1. APPLICATION & CREATION
@@ -280,8 +280,7 @@ public class LoanService {
                 if (penaltyRate == null || penaltyRate.compareTo(BigDecimal.ZERO) == 0) continue;
 
                 for (LoanRepayment repayment : overdueRepayments) {
-                    // Logic to ensure we don't charge multiple times for the same month can be added here
-                    // For now, we calculate penalty on the overdue amount
+                    // Calculate Penalty on Overdue Amount
                     BigDecimal overdueAmount = loan.getMonthlyRepayment().subtract(repayment.getTotalPaid());
                     BigDecimal penalty = overdueAmount.multiply(penaltyRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 

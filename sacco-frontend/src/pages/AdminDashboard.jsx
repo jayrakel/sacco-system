@@ -7,7 +7,7 @@ import {
     LayoutDashboard, Users, Wallet, Settings, LogOut,
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
-    PieChart, Activity, AlertCircle, PiggyBank, FileBarChart
+    PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck
 } from 'lucide-react';
 
 // Components
@@ -21,6 +21,7 @@ import LoanProducts from '../features/loans/components/LoanProducts';
 import SavingsManager from '../features/savings/components/SavingsManager';
 import SavingsProducts from '../features/savings/components/SavingsProducts';
 import ReportsDashboard from '../features/reports/ReportsDashboard';
+import AuditLogs from '../features/admin/components/AuditLogs';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -80,6 +81,7 @@ export default function AdminDashboard() {
                     </div>
                 );
             default: return <OverviewTab />;
+            case 'audit': return <AuditLogs />;
         }
     };
 
@@ -103,6 +105,7 @@ export default function AdminDashboard() {
                         <div className="w-px bg-slate-300 mx-1 h-6 self-center"></div>
                         <TabButton id="register" label="Register New" icon={UserPlus} />
                         <TabButton id="settings" label="Configuration" icon={Settings} />
+                        <TabButton id="audit" label="Audit & Security" icon={ShieldCheck} />
                     </div>
                 </div>
 
