@@ -85,6 +85,7 @@ export default function AdminDashboard() {
                     <div className="flex gap-2 w-max">
                         <TabButton id="overview" label="Dashboard" icon={LayoutDashboard} />
                         <TabButton id="finance" label="Finance" icon={Wallet} />
+                        <TabButton id="loans" label="Loans & Credit" icon={CreditCard} />
                         <TabButton id="members" label="Members" icon={Users} />
                         <div className="w-px bg-slate-300 mx-1 h-6 self-center"></div>
                         <TabButton id="register" label="Register New" icon={UserPlus} />

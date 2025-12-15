@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { Package, Plus, DollarSign, Clock, Users, Save } from 'lucide-react';
+// ✅ FIX: Added 'FileText' to the import list below
+import { Package, Plus, DollarSign, Clock, Users, Save, FileText } from 'lucide-react';
 
 export default function LoanProducts() {
     const [products, setProducts] = useState([]);
