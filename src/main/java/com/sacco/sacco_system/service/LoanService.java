@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.service;
 
+import com.sacco.sacco_system.annotation.Loggable; // ✅ Uses Automation
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.*;
@@ -33,6 +34,7 @@ public class LoanService {
     // 1. APPLICATION & CREATION
     // ========================================================================
 
+    @Loggable(action = "APPLY_LOAN", category = "LOANS")
     public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal principalAmount, Integer durationMonths) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
@@ -127,6 +129,7 @@ public class LoanService {
     // 2. LIFECYCLE MANAGEMENT
     // ========================================================================
 
+    @Loggable(action = "APPROVE_LOAN", category = "LOANS")
     public LoanDTO approveLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         if (loan.getStatus() != Loan.LoanStatus.PENDING) throw new RuntimeException("Loan is not pending approval.");
@@ -136,6 +139,7 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    @Loggable(action = "REJECT_LOAN", category = "LOANS")
     public LoanDTO rejectLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         if (loan.getStatus() != Loan.LoanStatus.PENDING) throw new RuntimeException("Only PENDING loans can be rejected.");
@@ -144,6 +148,7 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    @Loggable(action = "DISBURSE_LOAN", category = "LOANS")
     public LoanDTO disburseLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         if (loan.getStatus() != Loan.LoanStatus.APPROVED) throw new RuntimeException("Loan must be APPROVED first.");
@@ -151,7 +156,6 @@ public class LoanService {
         // ✅ 1. Apply Processing Fee (If any)
         BigDecimal fee = loan.getProduct().getProcessingFee();
         if (fee != null && fee.compareTo(BigDecimal.ZERO) > 0) {
-            // Record the Fee
             Charge charge = Charge.builder()
                     .member(loan.getMember())
                     .loan(loan)
@@ -162,7 +166,6 @@ public class LoanService {
                     .build();
             chargeRepository.save(charge);
 
-            // GL: Debit Cash (Fee Income), Credit Fee Income (4000)
             accountingService.postDoubleEntry("Processing Fee " + loan.getLoanNumber(), "FEE-" + loan.getLoanNumber(), "1001", "4000", fee);
         }
 
@@ -187,6 +190,7 @@ public class LoanService {
         return convertToDTO(loan);
     }
 
+    @Loggable(action = "LOAN_REPAYMENT", category = "LOANS")
     public LoanRepayment repayLoan(UUID loanId, BigDecimal amount) {
         LoanRepayment repayment = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
                         loanId, LoanRepayment.RepaymentStatus.PENDING)
@@ -226,6 +230,7 @@ public class LoanService {
     // 3. ADVANCED FEATURES (Write-off, Restructure, Penalties)
     // ========================================================================
 
+    @Loggable(action = "WRITE_OFF_LOAN", category = "LOANS")
     public void writeOffLoan(UUID loanId, String reason) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         BigDecimal balance = loan.getLoanBalance();
@@ -244,10 +249,10 @@ public class LoanService {
                 .build();
         transactionRepository.save(tx);
 
-        // GL: Debit Bad Debts (5011), Credit Loans Receivable (1200)
         accountingService.postDoubleEntry("Write-Off " + loan.getLoanNumber(), tx.getTransactionId(), "5011", "1200", balance);
     }
 
+    @Loggable(action = "RESTRUCTURE_LOAN", category = "LOANS")
     public LoanDTO restructureLoan(UUID loanId, Integer newDurationMonths) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -269,7 +274,6 @@ public class LoanService {
         LocalDate today = LocalDate.now();
 
         for (Loan loan : activeLoans) {
-            // Find overdue repayments
             List<LoanRepayment> overdueRepayments = loanRepaymentRepository.findByLoanIdAndStatus(loan.getId(), LoanRepayment.RepaymentStatus.PENDING)
                     .stream()
                     .filter(r -> r.getDueDate().isBefore(today))
@@ -280,16 +284,13 @@ public class LoanService {
                 if (penaltyRate == null || penaltyRate.compareTo(BigDecimal.ZERO) == 0) continue;
 
                 for (LoanRepayment repayment : overdueRepayments) {
-                    // Calculate Penalty on Overdue Amount
                     BigDecimal overdueAmount = loan.getMonthlyRepayment().subtract(repayment.getTotalPaid());
                     BigDecimal penalty = overdueAmount.multiply(penaltyRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
                     if (penalty.compareTo(BigDecimal.ZERO) > 0) {
-                        // Increase Loan Balance
                         loan.setLoanBalance(loan.getLoanBalance().add(penalty));
                         loanRepository.save(loan);
 
-                        // Record Charge
                         Charge charge = Charge.builder()
                                 .member(loan.getMember())
                                 .loan(loan)
@@ -299,7 +300,6 @@ public class LoanService {
                                 .build();
                         chargeRepository.save(charge);
 
-                        // GL Posting: Debit Loans Receivable (Asset), Credit Penalty Income (4001)
                         accountingService.postDoubleEntry("Penalty " + loan.getLoanNumber(), "PEN-" + repayment.getId(), "1200", "4001", penalty);
                     }
                 }
