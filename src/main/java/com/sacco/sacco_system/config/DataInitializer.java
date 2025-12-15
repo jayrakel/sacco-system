@@ -39,7 +39,11 @@ public class DataInitializer implements CommandLineRunner {
         // 3. Initialize Finance System
         try {
             accountingService.initChartOfAccounts();
-            System.out.println("✅ Chart of Accounts checked/initialized.");
+
+            // ✅ ADD THIS LINE: Ensure mappings are always up to date
+            accountingService.initDefaultMappings();
+
+            System.out.println("✅ Chart of Accounts & Mappings checked/initialized.");
         } catch (Exception e) {
             System.err.println("⚠️ Warning: Could not initialize Chart of Accounts: " + e.getMessage());
         }

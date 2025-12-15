@@ -25,13 +25,32 @@ public class AccountingService {
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
     private final JournalLineRepository journalLineRepository;
+    private final GlMappingRepository glMappingRepository; // ✅ NEW: Dynamic Mappings
+    private final FiscalPeriodRepository fiscalPeriodRepository; // ✅ NEW: Fiscal Control
     private final ObjectMapper objectMapper;
+
+    /**
+     * ✅ NEW: High-Level Event Poster (Recommended)
+     * Looks up the GL Codes from DB instead of hardcoding strings.
+     */
+    @Transactional
+    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
+        // 1. Find the Mapping (e.g. "LOAN_DISBURSEMENT" -> Dr 1200, Cr 1001)
+        GlMapping mapping = glMappingRepository.findByEventName(eventName)
+                .orElseThrow(() -> new RuntimeException("GL Mapping not found for event: " + eventName));
+
+        // 2. Delegate to standard poster
+        postDoubleEntry(description, referenceNo, mapping.getDebitAccountCode(), mapping.getCreditAccountCode(), amount);
+    }
 
     /**
      * AUTO: Post a standard Double-Entry Transaction (2 legs)
      */
     @Transactional
     public void postDoubleEntry(String description, String referenceNo, String debitAccountCode, String creditAccountCode, BigDecimal amount) {
+
+        // 1. Check Fiscal Period
+        checkFiscalPeriod(LocalDate.now());
 
         GLAccount debitAcct = accountRepository.findById(debitAccountCode)
                 .orElseThrow(() -> new RuntimeException("Debit Account not found: " + debitAccountCode));
@@ -45,19 +64,8 @@ public class AccountingService {
                 .referenceNo(referenceNo)
                 .build();
 
-        JournalLine debitLine = JournalLine.builder()
-                .journalEntry(entry)
-                .account(debitAcct)
-                .debit(amount)
-                .credit(BigDecimal.ZERO)
-                .build();
-
-        JournalLine creditLine = JournalLine.builder()
-                .journalEntry(entry)
-                .account(creditAcct)
-                .debit(BigDecimal.ZERO)
-                .credit(amount)
-                .build();
+        JournalLine debitLine = JournalLine.builder().journalEntry(entry).account(debitAcct).debit(amount).credit(BigDecimal.ZERO).build();
+        JournalLine creditLine = JournalLine.builder().journalEntry(entry).account(creditAcct).debit(BigDecimal.ZERO).credit(amount).build();
 
         entry.setLines(List.of(debitLine, creditLine));
 
@@ -67,27 +75,30 @@ public class AccountingService {
         journalRepository.save(entry);
     }
 
+    private void checkFiscalPeriod(LocalDate date) {
+        fiscalPeriodRepository.findByActiveTrue().ifPresent(period -> {
+            if (period.isClosed()) {
+                throw new RuntimeException("Fiscal Period is closed. No new transactions allowed.");
+            }
+        });
+    }
+
     /**
      * MANUAL: Post a Multi-Line Journal Entry (Expenses, Assets, Adjustments)
      */
     @Transactional
     public void postManualJournalEntry(ManualEntryRequest request) {
-        // 1. Validate Balance (Debits must equal Credits)
-        BigDecimal totalDebit = request.getLines().stream()
-                .map(ManualEntryLine::getDebit)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        checkFiscalPeriod(request.getDate());
 
-        BigDecimal totalCredit = request.getLines().stream()
-                .map(ManualEntryLine::getCredit)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDebit = request.getLines().stream().map(ManualEntryLine::getDebit).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCredit = request.getLines().stream().map(ManualEntryLine::getCredit).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         if (totalDebit.compareTo(totalCredit) != 0) {
             throw new RuntimeException("Journal Entry is unbalanced! Total Debit: " + totalDebit + ", Total Credit: " + totalCredit);
         }
 
-        // 2. Create Header
         JournalEntry entry = JournalEntry.builder()
-                .transactionDate(request.getDate().atStartOfDay()) // User selected date
+                .transactionDate(request.getDate().atStartOfDay())
                 .postedDate(LocalDateTime.now())
                 .description(request.getDescription())
                 .referenceNo(request.getReference())
@@ -207,11 +218,32 @@ public class AccountingService {
                     account.setActive(true);
                     accountRepository.save(account);
                 }
+                // Also init default mappings
+                initDefaultMappings();
                 System.out.println("✅ Successfully initialized " + accounts.size() + " GL Accounts.");
             } catch (Exception e) {
                 System.err.println("❌ Failed to load accounts.json: " + e.getMessage());
                 e.printStackTrace();
             }
+        }
+    }
+
+    // ✅ NEW: Seed Default Mappings if missing
+    public void initDefaultMappings() {
+        createMapping("LOAN_DISBURSEMENT", "1200", "1001", "Loan Disbursement");
+        createMapping("LOAN_REPAYMENT", "1001", "1200", "Loan Repayment");
+        createMapping("SAVINGS_DEPOSIT", "1001", "2001", "Member Deposit");
+        createMapping("SAVINGS_WITHDRAWAL", "2001", "1001", "Member Withdrawal");
+        createMapping("INTEREST_EARNED", "5006", "2002", "Interest on Savings");
+        createMapping("PENALTY_CHARGED", "1200", "4001", "Penalty Charged");
+        createMapping("PROCESSING_FEE", "1001", "4000", "Processing Fee");
+        createMapping("WRITE_OFF", "5011", "1200", "Bad Debt Write-off");
+        createMapping("ASSET_PURCHASE", "1500", "1001", "Asset Purchase");
+    }
+
+    private void createMapping(String event, String dr, String cr, String desc) {
+        if (glMappingRepository.findById(event).isEmpty()) {
+            glMappingRepository.save(new GlMapping(event, dr, cr, desc));
         }
     }
 }
