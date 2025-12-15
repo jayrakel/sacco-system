@@ -7,7 +7,7 @@ import {
     LayoutDashboard, Users, Wallet, Settings, LogOut,
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
-    PieChart, Activity, AlertCircle
+    PieChart, Activity, AlertCircle, PiggyBank
 } from 'lucide-react';
 
 // Components
@@ -18,6 +18,8 @@ import TransactionModal from '../components/TransactionModal';
 import AccountingReports from '../features/finance/components/AccountingReports';
 import LoanManager from '../features/loans/components/LoanManager';
 import LoanProducts from '../features/loans/components/LoanProducts';
+import SavingsManager from '../features/savings/components/SavingsManager';
+import SavingsProducts from '../features/savings/components/SavingsProducts';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -48,6 +50,13 @@ export default function AdminDashboard() {
         switch(activeTab) {
             case 'overview': return <OverviewTab />;
             case 'finance': return <FinanceTab />;
+            case 'savings': return (
+                <div className="space-y-8">
+                    <SavingsProducts />
+                    <div className="border-t border-slate-200 my-4"></div>
+                    <SavingsManager />
+                </div>
+            );
             case 'loans': return (
                             <div className="space-y-8">
                                 <LoanProducts />
@@ -85,6 +94,7 @@ export default function AdminDashboard() {
                     <div className="flex gap-2 w-max">
                         <TabButton id="overview" label="Dashboard" icon={LayoutDashboard} />
                         <TabButton id="finance" label="Finance" icon={Wallet} />
+                        <TabButton id="savings" label="Savings" icon={PiggyBank} />
                         <TabButton id="loans" label="Loans & Credit" icon={CreditCard} />
                         <TabButton id="members" label="Members" icon={Users} />
                         <div className="w-px bg-slate-300 mx-1 h-6 self-center"></div>

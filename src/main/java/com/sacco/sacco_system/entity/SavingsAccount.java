@@ -1,12 +1,15 @@
 package com.sacco.sacco_system.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -25,12 +28,17 @@ public class SavingsAccount {
     @Column(unique = true, nullable = false)
     private String accountNumber;
 
-    // ✅ Using ManyToOne allows a member to have multiple accounts later (Savings, Holiday, Junior)
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id", nullable = false)
+    @JsonIgnoreProperties("savingsAccounts")
     private Member member;
 
-    @Builder.Default // ✅ Ensures builder uses this default
+    // ✅ NEW: Link to Product (Defines the rules)
+    @ManyToOne
+    @JoinColumn(name = "product_id")
+    private SavingsProduct product;
+
+    @Builder.Default
     private BigDecimal balance = BigDecimal.ZERO;
 
     @Builder.Default
@@ -39,12 +47,21 @@ public class SavingsAccount {
     @Builder.Default
     private BigDecimal totalWithdrawals = BigDecimal.ZERO;
 
+    @Builder.Default
+    private BigDecimal accruedInterest = BigDecimal.ZERO;
+
+    // ✅ NEW: For Fixed/Restricted Accounts
+    private LocalDate maturityDate;
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private AccountStatus status = AccountStatus.ACTIVE;
 
     private LocalDateTime accountOpenDate;
+
+    @CreationTimestamp
     private LocalDateTime createdAt;
+
     private LocalDateTime updatedAt;
 
     @PrePersist
@@ -61,6 +78,6 @@ public class SavingsAccount {
     }
 
     public enum AccountStatus {
-        ACTIVE, CLOSED, FROZEN
+        ACTIVE, DORMANT, CLOSED, FROZEN, MATURED
     }
 }

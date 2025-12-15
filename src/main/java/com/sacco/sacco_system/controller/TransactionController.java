@@ -48,10 +48,12 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Transaction reversed"));
     }
 
+    // ✅ FIXED: Removed 'rate' parameter.
+    // Interest is now calculated automatically based on each account's Product Rate.
     @PostMapping("/interest")
-    public ResponseEntity<?> applyInterest(@RequestParam BigDecimal rate) {
-        savingsService.applyMonthlyInterest(rate);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Interest applied to all accounts"));
+    public ResponseEntity<?> applyInterest() {
+        savingsService.applyMonthlyInterest();
+        return ResponseEntity.ok(Map.of("success", true, "message", "Monthly Interest applied based on Product Rates"));
     }
 
     @GetMapping("/download")

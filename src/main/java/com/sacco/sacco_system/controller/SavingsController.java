@@ -2,9 +2,11 @@ package com.sacco.sacco_system.controller;
 
 import com.sacco.sacco_system.dto.SavingsAccountDTO;
 import com.sacco.sacco_system.entity.SavingsAccount;
+import com.sacco.sacco_system.entity.SavingsProduct;
 import com.sacco.sacco_system.entity.User;
 import com.sacco.sacco_system.repository.MemberRepository;
 import com.sacco.sacco_system.repository.SavingsAccountRepository;
+import com.sacco.sacco_system.repository.SavingsProductRepository;
 import com.sacco.sacco_system.service.SavingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,25 +26,48 @@ import java.util.UUID;
 public class SavingsController {
 
     private final SavingsService savingsService;
-
-    // ✅ Additional dependencies for the Dashboard Endpoint
+    private final SavingsProductRepository savingsProductRepository;
     private final SavingsAccountRepository savingsRepository;
     private final MemberRepository memberRepository;
 
-    @PostMapping("/account")
-    public ResponseEntity<Map<String, Object>> createSavingsAccount(@RequestParam UUID memberId) {
+    // ========================================================================
+    // 1. SAVINGS PRODUCTS (Configuration)
+    // ========================================================================
+
+    @GetMapping("/products")
+    public ResponseEntity<Map<String, Object>> getAllProducts() {
+        return ResponseEntity.ok(Map.of("success", true, "data", savingsProductRepository.findAll()));
+    }
+
+    @PostMapping("/products")
+    public ResponseEntity<Map<String, Object>> createProduct(@RequestBody SavingsProduct product) {
         try {
-            SavingsAccountDTO account = savingsService.createSavingsAccount(memberId);
+            SavingsProduct saved = savingsProductRepository.save(product);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(Map.of("success", true, "message", "Savings Product Created", "data", saved));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 2. ACCOUNT MANAGEMENT (Opening & Retrieval)
+    // ========================================================================
+
+    @PostMapping("/open")
+    public ResponseEntity<Map<String, Object>> openAccount(
+            @RequestParam UUID memberId,
+            @RequestParam UUID productId,
+            @RequestParam(required = false, defaultValue = "0") BigDecimal initialDeposit) {
+        try {
+            SavingsAccountDTO account = savingsService.openAccount(memberId, productId, initialDeposit);
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", account);
-            response.put("message", "Savings account created successfully");
+            response.put("message", "Savings account opened successfully");
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
@@ -50,15 +75,9 @@ public class SavingsController {
     public ResponseEntity<Map<String, Object>> getSavingsAccountById(@PathVariable UUID id) {
         try {
             SavingsAccountDTO account = savingsService.getSavingsAccountById(id);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", account);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("success", true, "data", account));
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
@@ -66,37 +85,33 @@ public class SavingsController {
     public ResponseEntity<Map<String, Object>> getSavingsAccountByNumber(@PathVariable String accountNumber) {
         try {
             SavingsAccountDTO account = savingsService.getSavingsAccountByNumber(accountNumber);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", account);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("success", true, "data", account));
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
     @GetMapping("/member/{memberId}")
     public ResponseEntity<Map<String, Object>> getSavingsAccountsByMemberId(@PathVariable UUID memberId) {
         List<SavingsAccountDTO> accounts = savingsService.getSavingsAccountsByMemberId(memberId);
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", accounts);
-        response.put("count", accounts.size());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "data", accounts, "count", accounts.size()));
     }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllSavingsAccounts() {
         List<SavingsAccountDTO> accounts = savingsService.getAllSavingsAccounts();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", accounts);
-        response.put("count", accounts.size());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "data", accounts, "count", accounts.size()));
     }
+
+    @GetMapping("/total-balance")
+    public ResponseEntity<Map<String, Object>> getTotalBalance() {
+        BigDecimal totalBalance = savingsService.getTotalSavingsBalance();
+        return ResponseEntity.ok(Map.of("success", true, "totalBalance", totalBalance));
+    }
+
+    // ========================================================================
+    // 3. TRANSACTIONS (Deposit & Withdraw)
+    // ========================================================================
 
     @PostMapping("/deposit")
     public ResponseEntity<Map<String, Object>> deposit(
@@ -105,16 +120,9 @@ public class SavingsController {
             @RequestParam(required = false) String description) {
         try {
             SavingsAccountDTO account = savingsService.deposit(accountNumber, amount, description);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", account);
-            response.put("message", "Deposit successful");
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Deposit successful", "data", account));
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
@@ -125,47 +133,51 @@ public class SavingsController {
             @RequestParam(required = false) String description) {
         try {
             SavingsAccountDTO account = savingsService.withdraw(accountNumber, amount, description);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", account);
-            response.put("message", "Withdrawal successful");
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Withdrawal successful", "data", account));
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    @GetMapping("/total-balance")
-    public ResponseEntity<Map<String, Object>> getTotalBalance() {
-        BigDecimal totalBalance = savingsService.getTotalSavingsBalance();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("totalBalance", totalBalance);
-        return ResponseEntity.ok(response);
-    }
+    // ========================================================================
+    // 4. MEMBER DASHBOARD (Self-Service)
+    // ========================================================================
 
-    // ✅ NEW ENDPOINT: For Member Dashboard
     @GetMapping("/my-balance")
     public ResponseEntity<Map<String, Object>> getMyBalance() {
-        // 1. Get Logged-in User
-        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        try {
+            // 1. Get Logged-in User
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (!(principal instanceof User)) {
+                throw new RuntimeException("User not authenticated");
+            }
+            User user = (User) principal;
 
-        // 2. Find Member Profile linked to this User
-        var member = memberRepository.findByEmail(user.getEmail())
-                .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
+            // 2. Find Member Profile
+            var member = memberRepository.findByEmail(user.getEmail())
+                    .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
 
-        // 3. Get Active Savings Account
-        SavingsAccount account = savingsRepository.findActiveAccountByMemberId(member.getId())
-                .orElseThrow(() -> new RuntimeException("No active savings account found. Please contact admin."));
+            // 3. Get Accounts
+            List<SavingsAccount> accounts = savingsRepository.findByMemberId(member.getId());
+            if (accounts.isEmpty()) {
+                throw new RuntimeException("No savings accounts found.");
+            }
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("accountNumber", account.getAccountNumber());
-        response.put("balance", account.getBalance());
+            // 4. Return Summary (Summing all balances for simple view, or returning main account)
+            BigDecimal totalBalance = accounts.stream()
+                    .map(SavingsAccount::getBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return ResponseEntity.ok(response);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("accountNumber", accounts.get(0).getAccountNumber()); // Primary Account
+            response.put("balance", totalBalance); // Total Balance across all products
+            response.put("accounts", accounts); // List of all accounts
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
+        }
     }
 }

@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Data
@@ -21,4 +22,9 @@ public class SavingsAccountDTO {
     private BigDecimal totalDeposits;
     private BigDecimal totalWithdrawals;
     private String status;
+
+    // ✅ NEW FIELDS FOR UI
+    private String productName;
+    private BigDecimal interestRate;
+    private LocalDate maturityDate;
 }
