@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -31,10 +33,23 @@ public class Guarantor {
 
     private BigDecimal guaranteeAmount;
 
+    // ✅ ADDED: Status Field
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private GuarantorStatus status = GuarantorStatus.PENDING;
+
+    // ✅ ADDED: Date Accepted
+    private LocalDate dateAccepted;
+
     private LocalDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    // ✅ ADDED: Enum Definition
+    public enum GuarantorStatus {
+        PENDING, ACCEPTED, REJECTED
     }
 }

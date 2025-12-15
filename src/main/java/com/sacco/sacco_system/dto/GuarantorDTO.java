@@ -17,4 +17,5 @@ public class GuarantorDTO {
     private UUID memberId;      // The ID of the person giving the guarantee
     private String memberName;  // Useful to show the name in the response
     private BigDecimal guaranteeAmount;
+    private String status;      // ✅ ADDED: Missing field causing the error
 }

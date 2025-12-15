@@ -16,6 +16,8 @@ import AddMember from './members/AddMember';
 import SystemSettings from './admin/SystemSettings';
 import TransactionModal from '../components/TransactionModal';
 import AccountingReports from '../features/finance/components/AccountingReports';
+import LoanManager from '../features/loans/components/LoanManager';
+import LoanProducts from '../features/loans/components/LoanProducts';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -46,6 +48,13 @@ export default function AdminDashboard() {
         switch(activeTab) {
             case 'overview': return <OverviewTab />;
             case 'finance': return <FinanceTab />;
+            case 'loans': return (
+                            <div className="space-y-8">
+                                <LoanProducts />
+                                <div className="border-t border-slate-200 my-4"></div>
+                                <LoanManager />
+                            </div>
+                        );
             case 'members': return <MembersTab />;
             case 'register':
                 return (

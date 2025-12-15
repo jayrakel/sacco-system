@@ -3,7 +3,9 @@ package com.sacco.sacco_system.controller;
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.Loan;
+import com.sacco.sacco_system.entity.LoanProduct;
 import com.sacco.sacco_system.entity.LoanRepayment;
+import com.sacco.sacco_system.repository.LoanProductRepository;
 import com.sacco.sacco_system.service.LoanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,83 +22,126 @@ import java.util.UUID;
 @RequestMapping("/api/loans")
 @RequiredArgsConstructor
 public class LoanController {
-    
+
     private final LoanService loanService;
-    
+    private final LoanProductRepository loanProductRepository;
+
+    // ========================================================================
+    // 1. LOAN PRODUCTS (Configuration)
+    // ========================================================================
+
+    @GetMapping("/products")
+    public ResponseEntity<Map<String, Object>> getAllProducts() {
+        List<LoanProduct> products = loanProductRepository.findAll();
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", products);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/products")
+    public ResponseEntity<Map<String, Object>> createProduct(@RequestBody LoanProduct product) {
+        try {
+            LoanProduct saved = loanProductRepository.save(product);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Loan Product Created Successfully");
+            response.put("data", saved);
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 2. LOAN APPLICATION & LIFECYCLE
+    // ========================================================================
+
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
             @RequestParam UUID memberId,
-            @RequestParam BigDecimal principalAmount,
-            @RequestParam BigDecimal interestRate,
-            @RequestParam Integer durationMonths) {
+            @RequestParam UUID productId,
+            @RequestParam BigDecimal amount,
+            @RequestParam Integer duration) {
         try {
-            LoanDTO loan = loanService.applyForLoan(memberId, principalAmount, interestRate, durationMonths);
+            // Updated to use Product ID instead of raw interest rate
+            LoanDTO loan = loanService.applyForLoan(memberId, productId, amount, duration);
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", loan);
             response.put("message", "Loan application submitted successfully");
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
+        try {
+            LoanDTO loan = loanService.approveLoan(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Approved", "data", loan));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{id}/disburse")
+    public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
+        try {
+            LoanDTO loan = loanService.disburseLoan(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Disbursed", "data", loan));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable UUID id) {
+        try {
+            LoanDTO loan = loanService.rejectLoan(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Rejected", "data", loan));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Write-Off (Bad Debt)
+    @PostMapping("/{id}/write-off")
+    public ResponseEntity<Map<String, Object>> writeOffLoan(@PathVariable UUID id, @RequestParam String reason) {
+        try {
+            loanService.writeOffLoan(id, reason);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Written Off successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Restructure (Extend Tenure)
+    @PostMapping("/{id}/restructure")
+    public ResponseEntity<Map<String, Object>> restructureLoan(@PathVariable UUID id, @RequestParam Integer newDuration) {
+        try {
+            LoanDTO loan = loanService.restructureLoan(id, newDuration);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Restructured successfully", "data", loan));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 3. GUARANTORS & REPAYMENT
+    // ========================================================================
 
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
             @PathVariable UUID loanId,
             @RequestBody GuarantorDTO request) {
         try {
-            GuarantorDTO responseDTO = loanService.addGuarantor(
-                loanId, 
-                request.getMemberId(), 
-                request.getGuaranteeAmount()
-            );
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", responseDTO);
-            response.put("message", "Guarantor added successfully");
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            GuarantorDTO responseDTO = loanService.addGuarantor(loanId, request.getMemberId(), request.getGuaranteeAmount());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Guarantor added", "data", responseDTO));
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
-    }
-    
-    @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getLoanById(@PathVariable UUID id) {
-        try {
-            LoanDTO loan = loanService.getLoanById(id);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-        }
-    }
-    
-    @GetMapping("/number/{loanNumber}")
-    public ResponseEntity<Map<String, Object>> getLoanByNumber(@PathVariable String loanNumber) {
-        try {
-            LoanDTO loan = loanService.getLoanByNumber(loanNumber);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
@@ -109,130 +154,44 @@ public class LoanController {
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Repayment processed successfully");
-            response.put("installmentNumber", repayment.getRepaymentNumber());
             response.put("remainingLoanBalance", repayment.getLoan().getLoanBalance());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
-    
-    @GetMapping("/member/{memberId}")
-    public ResponseEntity<Map<String, Object>> getLoansByMemberId(@PathVariable UUID memberId) {
-        List<LoanDTO> loans = loanService.getLoansByMemberId(memberId);
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", loans);
-        response.put("count", loans.size());
-        return ResponseEntity.ok(response);
-    }
-    
+
+    // ========================================================================
+    // 4. QUERIES & REPORTS
+    // ========================================================================
+
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllLoans() {
-        List<LoanDTO> loans = loanService.getAllLoans();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", loans);
-        response.put("count", loans.size());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getAllLoans()));
     }
-    
-    @GetMapping("/status/{status}")
-    public ResponseEntity<Map<String, Object>> getLoansByStatus(@PathVariable String status) {
-        try {
-            Loan.LoanStatus loanStatus = Loan.LoanStatus.valueOf(status.toUpperCase());
-            List<LoanDTO> loans = loanService.getLoansByStatus(loanStatus);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loans);
-            response.put("count", loans.size());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", "Invalid status: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getLoanById(@PathVariable UUID id) {
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanById(id)));
     }
-    
-    @PutMapping("/{id}/approve")
-    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
-        try {
-            LoanDTO loan = loanService.approveLoan(id);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            response.put("message", "Loan approved successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
+
+    @GetMapping("/member/{memberId}")
+    public ResponseEntity<Map<String, Object>> getMemberLoans(@PathVariable UUID memberId) {
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMemberId(memberId)));
     }
-    
-    @PutMapping("/{id}/disburse")
-    public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
-        try {
-            LoanDTO loan = loanService.disburseLoan(id);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            response.put("message", "Loan disbursed successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
-    }
-    
-    @PutMapping("/{id}/reject")
-    public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable UUID id) {
-        try {
-            LoanDTO loan = loanService.rejectLoan(id);
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            response.put("message", "Loan rejected successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
-    }
-    
+
     @GetMapping("/totals/disbursed")
     public ResponseEntity<Map<String, Object>> getTotalDisbursed() {
-        BigDecimal total = loanService.getTotalDisbursedLoans();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("totalDisbursed", total);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "totalDisbursed", loanService.getTotalDisbursedLoans()));
     }
-    
+
     @GetMapping("/totals/outstanding")
     public ResponseEntity<Map<String, Object>> getTotalOutstanding() {
-        BigDecimal total = loanService.getTotalOutstandingLoans();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("totalOutstanding", total);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "totalOutstanding", loanService.getTotalOutstandingLoans()));
     }
-    
+
     @GetMapping("/totals/interest")
     public ResponseEntity<Map<String, Object>> getTotalInterest() {
-        BigDecimal total = loanService.getTotalInterestCollected();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("totalInterest", total);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "totalInterest", loanService.getTotalInterestCollected()));
     }
 }
