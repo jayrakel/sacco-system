@@ -7,7 +7,8 @@ import {
     LayoutDashboard, Users, Wallet, Settings, LogOut,
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
-    PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck
+    PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
+    Briefcase
 } from 'lucide-react';
 
 // Components
@@ -22,6 +23,7 @@ import SavingsManager from '../features/savings/components/SavingsManager';
 import SavingsProducts from '../features/savings/components/SavingsProducts';
 import ReportsDashboard from '../features/reports/ReportsDashboard';
 import AuditLogs from '../features/admin/components/AuditLogs';
+import AssetManager from '../features/admin/components/AssetManager';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -66,6 +68,7 @@ export default function AdminDashboard() {
                                 <LoanManager />
                             </div>
                         );
+            case 'assets': return <AssetManager />;
             case 'reports': return <ReportsDashboard />;
             case 'members': return <MembersTab />;
             case 'register':
@@ -99,6 +102,7 @@ export default function AdminDashboard() {
                         <TabButton id="overview" label="Dashboard" icon={LayoutDashboard} />
                         <TabButton id="finance" label="Finance" icon={Wallet} />
                         <TabButton id="savings" label="Savings" icon={PiggyBank} />
+                        <TabButton id="assets" label="Assets" icon={Briefcase} />
                         <TabButton id="loans" label="Loans & Credit" icon={CreditCard} />
                         <TabButton id="reports" label="Reports" icon={FileBarChart} />
                         <TabButton id="members" label="Members" icon={Users} />
