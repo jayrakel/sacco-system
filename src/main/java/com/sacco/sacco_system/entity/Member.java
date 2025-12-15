@@ -1,17 +1,16 @@
 package com.sacco.sacco_system.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -25,7 +24,6 @@ public class Member {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
 
     private String profileImageUrl;
 
@@ -68,6 +66,25 @@ public class Member {
     private BigDecimal totalShares = BigDecimal.ZERO;
 
     private BigDecimal totalSavings = BigDecimal.ZERO;
+
+    // ✅ ADDED: Relationships (Fixes the 'cannot find symbol' error)
+
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnoreProperties("member") // Prevent infinite recursion in JSON
+    @ToString.Exclude // Prevent infinite recursion in Logs
+    private List<SavingsAccount> savingsAccounts;
+
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnoreProperties("member")
+    @ToString.Exclude
+    private List<Loan> loans;
+
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnoreProperties("member")
+    @ToString.Exclude
+    private List<Transaction> transactions;
+
+    // ---------------------------------------------------------
 
     private LocalDateTime joinDate;
 

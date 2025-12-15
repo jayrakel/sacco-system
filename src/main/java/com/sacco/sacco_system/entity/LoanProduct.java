@@ -18,18 +18,22 @@ public class LoanProduct {
     private UUID id;
 
     @Column(nullable = false, unique = true)
-    private String name; // e.g., "Development Loan", "Emergency Loan"
+    private String name;
 
     private String description;
 
-    private BigDecimal interestRate; // Annual Rate (e.g., 12.00)
+    private BigDecimal interestRate; // Annual %
 
     @Enumerated(EnumType.STRING)
-    private InterestType interestType; // FLAT or REDUCING_BALANCE
+    private InterestType interestType;
 
-    private Integer maxTenureMonths; // e.g., 36 months
+    private Integer maxTenureMonths;
 
-    private BigDecimal maxLimit; // e.g., 5,000,000
+    private BigDecimal maxLimit;
+
+    // ✅ NEW: Fee Configurations
+    private BigDecimal processingFee; // Flat fee (e.g., 500)
+    private BigDecimal penaltyRate;   // % of overdue amount (e.g., 10%)
 
     public enum InterestType {
         FLAT_RATE,
