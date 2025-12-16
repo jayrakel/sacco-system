@@ -3,7 +3,6 @@ package com.sacco.sacco_system.controller;
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.LoanProduct;
-import com.sacco.sacco_system.entity.LoanRepayment;
 import com.sacco.sacco_system.entity.Member;
 import com.sacco.sacco_system.repository.LoanProductRepository;
 import com.sacco.sacco_system.repository.MemberRepository;
@@ -32,16 +31,12 @@ public class LoanController {
     private final AuditService auditService;
 
     // ========================================================================
-    // 1. LOAN PRODUCTS (Configuration)
+    // 1. LOAN PRODUCTS
     // ========================================================================
 
     @GetMapping("/products")
     public ResponseEntity<Map<String, Object>> getAllProducts() {
-        List<LoanProduct> products = loanProductRepository.findAll();
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", products);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("success", true, "data", loanProductRepository.findAll()));
     }
 
     @PostMapping("/products")
@@ -59,25 +54,22 @@ public class LoanController {
     // 2. LOAN APPLICATION & LIFECYCLE
     // ========================================================================
 
-    // ✅ NEW: Get My Loans (For Member Dashboard)
     @GetMapping("/my-loans")
     public ResponseEntity<Map<String, Object>> getMyLoans() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        List<LoanDTO> loans = loanService.getLoansByMemberId(member.getId());
-        return ResponseEntity.ok(Map.of("success", true, "data", loans));
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMemberId(member.getId())));
     }
 
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
-            @RequestParam(required = false) UUID memberId, // Optional if we use context
+            @RequestParam(required = false) UUID memberId,
             @RequestParam UUID productId,
             @RequestParam BigDecimal amount,
             @RequestParam Integer duration) {
         try {
-            // Auto-detect member if not provided (Self-Service)
             if (memberId == null) {
                 String email = SecurityContextHolder.getContext().getAuthentication().getName();
                 memberId = memberRepository.findByEmail(email)
@@ -96,8 +88,7 @@ public class LoanController {
     @PostMapping("/{id}/approve")
     public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
         try {
-            LoanDTO loan = loanService.approveLoan(id);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Approved", "data", loan));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Approved", "data", loanService.approveLoan(id)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -106,8 +97,7 @@ public class LoanController {
     @PostMapping("/{id}/disburse")
     public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
         try {
-            LoanDTO loan = loanService.disburseLoan(id);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Disbursed", "data", loan));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Disbursed", "data", loanService.disburseLoan(id)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -116,8 +106,7 @@ public class LoanController {
     @PostMapping("/{id}/reject")
     public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable UUID id) {
         try {
-            LoanDTO loan = loanService.rejectLoan(id);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Rejected", "data", loan));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Rejected", "data", loanService.rejectLoan(id)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -144,10 +133,6 @@ public class LoanController {
         }
     }
 
-    // ========================================================================
-    // 3. GUARANTORS & REPAYMENT
-    // ========================================================================
-
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
             @PathVariable UUID loanId,
@@ -160,16 +145,19 @@ public class LoanController {
         }
     }
 
+    // ✅ FIXED: Expects LoanDTO return type
     @PostMapping("/{id}/repay")
     public ResponseEntity<Map<String, Object>> repayLoan(
             @PathVariable UUID id,
             @RequestParam BigDecimal amount) {
         try {
-            LoanRepayment repayment = loanService.repayLoan(id, amount);
+            // ✅ CHANGE: LoanDTO instead of LoanRepayment
+            LoanDTO loan = loanService.repayLoan(id, amount);
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("message", "Repayment processed");
-            response.put("remainingLoanBalance", repayment.getLoan().getLoanBalance());
+            response.put("message", "Repayment processed successfully");
+            response.put("remainingLoanBalance", loan.getLoanBalance()); // ✅ Access balance from DTO
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -177,7 +165,7 @@ public class LoanController {
     }
 
     // ========================================================================
-    // 4. QUERIES & REPORTS
+    // 3. QUERIES
     // ========================================================================
 
     @GetMapping
