@@ -51,24 +51,17 @@ public class LoanController {
     }
 
     // ========================================================================
-    // 2. LOAN APPLICATION & LIFECYCLE
+    // 2. LOAN APPLICATION WORKFLOW (Step-by-Step)
     // ========================================================================
 
-    @GetMapping("/my-loans")
-    public ResponseEntity<Map<String, Object>> getMyLoans() {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
-
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMemberId(member.getId())));
-    }
-
+    // ✅ STEP 1: CREATE DRAFT APPLICATION
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
             @RequestParam(required = false) UUID memberId,
             @RequestParam UUID productId,
             @RequestParam BigDecimal amount,
-            @RequestParam Integer duration) {
+            @RequestParam Integer duration,
+            @RequestParam(defaultValue = "MONTHS") String durationUnit) {
         try {
             if (memberId == null) {
                 String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -76,14 +69,55 @@ public class LoanController {
                         .orElseThrow(() -> new RuntimeException("Member not found")).getId();
             }
 
-            LoanDTO loan = loanService.applyForLoan(memberId, productId, amount, duration);
-            auditService.logAction("APPLY_LOAN", "Loan", loan.getId().toString(), "Application: " + loan.getLoanNumber());
+            LoanDTO loan = loanService.initiateApplication(memberId, productId, amount, duration, durationUnit);
+            auditService.logAction("INITIATE_APPLICATION", "Loan", loan.getId().toString(), "Draft Created: " + loan.getLoanNumber());
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Application Submitted", "data", loan));
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Loan Draft Created", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+
+    // ✅ STEP 2: ADD GUARANTORS (One by one)
+    @PostMapping("/{loanId}/guarantors")
+    public ResponseEntity<Map<String, Object>> addGuarantor(
+            @PathVariable UUID loanId,
+            @RequestBody GuarantorDTO request) {
+        try {
+            GuarantorDTO responseDTO = loanService.addGuarantor(loanId, request.getMemberId(), request.getGuaranteeAmount());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Guarantor added", "data", responseDTO));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ STEP 3: SUBMIT TO GUARANTORS (Changes status to GUARANTORS_PENDING)
+    @PostMapping("/{id}/send-requests")
+    public ResponseEntity<Map<String, Object>> sendGuarantorRequests(@PathVariable UUID id) {
+        try {
+            loanService.submitToGuarantors(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Requests sent to guarantors"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ STEP 4: PAY FEE & FINAL SUBMIT (After guarantors approve)
+    @PostMapping("/{id}/pay-fee")
+    public ResponseEntity<Map<String, Object>> payLoanFee(
+            @PathVariable UUID id,
+            @RequestParam String referenceCode) {
+        try {
+            loanService.payApplicationFee(id, referenceCode);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Fee Paid & Application Submitted"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 3. APPROVAL & DISBURSEMENT
+    // ========================================================================
 
     @PostMapping("/{id}/approve")
     public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
@@ -133,31 +167,17 @@ public class LoanController {
         }
     }
 
-    @PostMapping("/{loanId}/guarantors")
-    public ResponseEntity<Map<String, Object>> addGuarantor(
-            @PathVariable UUID loanId,
-            @RequestBody GuarantorDTO request) {
-        try {
-            GuarantorDTO responseDTO = loanService.addGuarantor(loanId, request.getMemberId(), request.getGuaranteeAmount());
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Guarantor added", "data", responseDTO));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    // ✅ FIXED: Expects LoanDTO return type
+    // ✅ FIXED: Repay endpoint now accepts LoanDTO return type
     @PostMapping("/{id}/repay")
     public ResponseEntity<Map<String, Object>> repayLoan(
             @PathVariable UUID id,
             @RequestParam BigDecimal amount) {
         try {
-            // ✅ CHANGE: LoanDTO instead of LoanRepayment
             LoanDTO loan = loanService.repayLoan(id, amount);
-
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Repayment processed successfully");
-            response.put("remainingLoanBalance", loan.getLoanBalance()); // ✅ Access balance from DTO
+            response.put("remainingLoanBalance", loan.getLoanBalance());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -165,8 +185,17 @@ public class LoanController {
     }
 
     // ========================================================================
-    // 3. QUERIES
+    // 4. QUERIES
     // ========================================================================
+
+    @GetMapping("/my-loans")
+    public ResponseEntity<Map<String, Object>> getMyLoans() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMemberId(member.getId())));
+    }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllLoans() {
