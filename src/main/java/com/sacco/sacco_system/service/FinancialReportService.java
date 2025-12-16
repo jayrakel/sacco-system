@@ -48,7 +48,6 @@ public class FinancialReportService {
                 ? withdrawalRepository.getTotalWithdrawals() : BigDecimal.ZERO;
 
         // In this simple model, expenses = withdrawals.
-        // In a complex model, you would add operational expenses here.
         BigDecimal calculatedTotalExpenses = totalWithdrawals;
 
         // 3. Build the Report Object
@@ -74,8 +73,6 @@ public class FinancialReportService {
                 .build();
 
         // 4. Save to DB
-        // If a report already exists for today, you might want to update it instead of creating a new one.
-        // For simplicity, we assume one report per day or overwritten.
         return financialReportRepository.save(report);
     }
 
@@ -90,14 +87,21 @@ public class FinancialReportService {
     }
 
     /**
-     * ✅ NEW: Dynamic Chart Data Fetcher
-     * Fetches reports based on a variable number of days (7, 30, 90)
+     * Dynamic Chart Data Fetcher (Last N Days)
      */
     public List<FinancialReport> getChartData(int days) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(days);
 
         // Returns sorted ASC (Mon, Tue, Wed...) perfect for charts
+        return financialReportRepository.findByReportDateBetweenOrderByReportDateAsc(startDate, endDate);
+    }
+
+    /**
+     * ✅ NEW: Dynamic Chart Data Fetcher (Custom Range)
+     * Supports specific Start Date to End Date filtering
+     */
+    public List<FinancialReport> getChartDataCustom(LocalDate startDate, LocalDate endDate) {
         return financialReportRepository.findByReportDateBetweenOrderByReportDateAsc(startDate, endDate);
     }
 }

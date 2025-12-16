@@ -9,7 +9,7 @@ import {
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
     PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
-    Briefcase
+    Briefcase, Calendar, Filter // ✅ Added Calendar & Filter
 } from 'lucide-react';
 
 // Components
@@ -119,35 +119,50 @@ export default function AdminDashboard() {
 }
 
 // ==================================================================================
-// 1. OVERVIEW TAB
+// 1. OVERVIEW TAB (Real Stats + Custom Date Filter Chart)
 // ==================================================================================
 function OverviewTab({ setActiveTab }) {
     const [stats, setStats] = useState({ totalMembers: 0, totalSavings: 0, totalLoansIssued: 0, netIncome: 0 });
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filterDays, setFilterDays] = useState(7);
+
+    // ✅ NEW: Custom Date Range State (Defaults to last 7 days)
+    const [dateRange, setDateRange] = useState({
+        start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
+        end: new Date().toISOString().split('T')[0]
+    });
 
     useEffect(() => {
         loadDashboard();
-    }, [filterDays]);
+    }, []); // Initial load only
 
     const loadDashboard = async () => {
         try {
-            // 1. Fetch Summary Stats
+            // 1. Fetch Summary Stats (Always Today)
             const todayRes = await api.get('/api/reports/today');
             if (todayRes.data.success) setStats(todayRes.data.data);
 
             // 2. Fetch Chart Data
-            const chartRes = await api.get(`/api/reports/chart?days=${filterDays}`);
+            fetchChartData();
+
+            setLoading(false);
+        } catch (e) {
+            console.error("Dashboard Load Failed", e);
+            setLoading(false);
+        }
+    };
+
+    // ✅ NEW: Fetch Chart Data with Custom Dates
+    const fetchChartData = async () => {
+        try {
+            const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
             if (chartRes.data.success && chartRes.data.data.length > 0) {
                 setChartData(chartRes.data.data);
             } else {
                 setChartData([]); // Empty state if no data
             }
-            setLoading(false);
         } catch (e) {
-            console.error("Dashboard Load Failed", e);
-            setLoading(false);
+            console.error("Chart Data Failed", e);
         }
     };
 
@@ -202,35 +217,54 @@ function OverviewTab({ setActiveTab }) {
             {/* CHART ROW */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* DYNAMIC CHART */}
+                {/* ✅ DYNAMIC CHART WITH CUSTOM DATE FILTER */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
-                    <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+
+                    {/* Header with Title & Custom Date Picker */}
+                    <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-4">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                             <Activity size={20} className="text-emerald-600"/>
-                            Financial Performance
-                            <span className="text-slate-400 font-normal text-xs ml-1">({filterDays} Days)</span>
+                            Performance
                         </h3>
 
-                        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
-                            {[7, 30, 90].map(days => (
-                                <button
-                                    key={days}
-                                    onClick={() => setFilterDays(days)}
-                                    className={`px-3 py-1 text-xs font-bold rounded-md transition ${filterDays === days ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    {days}D
-                                </button>
-                            ))}
+                        {/* ✅ DATE RANGE FILTER UI */}
+                        <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
+                            <div className="flex items-center gap-1 px-2">
+                                <Calendar size={14} className="text-slate-400"/>
+                                <input
+                                    type="date"
+                                    value={dateRange.start}
+                                    onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
+                                    className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer"
+                                />
+                            </div>
+                            <span className="text-slate-300">|</span>
+                            <div className="flex items-center gap-1 px-2">
+                                <input
+                                    type="date"
+                                    value={dateRange.end}
+                                    onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
+                                    className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer"
+                                />
+                            </div>
+                            <button
+                                onClick={fetchChartData}
+                                className="bg-slate-900 text-white p-1.5 rounded-md hover:bg-slate-800 transition"
+                                title="Apply Filter"
+                            >
+                                <Filter size={14} />
+                            </button>
                         </div>
 
                         <button
                             onClick={() => setActiveTab('reports')}
-                            className="hidden sm:flex text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition items-center gap-1"
+                            className="hidden sm:flex text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition items-center gap-1 whitespace-nowrap"
                         >
                             View Reports <ChevronRight size={14}/>
                         </button>
                     </div>
 
+                    {/* The Chart */}
                     <div className="h-64 w-full">
                         {chartData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
@@ -255,8 +289,9 @@ function OverviewTab({ setActiveTab }) {
                                 </AreaChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400 text-sm italic">
-                                No financial data found for this period.
+                            <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm italic gap-2">
+                                <Activity className="opacity-20" size={32} />
+                                No data found for this date range.
                             </div>
                         )}
                     </div>
@@ -297,7 +332,7 @@ function OverviewTab({ setActiveTab }) {
 }
 
 // ==================================================================================
-// 2. FINANCE TAB
+// 2. FINANCE TAB (Real Transactions)
 // ==================================================================================
 function FinanceTab() {
     const [viewMode, setViewMode] = useState('standard');
@@ -445,7 +480,7 @@ function FinanceTab() {
 }
 
 // ==================================================================================
-// 3. MEMBERS TAB
+// 3. MEMBERS TAB (Real Data)
 // ==================================================================================
 function MembersTab() {
     const [members, setMembers] = useState([]);

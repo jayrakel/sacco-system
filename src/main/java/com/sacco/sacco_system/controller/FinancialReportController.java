@@ -69,16 +69,27 @@ public class FinancialReportController {
         }
     }
 
-    // ✅ UPDATED: Accepts 'days' parameter
+    // ✅ UPDATED: Supports Custom Date Range OR 'days' fallback
     @GetMapping("/chart")
-    public ResponseEntity<Map<String, Object>> getChartData(@RequestParam(defaultValue = "7") int days) {
+    public ResponseEntity<Map<String, Object>> getChartData(
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "7") int days) {
         try {
-            List<FinancialReport> reports = financialReportService.getChartData(days);
+            List<FinancialReport> reports;
 
-            // Transform for Frontend
+            // 1. Check if specific dates are provided
+            if (startDate != null && endDate != null) {
+                reports = financialReportService.getChartDataCustom(startDate, endDate);
+            } else {
+                // 2. Fallback to 'last N days' logic
+                reports = financialReportService.getChartData(days);
+            }
+
+            // Transform for Frontend (Recharts format)
             List<Map<String, Object>> chartData = reports.stream().map(r -> {
                 Map<String, Object> point = new HashMap<>();
-                // Short Date format (e.g., "12 Dec")
+                // Format: "12 Dec"
                 point.put("name", r.getReportDate().getDayOfMonth() + " " + r.getReportDate().getMonth().name().substring(0, 3));
                 point.put("income", r.getTotalIncome());
                 point.put("expense", r.getTotalExpenses());
