@@ -25,26 +25,31 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // ✅ FIXED: Using Map.ofEntries to support more than 10 items
+    // ✅ FIXED: Added BANK and PAYBILL details to defaults
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             Map.entry("REGISTRATION_FEE", "1000"),
             Map.entry("MIN_MONTHLY_CONTRIBUTION", "500"),
             Map.entry("LOAN_INTEREST_RATE", "12"),
-            Map.entry("LOAN_GRACE_PERIOD_WEEKS", "1"), // Added this for Loan Workflow
+            Map.entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             Map.entry("LOAN_LIMIT_MULTIPLIER", "3"),
             Map.entry("SACCO_NAME", "Sacco System"),
             Map.entry("SACCO_TAGLINE", "Empowering Your Future"),
             Map.entry("SACCO_LOGO", ""),
             Map.entry("SACCO_FAVICON", ""),
-            Map.entry("BRAND_COLOR_PRIMARY", "#059669"),   // Emerald 600
-            Map.entry("BRAND_COLOR_SECONDARY", "#0f172a")  // Slate 900
+            Map.entry("BRAND_COLOR_PRIMARY", "#059669"),
+            Map.entry("BRAND_COLOR_SECONDARY", "#0f172a"),
+            // Bank Details (Required for Frontend to display the section)
+            Map.entry("BANK_NAME", "Co-operative Bank"),
+            Map.entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
+            Map.entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
+            Map.entry("PAYBILL_NUMBER", "400200")
     );
 
     @PostConstruct
     public void initDefaults() {
         DEFAULTS.forEach((key, value) -> {
             if (repository.findByKey(key).isEmpty()) {
-                String type = key.contains("SACCO") || key.contains("COLOR") ? "STRING" : "NUMBER";
+                String type = key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") ? "STRING" : "NUMBER";
                 repository.save(SystemSetting.builder()
                         .key(key)
                         .value(value)

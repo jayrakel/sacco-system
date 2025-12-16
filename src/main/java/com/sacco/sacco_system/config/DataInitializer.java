@@ -27,6 +27,9 @@ public class DataInitializer implements CommandLineRunner {
     @Value("${app.default-admin.password}")
     private String adminPassword;
 
+    @Value("${app.default-admin.phone}")
+    private String adminPhoneNumber;
+
     @Override
     public void run(String... args) throws Exception {
         // 1. Initialize Admin
@@ -38,11 +41,12 @@ public class DataInitializer implements CommandLineRunner {
                     .firstName("System")
                     .lastName("Admin")
                     .role(User.Role.ADMIN)
-                    .phoneNumber("0700000000") // Added default phone to satisfy constraints if any
+                    .phoneNumber(adminPhoneNumber) // Added default phone to satisfy constraints if any
                     .memberNumber("ADMIN")     // Added default member number
                     .emailVerified(true)
                     .enabled(true)             // Explicitly enable
                     .createdAt(LocalDateTime.now())
+                    .mustChangePassword(true)
                     .build();
 
             userRepository.save(admin);

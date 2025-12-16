@@ -1,10 +1,12 @@
 package com.sacco.sacco_system.service;
 
+import com.sacco.sacco_system.annotation.Loggable; // ✅ Import
 import com.sacco.sacco_system.dto.MemberDTO;
 import com.sacco.sacco_system.entity.*;
 import com.sacco.sacco_system.repository.*;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j; // Added Logging
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,34 +34,30 @@ public class MemberService {
     private final UserRepository userRepository;
     private final VerificationTokenRepository tokenRepository;
     private final SavingsAccountRepository savingsAccountRepository;
-
-    // ✅ REQUIRED FOR GL POSTING
     private final AccountingService accountingService;
-
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
-    // Use absolute path or a configured property in real prod
-    private final String UPLOAD_DIR = "uploads/profiles/";
+    @Value("${app.upload.dir:uploads/profiles/}")
+    private String uploadDir;
 
+    // ✅ ADDED AUDIT LOGGING
+    @Loggable(action = "REGISTER_MEMBER", category = "MEMBERS")
     public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode) throws IOException {
 
-        // 1. Check for duplicate user email
         if (userRepository.findByEmail(memberDTO.getEmail()).isPresent()) {
             throw new RuntimeException("A user with this email address already exists.");
         }
 
-        // 2. Handle Profile Image Upload
         String imagePath = null;
         if (file != null && !file.isEmpty()) {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
+            Path uploadPath = Paths.get(uploadDir);
             if (!Files.exists(uploadPath)) Files.createDirectories(uploadPath);
             String filename = UUID.randomUUID() + "_" + file.getOriginalFilename();
             Files.copy(file.getInputStream(), uploadPath.resolve(filename), StandardCopyOption.REPLACE_EXISTING);
-            imagePath = filename;
+            imagePath = "profiles/" + filename;
         }
 
-        // 3. Create Member Entity
         Member member = Member.builder()
                 .firstName(memberDTO.getFirstName())
                 .lastName(memberDTO.getLastName())
@@ -81,7 +79,6 @@ public class MemberService {
 
         Member savedMember = memberRepository.save(member);
 
-        // 4. Create User Login Account
         String tempPassword = UUID.randomUUID().toString().substring(0, 8);
 
         User newUser = User.builder()
@@ -100,24 +97,16 @@ public class MemberService {
 
         User savedUser = userRepository.save(newUser);
 
-        // 5. Send Welcome Email with Token
         String token = UUID.randomUUID().toString();
         VerificationToken verificationToken = new VerificationToken(savedUser, token);
         tokenRepository.save(verificationToken);
 
-        // Note: Ensure emailService has this method or use a generic sendEmail
         try {
-            emailService.sendMemberWelcomeEmail(
-                    savedUser.getEmail(),
-                    savedUser.getFirstName(),
-                    tempPassword,
-                    token
-            );
+            emailService.sendMemberWelcomeEmail(savedUser.getEmail(), savedUser.getFirstName(), tempPassword, token);
         } catch (Exception e) {
             log.error("Failed to send welcome email: {}", e.getMessage());
         }
 
-        // 6. Process Registration Fee & Post to GL
         double feeAmount = 0.0;
         try {
             feeAmount = systemSettingService.getDouble("REGISTRATION_FEE");
@@ -138,23 +127,21 @@ public class MemberService {
 
             transactionRepository.save(registrationTx);
 
-            // ✅ POST TO GENERAL LEDGER
             BigDecimal amount = BigDecimal.valueOf(feeAmount);
             String narrative = "Registration Fee - " + savedMember.getMemberNumber();
             String ref = registrationTx.getTransactionId();
 
             try {
-                if (paymentMethod.equals("CASH")) {
-                    accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount); // Debit Cash, Credit Reg Fees
+                if ("CASH".equalsIgnoreCase(paymentMethod)) {
+                    accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount);
                 } else {
-                    accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount); // Debit Bank, Credit Reg Fees
+                    accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount);
                 }
             } catch (Exception e) {
-                log.error("Failed to post GL entry for registration: {}", e.getMessage());
+                log.error("Failed to post GL entry: {}", e.getMessage());
             }
         }
 
-        // 7. Auto-Create Savings Account
         SavingsAccount savingsAccount = SavingsAccount.builder()
                 .member(savedMember)
                 .accountNumber(generateSavingsAccountNumber())
@@ -168,36 +155,8 @@ public class MemberService {
         return convertToDTO(savedMember);
     }
 
-    // --- Standard CRUD Methods ---
-
-    public MemberDTO getMemberById(UUID id) {
-        return memberRepository.findById(id).map(this::convertToDTO)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
-    }
-
-    public MemberDTO getMemberByMemberNumber(String memberNumber) {
-        return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
-    }
-
-    public List<MemberDTO> getAllMembers() {
-        return memberRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList());
-    }
-
-    public List<MemberDTO> getActiveMembers() {
-        return memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList());
-    }
-
-    public long getActiveMembersCount() { return memberRepository.countActiveMembers(); }
-
-    public void deleteMember(UUID id) {
-        Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
-        member.setStatus(Member.MemberStatus.INACTIVE);
-        memberRepository.save(member);
-    }
-
-    // In MemberService.java
-
+    // ✅ ADDED AUDIT LOGGING
+    @Loggable(action = "UPDATE_PROFILE", category = "MEMBERS")
     public MemberDTO updateProfile(String email, MemberDTO updateDTO, MultipartFile file) throws IOException {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -205,19 +164,32 @@ public class MemberService {
         Member member = memberRepository.findByMemberNumber(user.getMemberNumber())
                 .orElseThrow(() -> new RuntimeException("Member profile not found"));
 
-        // 1. Update Allowed Fields
         member.setPhoneNumber(updateDTO.getPhoneNumber());
         member.setAddress(updateDTO.getAddress());
-        member.setEmail(updateDTO.getEmail()); // Ensure email uniqueness logic if needed
 
-        // Next of Kin
+        if (updateDTO.getIdNumber() != null && !updateDTO.getIdNumber().equals(member.getIdNumber())) {
+            if (memberRepository.findByIdNumber(updateDTO.getIdNumber()).isPresent()) {
+                throw new RuntimeException("ID Number " + updateDTO.getIdNumber() + " is already in use.");
+            }
+            member.setIdNumber(updateDTO.getIdNumber());
+        }
+
+        if (updateDTO.getEmail() != null && !updateDTO.getEmail().equals(member.getEmail())) {
+            if(userRepository.findByEmail(updateDTO.getEmail()).isPresent()) {
+                throw new RuntimeException("Email " + updateDTO.getEmail() + " is already in use.");
+            }
+            member.setEmail(updateDTO.getEmail());
+            user.setEmail(updateDTO.getEmail());
+            user.setUsername(updateDTO.getEmail());
+            userRepository.save(user);
+        }
+
         member.setNextOfKinName(updateDTO.getNextOfKinName());
         member.setNextOfKinPhone(updateDTO.getNextOfKinPhone());
         member.setNextOfKinRelation(updateDTO.getNextOfKinRelation());
 
-        // 2. Handle Image Upload
         if (file != null && !file.isEmpty()) {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
+            Path uploadPath = Paths.get(uploadDir);
             if (!Files.exists(uploadPath)) Files.createDirectories(uploadPath);
 
             String filename = "PROFILE_" + member.getMemberNumber() + "_" + UUID.randomUUID() + ".jpg";
@@ -225,20 +197,12 @@ public class MemberService {
             member.setProfileImageUrl("profiles/" + filename);
         }
 
-        // 3. Update User Email if changed
-        if (!user.getEmail().equals(updateDTO.getEmail())) {
-            if(userRepository.findByEmail(updateDTO.getEmail()).isPresent()) {
-                throw new RuntimeException("Email already in use");
-            }
-            user.setEmail(updateDTO.getEmail());
-            user.setUsername(updateDTO.getEmail());
-            userRepository.save(user);
-        }
-
         Member saved = memberRepository.save(member);
         return convertToDTO(saved);
     }
 
+    // ✅ ADDED AUDIT LOGGING
+    @Loggable(action = "UPDATE_MEMBER_ADMIN", category = "MEMBERS")
     public MemberDTO updateMember(UUID id, MemberDTO memberDTO) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
@@ -249,7 +213,6 @@ public class MemberService {
         member.setPhoneNumber(memberDTO.getPhoneNumber());
         member.setAddress(memberDTO.getAddress());
         member.setDateOfBirth(memberDTO.getDateOfBirth());
-
         member.setKraPin(memberDTO.getKraPin());
         member.setNextOfKinName(memberDTO.getNextOfKinName());
         member.setNextOfKinPhone(memberDTO.getNextOfKinPhone());
@@ -259,17 +222,23 @@ public class MemberService {
         return convertToDTO(updatedMember);
     }
 
-    private String generateMemberNumber() {
-        long count = memberRepository.count();
-        return "MEM" + String.format("%06d", count + 1);
+    // ✅ ADDED AUDIT LOGGING
+    @Loggable(action = "DEACTIVATE_MEMBER", category = "MEMBERS")
+    public void deleteMember(UUID id) {
+        Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
+        member.setStatus(Member.MemberStatus.INACTIVE);
+        memberRepository.save(member);
     }
 
-    private String generateSavingsAccountNumber() {
-        long count = savingsAccountRepository.count();
-        return "SAV" + String.format("%05d", count + 1);
-    }
+    // ... Standard Getters/Helpers (No Changes Needed) ...
+    public MemberDTO getMemberById(UUID id) { return memberRepository.findById(id).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found")); }
+    public MemberDTO getMemberByMemberNumber(String memberNumber) { return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found")); }
+    public List<MemberDTO> getAllMembers() { return memberRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList()); }
+    public List<MemberDTO> getActiveMembers() { return memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList()); }
+    public long getActiveMembersCount() { return memberRepository.countActiveMembers(); }
+    private String generateMemberNumber() { long count = memberRepository.count(); return "MEM" + String.format("%06d", count + 1); }
+    private String generateSavingsAccountNumber() { long count = savingsAccountRepository.count(); return "SAV" + String.format("%05d", count + 1); }
 
-    // ✅ FIXED: Changed from 'private' to 'public' so Controller can use it
     public MemberDTO convertToDTO(Member member) {
         return MemberDTO.builder()
                 .id(member.getId())
