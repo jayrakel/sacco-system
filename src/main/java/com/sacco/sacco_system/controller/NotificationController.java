@@ -3,8 +3,10 @@ package com.sacco.sacco_system.controller;
 import com.sacco.sacco_system.entity.Notification;
 import com.sacco.sacco_system.entity.User;
 import com.sacco.sacco_system.service.NotificationService;
+import com.sacco.sacco_system.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,10 +20,11 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getMyNotifications() {
-        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        User user = getAuthenticatedUser();
         List<Notification> list = notificationService.getUserNotifications(user.getId());
         return ResponseEntity.ok(Map.of("success", true, "data", list));
     }
@@ -30,5 +33,11 @@ public class NotificationController {
     public ResponseEntity<Map<String, Object>> markRead(@PathVariable UUID id) {
         notificationService.markAsRead(id);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private User getAuthenticatedUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return userRepository.findByEmail(auth.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 }
