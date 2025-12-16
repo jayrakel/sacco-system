@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { Wallet, AlertCircle, TrendingUp, CreditCard } from 'lucide-react';
+import { Wallet, AlertCircle, TrendingUp, CreditCard, Bell } from 'lucide-react';
 
 export default function MemberOverview({ user }) {
     const [balanceData, setBalanceData] = useState({ balance: 0, accounts: [] });

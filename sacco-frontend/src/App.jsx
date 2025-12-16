@@ -4,7 +4,7 @@ import BrandedSpinner from './components/BrandedSpinner'; // ✅ Import Spinner
 
 // ... Import all your pages ...
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
+import MemberDashboard from './pages/MemberDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ChangePassword from './pages/ChangePassword';
 import SystemSetup from './pages/SystemSetup';
@@ -43,7 +43,7 @@ function App() {
           <Route path="/verify-email" element={<VerifyEmail />} />
 
           {/* Dashboards */}
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard" element={<MemberDashboard />} />
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
           {/* Admin Tools */}
