@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime; // ✅ Added Import
 import java.util.UUID;
 
 @Data
@@ -31,4 +32,7 @@ public class MemberDTO {
     private String status;
     private BigDecimal totalShares;
     private BigDecimal totalSavings;
+
+    // ✅ ADDED THIS FIELD
+    private LocalDateTime registrationDate;
 }

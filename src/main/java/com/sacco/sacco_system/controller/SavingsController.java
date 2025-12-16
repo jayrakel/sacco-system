@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.controller;
 
 import com.sacco.sacco_system.dto.SavingsAccountDTO;
+import com.sacco.sacco_system.entity.Member;
 import com.sacco.sacco_system.entity.SavingsAccount;
 import com.sacco.sacco_system.entity.SavingsProduct;
 import com.sacco.sacco_system.entity.User;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/savings")
@@ -154,29 +156,26 @@ public class SavingsController {
             User user = (User) principal;
 
             // 2. Find Member Profile
-            var member = memberRepository.findByEmail(user.getEmail())
+            Member member = memberRepository.findByEmail(user.getEmail())
                     .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
 
             // 3. Get Accounts
-            List<SavingsAccount> accounts = savingsRepository.findByMemberId(member.getId());
-            if (accounts.isEmpty()) {
-                throw new RuntimeException("No savings accounts found.");
-            }
+            List<SavingsAccountDTO> accounts = savingsService.getMemberAccounts(member.getId());
 
-            // 4. Return Summary (Summing all balances for simple view, or returning main account)
+            // 4. Calculate Total
             BigDecimal totalBalance = accounts.stream()
-                    .map(SavingsAccount::getBalance)
+                    .map(SavingsAccountDTO::getBalance)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("accountNumber", accounts.get(0).getAccountNumber()); // Primary Account
-            response.put("balance", totalBalance); // Total Balance across all products
-            response.put("accounts", accounts); // List of all accounts
+            response.put("balance", totalBalance);
+            response.put("accounts", accounts);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
+            e.printStackTrace(); // Log it
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         }
     }

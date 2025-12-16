@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
+import LoanApplicationModal from './LoanApplicationModal';
 
 export default function MemberLoans({ user }) {
     const [loans, setLoans] = useState([]);

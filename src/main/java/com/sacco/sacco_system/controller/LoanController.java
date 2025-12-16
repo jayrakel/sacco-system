@@ -4,12 +4,15 @@ import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.LoanProduct;
 import com.sacco.sacco_system.entity.LoanRepayment;
+import com.sacco.sacco_system.entity.Member;
 import com.sacco.sacco_system.repository.LoanProductRepository;
-import com.sacco.sacco_system.service.AuditService; // ✅ Import AuditService
+import com.sacco.sacco_system.repository.MemberRepository;
+import com.sacco.sacco_system.service.AuditService;
 import com.sacco.sacco_system.service.LoanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -25,7 +28,8 @@ public class LoanController {
 
     private final LoanService loanService;
     private final LoanProductRepository loanProductRepository;
-    private final AuditService auditService; // ✅ Inject AuditService
+    private final MemberRepository memberRepository;
+    private final AuditService auditService;
 
     // ========================================================================
     // 1. LOAN PRODUCTS (Configuration)
@@ -44,20 +48,8 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> createProduct(@RequestBody LoanProduct product) {
         try {
             LoanProduct saved = loanProductRepository.save(product);
-
-            // ✅ LOG AUDIT: Record that a new product was created
-            auditService.logAction(
-                    "CREATE_PRODUCT",
-                    "LoanProduct",
-                    saved.getId().toString(),
-                    "Created Loan Product: " + saved.getName()
-            );
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Loan Product Created Successfully");
-            response.put("data", saved);
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            auditService.logAction("CREATE_PRODUCT", "LoanProduct", saved.getId().toString(), "Created: " + saved.getName());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Product Created", "data", saved));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -67,28 +59,35 @@ public class LoanController {
     // 2. LOAN APPLICATION & LIFECYCLE
     // ========================================================================
 
+    // ✅ NEW: Get My Loans (For Member Dashboard)
+    @GetMapping("/my-loans")
+    public ResponseEntity<Map<String, Object>> getMyLoans() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        List<LoanDTO> loans = loanService.getLoansByMemberId(member.getId());
+        return ResponseEntity.ok(Map.of("success", true, "data", loans));
+    }
+
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
-            @RequestParam UUID memberId,
+            @RequestParam(required = false) UUID memberId, // Optional if we use context
             @RequestParam UUID productId,
             @RequestParam BigDecimal amount,
             @RequestParam Integer duration) {
         try {
+            // Auto-detect member if not provided (Self-Service)
+            if (memberId == null) {
+                String email = SecurityContextHolder.getContext().getAuthentication().getName();
+                memberId = memberRepository.findByEmail(email)
+                        .orElseThrow(() -> new RuntimeException("Member not found")).getId();
+            }
+
             LoanDTO loan = loanService.applyForLoan(memberId, productId, amount, duration);
+            auditService.logAction("APPLY_LOAN", "Loan", loan.getId().toString(), "Application: " + loan.getLoanNumber());
 
-            // ✅ LOG AUDIT: Loan Application
-            auditService.logAction(
-                    "APPLY_LOAN",
-                    "Loan",
-                    loan.getId().toString(),
-                    "Loan Application: " + loan.getLoanNumber() + " for " + loan.getMemberName()
-            );
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", loan);
-            response.put("message", "Loan application submitted successfully");
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Application Submitted", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -98,7 +97,6 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.approveLoan(id);
-            // Audit logging is already handled inside LoanService.approveLoan()
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan Approved", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -109,7 +107,6 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.disburseLoan(id);
-            // Audit logging is already handled inside LoanService.disburseLoan()
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan Disbursed", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -120,7 +117,6 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> rejectLoan(@PathVariable UUID id) {
         try {
             LoanDTO loan = loanService.rejectLoan(id);
-            // Audit logging is already handled inside LoanService.rejectLoan()
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan Rejected", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -131,8 +127,7 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> writeOffLoan(@PathVariable UUID id, @RequestParam String reason) {
         try {
             loanService.writeOffLoan(id, reason);
-            // Audit logging is already handled inside LoanService.writeOffLoan()
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Written Off successfully"));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Written Off"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -142,14 +137,8 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> restructureLoan(@PathVariable UUID id, @RequestParam Integer newDuration) {
         try {
             LoanDTO loan = loanService.restructureLoan(id, newDuration);
-            // ✅ LOG AUDIT: Restructure
-            auditService.logAction(
-                    "RESTRUCTURE_LOAN",
-                    "Loan",
-                    id.toString(),
-                    "Loan Restructured. New Duration: " + newDuration + " months"
-            );
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Restructured successfully", "data", loan));
+            auditService.logAction("RESTRUCTURE_LOAN", "Loan", id.toString(), "New Duration: " + newDuration);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Restructured", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -177,11 +166,9 @@ public class LoanController {
             @RequestParam BigDecimal amount) {
         try {
             LoanRepayment repayment = loanService.repayLoan(id, amount);
-            // Transaction logging happens in LoanService, which serves as an operational audit trail.
-            // You can add explicit AuditService logging here if you want high-level admin logs for repayments too.
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("message", "Repayment processed successfully");
+            response.put("message", "Repayment processed");
             response.put("remainingLoanBalance", repayment.getLoan().getLoanBalance());
             return ResponseEntity.ok(response);
         } catch (Exception e) {

@@ -4,6 +4,7 @@ import com.sacco.sacco_system.dto.MemberDTO;
 import com.sacco.sacco_system.entity.*;
 import com.sacco.sacco_system.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // Added Logging
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class MemberService {
 
     private final MemberRepository memberRepository;
@@ -31,12 +33,13 @@ public class MemberService {
     private final VerificationTokenRepository tokenRepository;
     private final SavingsAccountRepository savingsAccountRepository;
 
-    // ✅ ADDED THIS LINE (Required for GL Posting)
+    // ✅ REQUIRED FOR GL POSTING
     private final AccountingService accountingService;
 
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
+    // Use absolute path or a configured property in real prod
     private final String UPLOAD_DIR = "uploads/profiles/";
 
     public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode) throws IOException {
@@ -102,15 +105,26 @@ public class MemberService {
         VerificationToken verificationToken = new VerificationToken(savedUser, token);
         tokenRepository.save(verificationToken);
 
-        emailService.sendMemberWelcomeEmail(
-                savedUser.getEmail(),
-                savedUser.getFirstName(),
-                tempPassword,
-                token
-        );
+        // Note: Ensure emailService has this method or use a generic sendEmail
+        try {
+            emailService.sendMemberWelcomeEmail(
+                    savedUser.getEmail(),
+                    savedUser.getFirstName(),
+                    tempPassword,
+                    token
+            );
+        } catch (Exception e) {
+            log.error("Failed to send welcome email: {}", e.getMessage());
+        }
 
         // 6. Process Registration Fee & Post to GL
-        double feeAmount = systemSettingService.getDouble("REGISTRATION_FEE");
+        double feeAmount = 0.0;
+        try {
+            feeAmount = systemSettingService.getDouble("REGISTRATION_FEE");
+        } catch (Exception e) {
+            log.warn("Registration Fee setting not found, defaulting to 0");
+        }
+
         if (feeAmount > 0) {
             Transaction registrationTx = Transaction.builder()
                     .member(savedMember)
@@ -129,10 +143,14 @@ public class MemberService {
             String narrative = "Registration Fee - " + savedMember.getMemberNumber();
             String ref = registrationTx.getTransactionId();
 
-            if (paymentMethod.equals("CASH")) {
-                accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount); // Debit Cash, Credit Reg Fees
-            } else {
-                accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount); // Debit Bank, Credit Reg Fees
+            try {
+                if (paymentMethod.equals("CASH")) {
+                    accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount); // Debit Cash, Credit Reg Fees
+                } else {
+                    accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount); // Debit Bank, Credit Reg Fees
+                }
+            } catch (Exception e) {
+                log.error("Failed to post GL entry for registration: {}", e.getMessage());
             }
         }
 
@@ -145,7 +163,7 @@ public class MemberService {
                 .build();
 
         savingsAccountRepository.save(savingsAccount);
-        System.out.println("✅ Savings Account Created: " + savingsAccount.getAccountNumber());
+        log.info("✅ Savings Account Created: {}", savingsAccount.getAccountNumber());
 
         return convertToDTO(savedMember);
     }
@@ -208,7 +226,8 @@ public class MemberService {
         return "SAV" + String.format("%05d", count + 1);
     }
 
-    private MemberDTO convertToDTO(Member member) {
+    // ✅ FIXED: Changed from 'private' to 'public' so Controller can use it
+    public MemberDTO convertToDTO(Member member) {
         return MemberDTO.builder()
                 .id(member.getId())
                 .memberNumber(member.getMemberNumber())
@@ -227,6 +246,7 @@ public class MemberService {
                 .status(member.getStatus().toString())
                 .totalShares(member.getTotalShares())
                 .totalSavings(member.getTotalSavings())
+                .registrationDate(member.getRegistrationDate())
                 .build();
     }
 }

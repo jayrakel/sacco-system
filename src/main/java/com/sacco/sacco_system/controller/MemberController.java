@@ -2,11 +2,14 @@ package com.sacco.sacco_system.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper; // ✅ Import
 import com.sacco.sacco_system.dto.MemberDTO;
+import com.sacco.sacco_system.entity.Member;
+import com.sacco.sacco_system.repository.MemberRepository;
 import com.sacco.sacco_system.service.MemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType; // ✅ Import
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile; // ✅ Import
 
@@ -21,6 +24,17 @@ import java.util.UUID;
 public class MemberController {
 
     private final MemberService memberService;
+    private final MemberRepository memberRepository;
+
+    // ✅ NEW: Get Logged-in Member Profile
+    @GetMapping("/me")
+    public ResponseEntity<Map<String, Object>> getMyProfile() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Member profile not linked to this account"));
+
+        return ResponseEntity.ok(Map.of("success", true, "data", memberService.convertToDTO(member)));
+    }
 
     // ✅ FIXED: Accepts Multipart File + JSON String + Payment Params
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -52,8 +66,6 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         }
     }
-
-    // ... (Keep existing methods: getMemberById, etc.) ...
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getMemberById(@PathVariable UUID id) {

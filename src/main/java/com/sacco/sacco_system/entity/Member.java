@@ -67,11 +67,16 @@ public class Member {
 
     private BigDecimal totalSavings = BigDecimal.ZERO;
 
-    // ✅ ADDED: Relationships (Fixes the 'cannot find symbol' error)
+    // ✅ ADDED: Link to User Login Account (Required by MemberService)
+    @OneToOne(cascade = CascadeType.ALL)
+    @JoinColumn(name = "user_id", referencedColumnName = "id")
+    private User user;
+
+    // ✅ Relationships
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @JsonIgnoreProperties("member") // Prevent infinite recursion in JSON
-    @ToString.Exclude // Prevent infinite recursion in Logs
+    @JsonIgnoreProperties("member")
+    @ToString.Exclude
     private List<SavingsAccount> savingsAccounts;
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -86,7 +91,8 @@ public class Member {
 
     // ---------------------------------------------------------
 
-    private LocalDateTime joinDate;
+    // ✅ RENAMED: joinDate -> registrationDate (Matches MemberService)
+    private LocalDateTime registrationDate;
 
     private LocalDateTime createdAt;
 
@@ -94,7 +100,7 @@ public class Member {
 
     @PrePersist
     protected void onCreate() {
-        joinDate = LocalDateTime.now();
+        registrationDate = LocalDateTime.now();
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
@@ -105,6 +111,6 @@ public class Member {
     }
 
     public enum MemberStatus {
-        ACTIVE, INACTIVE, SUSPENDED
+        ACTIVE, INACTIVE, SUSPENDED, DECEASED
     }
 }
