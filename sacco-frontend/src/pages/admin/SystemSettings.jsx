@@ -22,7 +22,7 @@ export default function SystemSettings() {
     const [message, setMessage] = useState('');
 
     // Base URL for image display
-    const BASE_URL = "http://localhost:8080/uploads/settings/";
+    const BASE_URL = import.meta.env.VITE_API_URL + "/uploads/settings/";
 
     useEffect(() => {
         fetchSettings();

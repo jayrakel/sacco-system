@@ -6,6 +6,7 @@ import com.sacco.sacco_system.entity.accounting.*;
 import com.sacco.sacco_system.repository.accounting.*;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,36 +21,30 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AccountingService {
 
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
     private final JournalLineRepository journalLineRepository;
-    private final GlMappingRepository glMappingRepository; // ✅ NEW: Dynamic Mappings
-    private final FiscalPeriodRepository fiscalPeriodRepository; // ✅ NEW: Fiscal Control
+    private final GlMappingRepository glMappingRepository;
+    private final FiscalPeriodRepository fiscalPeriodRepository;
     private final ObjectMapper objectMapper;
 
     /**
-     * ✅ NEW: High-Level Event Poster (Recommended)
-     * Looks up the GL Codes from DB instead of hardcoding strings.
+     * ✅ DYNAMIC POSTING: Looks up account codes from the database configuration.
+     * Keeps your business logic flexible.
      */
     @Transactional
     public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
-        // 1. Find the Mapping (e.g. "LOAN_DISBURSEMENT" -> Dr 1200, Cr 1001)
         GlMapping mapping = glMappingRepository.findByEventName(eventName)
                 .orElseThrow(() -> new RuntimeException("GL Mapping not found for event: " + eventName));
 
-        // 2. Delegate to standard poster
         postDoubleEntry(description, referenceNo, mapping.getDebitAccountCode(), mapping.getCreditAccountCode(), amount);
     }
 
-    /**
-     * AUTO: Post a standard Double-Entry Transaction (2 legs)
-     */
     @Transactional
     public void postDoubleEntry(String description, String referenceNo, String debitAccountCode, String creditAccountCode, BigDecimal amount) {
-
-        // 1. Check Fiscal Period
         checkFiscalPeriod(LocalDate.now());
 
         GLAccount debitAcct = accountRepository.findById(debitAccountCode)
@@ -83,9 +78,6 @@ public class AccountingService {
         });
     }
 
-    /**
-     * MANUAL: Post a Multi-Line Journal Entry (Expenses, Assets, Adjustments)
-     */
     @Transactional
     public void postManualJournalEntry(ManualEntryRequest request) {
         checkFiscalPeriod(request.getDate());
@@ -105,7 +97,6 @@ public class AccountingService {
                 .lines(new ArrayList<>())
                 .build();
 
-        // 3. Process Lines
         for (ManualEntryLine lineDto : request.getLines()) {
             GLAccount account = accountRepository.findById(lineDto.getAccountCode())
                     .orElseThrow(() -> new RuntimeException("Account not found: " + lineDto.getAccountCode()));
@@ -116,17 +107,11 @@ public class AccountingService {
                     .debit(lineDto.getDebit())
                     .credit(lineDto.getCredit())
                     .build();
-
             entry.getLines().add(line);
 
-            // 4. Update Balances
-            if (lineDto.getDebit().compareTo(BigDecimal.ZERO) > 0) {
-                updateBalance(account, lineDto.getDebit(), true);
-            } else {
-                updateBalance(account, lineDto.getCredit(), false);
-            }
+            if (lineDto.getDebit().compareTo(BigDecimal.ZERO) > 0) updateBalance(account, lineDto.getDebit(), true);
+            else updateBalance(account, lineDto.getCredit(), false);
         }
-
         journalRepository.save(entry);
     }
 
@@ -139,7 +124,6 @@ public class AccountingService {
         accountRepository.save(account);
     }
 
-    // --- HELPER DTOs ---
     @Data
     public static class ManualEntryRequest {
         private String description;
@@ -155,21 +139,16 @@ public class AccountingService {
         private BigDecimal credit = BigDecimal.ZERO;
     }
 
-    // --- OTHER METHODS (Reports, Toggle, Create, Init) ---
-
     @Transactional
     public GLAccount toggleAccountStatus(String code) {
-        GLAccount account = accountRepository.findById(code)
-                .orElseThrow(() -> new RuntimeException("Account not found: " + code));
+        GLAccount account = accountRepository.findById(code).orElseThrow(() -> new RuntimeException("Account not found"));
         account.setActive(!account.isActive());
         return accountRepository.save(account);
     }
 
     @Transactional
     public GLAccount createManualAccount(GLAccount account) {
-        if (accountRepository.existsById(account.getCode())) {
-            throw new RuntimeException("Account code " + account.getCode() + " already exists.");
-        }
+        if (accountRepository.existsById(account.getCode())) throw new RuntimeException("Account code already exists.");
         account.setBalance(BigDecimal.ZERO);
         account.setActive(true);
         return accountRepository.save(account);
@@ -177,12 +156,9 @@ public class AccountingService {
 
     public List<GLAccount> getAccountsWithBalancesAsOf(LocalDate startDate, LocalDate endDate) {
         List<GLAccount> allAccounts = accountRepository.findAll();
-        List<Object[]> totals;
-        if (startDate == null) {
-            totals = journalLineRepository.getAccountTotalsUpToDate(endDate.atTime(LocalTime.MAX));
-        } else {
-            totals = journalLineRepository.getAccountTotalsInRange(startDate.atStartOfDay(), endDate.atTime(LocalTime.MAX));
-        }
+        List<Object[]> totals = (startDate == null)
+                ? journalLineRepository.getAccountTotalsUpToDate(endDate.atTime(LocalTime.MAX))
+                : journalLineRepository.getAccountTotalsInRange(startDate.atStartOfDay(), endDate.atTime(LocalTime.MAX));
 
         for (GLAccount account : allAccounts) {
             BigDecimal debitSum = BigDecimal.ZERO;
@@ -195,13 +171,8 @@ public class AccountingService {
                     break;
                 }
             }
-
-            BigDecimal netBalance;
-            if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
-                netBalance = debitSum.subtract(creditSum);
-            } else {
-                netBalance = creditSum.subtract(debitSum);
-            }
+            BigDecimal netBalance = (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE)
+                    ? debitSum.subtract(creditSum) : creditSum.subtract(debitSum);
             account.setBalance(netBalance);
         }
         return allAccounts;
@@ -210,7 +181,7 @@ public class AccountingService {
     public void initChartOfAccounts() {
         if(accountRepository.count() == 0) {
             try {
-                System.out.println("📂 Loading Chart of Accounts from JSON...");
+                log.info("📂 Loading Chart of Accounts from JSON...");
                 InputStream inputStream = new ClassPathResource("accounts.json").getInputStream();
                 List<GLAccount> accounts = objectMapper.readValue(inputStream, new TypeReference<List<GLAccount>>(){});
                 for (GLAccount account : accounts) {
@@ -218,17 +189,14 @@ public class AccountingService {
                     account.setActive(true);
                     accountRepository.save(account);
                 }
-                // Also init default mappings
                 initDefaultMappings();
-                System.out.println("✅ Successfully initialized " + accounts.size() + " GL Accounts.");
+                log.info("✅ Successfully initialized {} GL Accounts.", accounts.size());
             } catch (Exception e) {
-                System.err.println("❌ Failed to load accounts.json: " + e.getMessage());
-                e.printStackTrace();
+                log.error("❌ Failed to load accounts.json: {}", e.getMessage(), e);
             }
         }
     }
 
-    // ✅ NEW: Seed Default Mappings if missing
     public void initDefaultMappings() {
         createMapping("LOAN_DISBURSEMENT", "1200", "1001", "Loan Disbursement");
         createMapping("LOAN_REPAYMENT", "1001", "1200", "Loan Repayment");
@@ -244,6 +212,7 @@ public class AccountingService {
     private void createMapping(String event, String dr, String cr, String desc) {
         if (glMappingRepository.findById(event).isEmpty()) {
             glMappingRepository.save(new GlMapping(event, dr, cr, desc));
+            log.info("✅ Created missing GL Mapping: {}", event);
         }
     }
 }

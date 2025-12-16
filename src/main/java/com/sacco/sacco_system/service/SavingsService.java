@@ -209,6 +209,7 @@ public class SavingsService {
      * No longer takes a global rate param.
      */
     public void applyMonthlyInterest() {
+        //TODO:Risk: If the Sacco grows to 10,000 or 100,000 members, loading all objects into RAM at once will cause an OutOfMemoryError and crash the server. Recommendation: Use Spring Data Pagination (Pageable) or perform bulk updates via SQL (@Query) instead of iterating in Java.
         List<SavingsAccount> accounts = savingsAccountRepository.findAll();
 
         for (SavingsAccount acc : accounts) {

@@ -1,15 +1,15 @@
 package com.sacco.sacco_system.service;
 
+import lombok.extern.slf4j.Slf4j; // ✅ Import
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j // ✅ Annotation
 public class SmsService {
 
-    // Plug in Africa's Talking / Twilio here later
     @Async
     public void sendSms(String phoneNumber, String message) {
-        // Logic to validate phone number (e.g., ensure +254 format)
-        System.out.println(">> 📱 SMS SENT to " + phoneNumber + ": " + message);
+        log.info(">> 📱 SMS SENT to {}: {}", phoneNumber, message); // ✅ Replaced Sysout
     }
 }

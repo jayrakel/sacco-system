@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.service;
 
-import com.sacco.sacco_system.annotation.Loggable; // ✅ Uses Automation
+import com.sacco.sacco_system.annotation.Loggable; // ✅ Automated Audit
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.*;
@@ -30,48 +30,29 @@ public class LoanService {
     private final GuarantorRepository guarantorRepository;
     private final ChargeRepository chargeRepository;
 
-    // ========================================================================
-    // 1. APPLICATION & CREATION
-    // ========================================================================
-
     @Loggable(action = "APPLY_LOAN", category = "LOANS")
     public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal principalAmount, Integer durationMonths) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
+        Member member = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
+        LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Loan Product not found"));
 
-        LoanProduct product = loanProductRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Loan Product not found"));
+        if (principalAmount.compareTo(product.getMaxLimit()) > 0) throw new RuntimeException("Amount exceeds product limit");
+        if (durationMonths > product.getMaxTenureMonths()) throw new RuntimeException("Duration exceeds product limit");
 
-        // 1. Check Limits
-        if (principalAmount.compareTo(product.getMaxLimit()) > 0) {
-            throw new RuntimeException("Amount exceeds product limit of " + product.getMaxLimit());
-        }
-        if (durationMonths > product.getMaxTenureMonths()) {
-            throw new RuntimeException("Duration exceeds product limit of " + product.getMaxTenureMonths() + " months");
-        }
-
-        // 2. Calculate Interest & Installments
         BigDecimal totalInterest;
         BigDecimal monthlyRepayment;
 
         if (product.getInterestType() == LoanProduct.InterestType.FLAT_RATE) {
-            // Flat Rate: Interest = P * R * T
             totalInterest = principalAmount
                     .multiply(product.getInterestRate().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP))
                     .multiply(BigDecimal.valueOf(durationMonths).divide(BigDecimal.valueOf(12), 4, RoundingMode.HALF_UP));
-
             BigDecimal totalPayable = principalAmount.add(totalInterest);
             monthlyRepayment = totalPayable.divide(BigDecimal.valueOf(durationMonths), 2, RoundingMode.HALF_UP);
-
         } else {
-            // Reducing Balance
             BigDecimal monthlyRate = product.getInterestRate().divide(BigDecimal.valueOf(1200), 8, RoundingMode.HALF_UP);
             BigDecimal numerator = monthlyRate.multiply(BigDecimal.ONE.add(monthlyRate).pow(durationMonths));
             BigDecimal denominator = BigDecimal.ONE.add(monthlyRate).pow(durationMonths).subtract(BigDecimal.ONE);
-
             monthlyRepayment = principalAmount.multiply(numerator).divide(denominator, 2, RoundingMode.HALF_UP);
-            BigDecimal totalPayable = monthlyRepayment.multiply(BigDecimal.valueOf(durationMonths));
-            totalInterest = totalPayable.subtract(principalAmount);
+            totalInterest = monthlyRepayment.multiply(BigDecimal.valueOf(durationMonths)).subtract(principalAmount);
         }
 
         Loan loan = Loan.builder()
@@ -94,12 +75,8 @@ public class LoanService {
     }
 
     public GuarantorDTO addGuarantor(UUID loanId, UUID memberId, BigDecimal guaranteeAmount) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-        Member guarantorMember = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
-
-        if (loan.getMember().getId().equals(memberId)) {
-            throw new RuntimeException("Member cannot guarantee their own loan.");
-        }
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Member guarantorMember = memberRepository.findById(memberId).orElseThrow();
 
         if (guarantorMember.getTotalSavings().compareTo(guaranteeAmount) < 0) {
             throw new RuntimeException("Guarantor does not have sufficient savings.");
@@ -114,26 +91,12 @@ public class LoanService {
                 .build();
 
         guarantorRepository.save(guarantor);
-
-        return GuarantorDTO.builder()
-                .id(guarantor.getId())
-                .loanId(loan.getId())
-                .memberId(guarantorMember.getId())
-                .memberName(guarantorMember.getFirstName() + " " + guarantorMember.getLastName())
-                .guaranteeAmount(guarantor.getGuaranteeAmount())
-                .status(guarantor.getStatus().toString())
-                .build();
+        return GuarantorDTO.builder().id(guarantor.getId()).build();
     }
-
-    // ========================================================================
-    // 2. LIFECYCLE MANAGEMENT
-    // ========================================================================
 
     @Loggable(action = "APPROVE_LOAN", category = "LOANS")
     public LoanDTO approveLoan(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-        if (loan.getStatus() != Loan.LoanStatus.PENDING) throw new RuntimeException("Loan is not pending approval.");
-
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setStatus(Loan.LoanStatus.APPROVED);
         loan.setApprovalDate(LocalDate.now());
         return convertToDTO(loanRepository.save(loan));
@@ -141,66 +104,42 @@ public class LoanService {
 
     @Loggable(action = "REJECT_LOAN", category = "LOANS")
     public LoanDTO rejectLoan(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-        if (loan.getStatus() != Loan.LoanStatus.PENDING) throw new RuntimeException("Only PENDING loans can be rejected.");
-
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setStatus(Loan.LoanStatus.REJECTED);
         return convertToDTO(loanRepository.save(loan));
     }
 
     @Loggable(action = "DISBURSE_LOAN", category = "LOANS")
     public LoanDTO disburseLoan(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-        if (loan.getStatus() != Loan.LoanStatus.APPROVED) throw new RuntimeException("Loan must be APPROVED first.");
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        if (loan.getStatus() != Loan.LoanStatus.APPROVED) throw new RuntimeException("Loan must be APPROVED.");
 
-        // ✅ 1. Apply Processing Fee (If any)
         BigDecimal fee = loan.getProduct().getProcessingFee();
         if (fee != null && fee.compareTo(BigDecimal.ZERO) > 0) {
-            Charge charge = Charge.builder()
-                    .member(loan.getMember())
-                    .loan(loan)
-                    .type(Charge.ChargeType.PROCESSING_FEE)
-                    .amount(fee)
-                    .status(Charge.ChargeStatus.PAID)
-                    .description("Processing Fee for " + loan.getLoanNumber())
-                    .build();
+            Charge charge = Charge.builder().member(loan.getMember()).loan(loan).type(Charge.ChargeType.PROCESSING_FEE).amount(fee).status(Charge.ChargeStatus.PAID).description("Processing Fee").build();
             chargeRepository.save(charge);
 
-            accountingService.postDoubleEntry("Processing Fee " + loan.getLoanNumber(), "FEE-" + loan.getLoanNumber(), "1001", "4000", fee);
+            // ✅ DYNAMIC ACCOUNTING
+            accountingService.postEvent("PROCESSING_FEE", "Fee " + loan.getLoanNumber(), "FEE-" + loan.getLoanNumber(), fee);
         }
 
-        // ✅ 2. Disburse Principal
         loan.setStatus(Loan.LoanStatus.DISBURSED);
         loan.setDisbursementDate(LocalDate.now());
         loan.setExpectedRepaymentDate(LocalDate.now().plusMonths(loan.getDurationMonths()));
         loanRepository.save(loan);
 
-        // Transaction
-        Transaction tx = Transaction.builder()
-                .member(loan.getMember())
-                .type(Transaction.TransactionType.LOAN_DISBURSEMENT)
-                .amount(loan.getPrincipalAmount())
-                .description("Disbursement: " + loan.getLoanNumber())
-                .build();
+        Transaction tx = Transaction.builder().member(loan.getMember()).type(Transaction.TransactionType.LOAN_DISBURSEMENT).amount(loan.getPrincipalAmount()).description("Disbursement").build();
         transactionRepository.save(tx);
 
-        // GL: Debit Loans Receivable (1200), Credit Cash (1001)
-        accountingService.postDoubleEntry("Disbursement " + loan.getLoanNumber(), tx.getTransactionId(), "1200", "1001", loan.getPrincipalAmount());
+        // ✅ DYNAMIC ACCOUNTING
+        accountingService.postEvent("LOAN_DISBURSEMENT", "Disbursement " + loan.getLoanNumber(), tx.getTransactionId(), loan.getPrincipalAmount());
 
         return convertToDTO(loan);
     }
 
     @Loggable(action = "LOAN_REPAYMENT", category = "LOANS")
     public LoanRepayment repayLoan(UUID loanId, BigDecimal amount) {
-        LoanRepayment repayment = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
-                        loanId, LoanRepayment.RepaymentStatus.PENDING)
-                .orElseThrow(() -> new RuntimeException("No pending repayments found."));
-
-        processRepayment(repayment, amount);
-        return repayment;
-    }
-
-    private void processRepayment(LoanRepayment repayment, BigDecimal amount) {
+        LoanRepayment repayment = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(loanId, LoanRepayment.RepaymentStatus.PENDING).orElseThrow();
         Loan loan = repayment.getLoan();
 
         repayment.setPrincipalPaid(amount);
@@ -210,52 +149,37 @@ public class LoanService {
         loanRepaymentRepository.save(repayment);
 
         loan.setLoanBalance(loan.getLoanBalance().subtract(amount));
-        if (loan.getLoanBalance().compareTo(BigDecimal.ZERO) <= 0) {
-            loan.setStatus(Loan.LoanStatus.COMPLETED);
-        }
+        if (loan.getLoanBalance().compareTo(BigDecimal.ZERO) <= 0) loan.setStatus(Loan.LoanStatus.COMPLETED);
         loanRepository.save(loan);
 
-        Transaction tx = Transaction.builder()
-                .member(loan.getMember())
-                .type(Transaction.TransactionType.LOAN_REPAYMENT)
-                .amount(amount)
-                .description("Repayment: " + loan.getLoanNumber())
-                .build();
+        Transaction tx = Transaction.builder().member(loan.getMember()).type(Transaction.TransactionType.LOAN_REPAYMENT).amount(amount).description("Repayment").build();
         transactionRepository.save(tx);
 
-        accountingService.postDoubleEntry("Repayment " + loan.getLoanNumber(), tx.getTransactionId(), "1001", "1200", amount);
-    }
+        // ✅ DYNAMIC ACCOUNTING
+        accountingService.postEvent("LOAN_REPAYMENT", "Repayment " + loan.getLoanNumber(), tx.getTransactionId(), amount);
 
-    // ========================================================================
-    // 3. ADVANCED FEATURES (Write-off, Restructure, Penalties)
-    // ========================================================================
+        return repayment;
+    }
 
     @Loggable(action = "WRITE_OFF_LOAN", category = "LOANS")
     public void writeOffLoan(UUID loanId, String reason) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
         BigDecimal balance = loan.getLoanBalance();
-
-        if (balance.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Loan has no balance to write off.");
 
         loan.setStatus(Loan.LoanStatus.WRITTEN_OFF);
         loan.setLoanBalance(BigDecimal.ZERO);
         loanRepository.save(loan);
 
-        Transaction tx = Transaction.builder()
-                .member(loan.getMember())
-                .type(Transaction.TransactionType.REVERSAL)
-                .amount(balance)
-                .description("Write-Off: " + reason)
-                .build();
+        Transaction tx = Transaction.builder().member(loan.getMember()).type(Transaction.TransactionType.REVERSAL).amount(balance).description("Write-Off: " + reason).build();
         transactionRepository.save(tx);
 
-        accountingService.postDoubleEntry("Write-Off " + loan.getLoanNumber(), tx.getTransactionId(), "5011", "1200", balance);
+        // ✅ DYNAMIC ACCOUNTING
+        accountingService.postEvent("WRITE_OFF", "Write-Off " + loan.getLoanNumber(), tx.getTransactionId(), balance);
     }
 
     @Loggable(action = "RESTRUCTURE_LOAN", category = "LOANS")
     public LoanDTO restructureLoan(UUID loanId, Integer newDurationMonths) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setDurationMonths(newDurationMonths);
         BigDecimal newMonthly = loan.getLoanBalance().divide(BigDecimal.valueOf(newDurationMonths), 2, RoundingMode.HALF_UP);
         loan.setMonthlyRepayment(newMonthly);
@@ -264,75 +188,53 @@ public class LoanService {
         loanRepaymentRepository.deleteAll(pending);
 
         createRepaymentSchedule(loan);
-
         return convertToDTO(loanRepository.save(loan));
     }
 
-    // ✅ NEW: AUTOMATIC PENALTY CHECK
     public void checkAndApplyPenalties() {
         List<Loan> activeLoans = loanRepository.findByStatus(Loan.LoanStatus.DISBURSED);
         LocalDate today = LocalDate.now();
 
         for (Loan loan : activeLoans) {
             List<LoanRepayment> overdueRepayments = loanRepaymentRepository.findByLoanIdAndStatus(loan.getId(), LoanRepayment.RepaymentStatus.PENDING)
-                    .stream()
-                    .filter(r -> r.getDueDate().isBefore(today))
-                    .collect(Collectors.toList());
+                    .stream().filter(r -> r.getDueDate().isBefore(today)).collect(Collectors.toList());
 
             if (!overdueRepayments.isEmpty()) {
                 BigDecimal penaltyRate = loan.getProduct().getPenaltyRate();
-                if (penaltyRate == null || penaltyRate.compareTo(BigDecimal.ZERO) == 0) continue;
+                if (penaltyRate != null && penaltyRate.compareTo(BigDecimal.ZERO) > 0) {
+                    for (LoanRepayment repayment : overdueRepayments) {
+                        BigDecimal overdueAmount = loan.getMonthlyRepayment().subtract(repayment.getTotalPaid());
+                        BigDecimal penalty = overdueAmount.multiply(penaltyRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
-                for (LoanRepayment repayment : overdueRepayments) {
-                    BigDecimal overdueAmount = loan.getMonthlyRepayment().subtract(repayment.getTotalPaid());
-                    BigDecimal penalty = overdueAmount.multiply(penaltyRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                        if (penalty.compareTo(BigDecimal.ZERO) > 0) {
+                            loan.setLoanBalance(loan.getLoanBalance().add(penalty));
+                            loanRepository.save(loan);
+                            Charge charge = Charge.builder().member(loan.getMember()).loan(loan).type(Charge.ChargeType.LATE_PAYMENT_PENALTY).amount(penalty).description("Penalty").build();
+                            chargeRepository.save(charge);
 
-                    if (penalty.compareTo(BigDecimal.ZERO) > 0) {
-                        loan.setLoanBalance(loan.getLoanBalance().add(penalty));
-                        loanRepository.save(loan);
-
-                        Charge charge = Charge.builder()
-                                .member(loan.getMember())
-                                .loan(loan)
-                                .type(Charge.ChargeType.LATE_PAYMENT_PENALTY)
-                                .amount(penalty)
-                                .description("Penalty for due date " + repayment.getDueDate())
-                                .build();
-                        chargeRepository.save(charge);
-
-                        accountingService.postDoubleEntry("Penalty " + loan.getLoanNumber(), "PEN-" + repayment.getId(), "1200", "4001", penalty);
+                            // ✅ DYNAMIC ACCOUNTING
+                            accountingService.postEvent("PENALTY_CHARGED", "Penalty " + loan.getLoanNumber(), "PEN-" + repayment.getId(), penalty);
+                        }
                     }
                 }
             }
         }
     }
 
-    // ========================================================================
-    // 4. HELPERS
-    // ========================================================================
-
     private void createRepaymentSchedule(Loan loan) {
-        LocalDate paymentDate = (loan.getDisbursementDate() != null) ? loan.getDisbursementDate().plusMonths(1) : LocalDate.now().plusMonths(1);
-
+        LocalDate paymentDate = LocalDate.now().plusMonths(1);
         for (int i = 1; i <= loan.getDurationMonths(); i++) {
-            LoanRepayment repayment = LoanRepayment.builder()
-                    .loan(loan)
-                    .repaymentNumber(i)
-                    .dueDate(paymentDate)
-                    .status(LoanRepayment.RepaymentStatus.PENDING)
-                    .build();
+            LoanRepayment repayment = LoanRepayment.builder().loan(loan).repaymentNumber(i).dueDate(paymentDate).status(LoanRepayment.RepaymentStatus.PENDING).build();
             loanRepaymentRepository.save(repayment);
             paymentDate = paymentDate.plusMonths(1);
         }
     }
 
-    private String generateLoanNumber() { long count = loanRepository.count(); return "LN" + String.format("%06d", count + 1); }
+    private String generateLoanNumber() { return "LN" + String.format("%06d", loanRepository.count() + 1); }
     public BigDecimal getTotalDisbursedLoans() { return loanRepository.getTotalDisbursedLoans(); }
     public BigDecimal getTotalOutstandingLoans() { return loanRepository.getTotalOutstandingLoans(); }
     public BigDecimal getTotalInterestCollected() { return loanRepository.getTotalInterest(); }
-
     public LoanDTO getLoanById(UUID id) { return convertToDTO(loanRepository.findById(id).orElseThrow()); }
-    public LoanDTO getLoanByNumber(String number) { return convertToDTO(loanRepository.findByLoanNumber(number).orElseThrow()); }
     public List<LoanDTO> getAllLoans() { return loanRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList()); }
     public List<LoanDTO> getLoansByMemberId(UUID id) { return loanRepository.findByMemberId(id).stream().map(this::convertToDTO).collect(Collectors.toList()); }
     public List<LoanDTO> getLoansByStatus(Loan.LoanStatus status) { return loanRepository.findByStatus(status).stream().map(this::convertToDTO).collect(Collectors.toList()); }

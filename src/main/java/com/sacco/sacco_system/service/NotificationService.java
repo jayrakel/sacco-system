@@ -5,6 +5,7 @@ import com.sacco.sacco_system.entity.User;
 import com.sacco.sacco_system.repository.NotificationRepository;
 import com.sacco.sacco_system.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // ✅ Import
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,22 +14,18 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j // ✅ Annotation
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final EmailService emailService;
-    private final SmsService smsService;
     private final UserRepository userRepository;
 
-    /**
-     * Send a notification across all channels
-     */
     @Transactional
     public void notifyUser(UUID userId, String title, String message, boolean sendEmail, boolean sendSms) {
         User user = userRepository.findById(userId).orElse(null);
         if (user == null) return;
 
-        // 1. In-App Notification (Always)
+        // 1. In-App Notification
         Notification notif = Notification.builder()
                 .user(user)
                 .title(title)
@@ -39,17 +36,13 @@ public class NotificationService {
 
         // 2. Email
         if (sendEmail) {
-            // Re-using the welcome logic wrapper or creating a simple one in EmailService
-            // For now, simpler standard log:
-            System.out.println(">> 📧 Email queued for: " + user.getEmail());
+            log.info(">> 📧 Email queued for: {}", user.getEmail()); // ✅ Replaced Sysout
             // emailService.sendGenericEmail(user.getEmail(), title, message);
         }
 
-        // 3. SMS (If phone number exists on Member profile)
+        // 3. SMS
         if (sendSms) {
-            // In a real scenario, you'd fetch the Member entity linked to this User to get the phone
-            // smsService.sendSms(member.getPhone(), message);
-            System.out.println(">> 📱 SMS queued.");
+            log.info(">> 📱 SMS queued for user ID: {}", userId); // ✅ Replaced Sysout
         }
     }
 

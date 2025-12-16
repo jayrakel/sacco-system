@@ -36,6 +36,7 @@
   { "code": "1304", "name": "Investment Property (Plots for Resale)", "type": "ASSET" },
   { "code": "1305", "name": "Motor Vehicles", "type": "ASSET" },
   { "code": "1350", "name": "Accumulated Depreciation", "type": "ASSET" },
+  { "code": "1500", "name": "Asset Clearing Account", "type": "ASSET" },
 
   { "code": "2001", "name": "Member Deposits (Non-Withdrawable)", "type": "LIABILITY" },
   { "code": "2002", "name": "Member Savings (Withdrawable)", "type": "LIABILITY" },
