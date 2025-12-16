@@ -144,4 +144,26 @@ public class MemberController {
         response.put("activeMembersCount", count);
         return ResponseEntity.ok(response);
     }
+
+    // In MemberController.java
+
+    @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> updateMyProfile(
+            @RequestPart("member") String memberDtoString,
+            @RequestPart(value = "file", required = false) MultipartFile file
+    ) {
+        try {
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.findAndRegisterModules();
+            MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
+
+            MemberDTO updated = memberService.updateProfile(email, memberDTO, file);
+
+            return ResponseEntity.ok(Map.of("success", true, "message", "Profile updated successfully", "data", updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
 }

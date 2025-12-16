@@ -196,6 +196,49 @@ public class MemberService {
         memberRepository.save(member);
     }
 
+    // In MemberService.java
+
+    public MemberDTO updateProfile(String email, MemberDTO updateDTO, MultipartFile file) throws IOException {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Member member = memberRepository.findByMemberNumber(user.getMemberNumber())
+                .orElseThrow(() -> new RuntimeException("Member profile not found"));
+
+        // 1. Update Allowed Fields
+        member.setPhoneNumber(updateDTO.getPhoneNumber());
+        member.setAddress(updateDTO.getAddress());
+        member.setEmail(updateDTO.getEmail()); // Ensure email uniqueness logic if needed
+
+        // Next of Kin
+        member.setNextOfKinName(updateDTO.getNextOfKinName());
+        member.setNextOfKinPhone(updateDTO.getNextOfKinPhone());
+        member.setNextOfKinRelation(updateDTO.getNextOfKinRelation());
+
+        // 2. Handle Image Upload
+        if (file != null && !file.isEmpty()) {
+            Path uploadPath = Paths.get(UPLOAD_DIR);
+            if (!Files.exists(uploadPath)) Files.createDirectories(uploadPath);
+
+            String filename = "PROFILE_" + member.getMemberNumber() + "_" + UUID.randomUUID() + ".jpg";
+            Files.copy(file.getInputStream(), uploadPath.resolve(filename), StandardCopyOption.REPLACE_EXISTING);
+            member.setProfileImageUrl("profiles/" + filename);
+        }
+
+        // 3. Update User Email if changed
+        if (!user.getEmail().equals(updateDTO.getEmail())) {
+            if(userRepository.findByEmail(updateDTO.getEmail()).isPresent()) {
+                throw new RuntimeException("Email already in use");
+            }
+            user.setEmail(updateDTO.getEmail());
+            user.setUsername(updateDTO.getEmail());
+            userRepository.save(user);
+        }
+
+        Member saved = memberRepository.save(member);
+        return convertToDTO(saved);
+    }
+
     public MemberDTO updateMember(UUID id, MemberDTO memberDTO) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
