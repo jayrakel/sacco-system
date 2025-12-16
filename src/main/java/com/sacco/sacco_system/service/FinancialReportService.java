@@ -1,7 +1,7 @@
 package com.sacco.sacco_system.service;
 
 import com.sacco.sacco_system.entity.FinancialReport;
-import com.sacco.sacco_system.entity.Transaction; // Import this
+import com.sacco.sacco_system.entity.Transaction;
 import com.sacco.sacco_system.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -22,19 +24,34 @@ public class FinancialReportService {
     private final LoanRepaymentRepository loanRepaymentRepository;
     private final ShareCapitalRepository shareCapitalRepository;
     private final WithdrawalRepository withdrawalRepository;
-    private final TransactionRepository transactionRepository; // ✅ Inject this
+    private final TransactionRepository transactionRepository;
 
+    /**
+     * Generates a snapshot of the system's financial health for the current day.
+     * Includes calculations for Total Income, Expenses, and Net Income.
+     */
     public FinancialReport generateDailyReport() {
         LocalDate today = LocalDate.now();
 
-        // Fetch Income Streams
+        // 1. Calculate Income Streams (Interest + Fees)
         BigDecimal totalInterest = loanRepository.getTotalInterest() != null
                 ? loanRepository.getTotalInterest() : BigDecimal.ZERO;
 
-        // ✅ NEW: Fetch Registration Fees
         BigDecimal totalRegFees = transactionRepository.getTotalAmountByType(Transaction.TransactionType.REGISTRATION_FEE);
         if (totalRegFees == null) totalRegFees = BigDecimal.ZERO;
 
+        // Combine all income sources
+        BigDecimal calculatedTotalIncome = totalInterest.add(totalRegFees);
+
+        // 2. Calculate Expenses (Withdrawals)
+        BigDecimal totalWithdrawals = withdrawalRepository.getTotalWithdrawals() != null
+                ? withdrawalRepository.getTotalWithdrawals() : BigDecimal.ZERO;
+
+        // In this simple model, expenses = withdrawals.
+        // In a complex model, you would add operational expenses here.
+        BigDecimal calculatedTotalExpenses = totalWithdrawals;
+
+        // 3. Build the Report Object
         FinancialReport report = FinancialReport.builder()
                 .reportDate(today)
                 .totalMembers(BigDecimal.valueOf(memberRepository.countActiveMembers()))
@@ -49,27 +66,38 @@ public class FinancialReportService {
                 .totalInterestCollected(totalInterest)
                 .totalShareCapital(shareCapitalRepository.getTotalShareCapital() != null
                         ? shareCapitalRepository.getTotalShareCapital() : BigDecimal.ZERO)
-                .totalWithdrawals(withdrawalRepository.getTotalWithdrawals() != null
-                        ? withdrawalRepository.getTotalWithdrawals() : BigDecimal.ZERO)
+                .totalWithdrawals(totalWithdrawals)
+                // ✅ SET NEW CALCULATED FIELDS
+                .totalIncome(calculatedTotalIncome)
+                .totalExpenses(calculatedTotalExpenses)
+                .netIncome(calculatedTotalIncome.subtract(calculatedTotalExpenses))
                 .build();
 
-        // ✅ CORRECT CALCULATION: Net Income = Interest + Reg Fees - Withdrawals
-        BigDecimal income = totalInterest.add(totalRegFees);
-        BigDecimal expenses = report.getTotalWithdrawals();
-
-        report.setNetIncome(income.subtract(expenses));
-
+        // 4. Save to DB
+        // If a report already exists for today, you might want to update it instead of creating a new one.
+        // For simplicity, we assume one report per day or overwritten.
         return financialReportRepository.save(report);
     }
 
     public FinancialReport getTodayReport() {
-        LocalDate today = LocalDate.now();
-        // Always generate fresh report on request to show latest fees
+        // We generate it on the fly so the Dashboard is always "Live" with the latest transaction data
         return generateDailyReport();
     }
 
     public FinancialReport getReportByDate(LocalDate date) {
         return financialReportRepository.findByReportDate(date)
                 .orElseThrow(() -> new RuntimeException("Report not found for date: " + date));
+    }
+
+    /**
+     * ✅ NEW: Dynamic Chart Data Fetcher
+     * Fetches reports based on a variable number of days (7, 30, 90)
+     */
+    public List<FinancialReport> getChartData(int days) {
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(days);
+
+        // Returns sorted ASC (Mon, Tue, Wed...) perfect for charts
+        return financialReportRepository.findByReportDateBetweenOrderByReportDateAsc(startDate, endDate);
     }
 }

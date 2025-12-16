@@ -18,35 +18,33 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class FinancialReport {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-    
+
     private LocalDate reportDate;
-    
+
+    // --- METRICS ---
     private BigDecimal totalMembers = BigDecimal.ZERO;
-    
     private BigDecimal totalSavings = BigDecimal.ZERO;
-    
     private BigDecimal totalLoansIssued = BigDecimal.ZERO;
-    
     private BigDecimal totalLoansOutstanding = BigDecimal.ZERO;
-    
     private BigDecimal totalRepayments = BigDecimal.ZERO;
-    
-    private BigDecimal totalInterestCollected = BigDecimal.ZERO;
-    
     private BigDecimal totalShareCapital = BigDecimal.ZERO;
-    
+
+    // --- FINANCIALS ---
+    private BigDecimal totalInterestCollected = BigDecimal.ZERO;
     private BigDecimal totalWithdrawals = BigDecimal.ZERO;
-    
+
+    // ✅ NEW FIELDS (For Charts & P&L Analysis)
+    private BigDecimal totalIncome = BigDecimal.ZERO;
+    private BigDecimal totalExpenses = BigDecimal.ZERO;
     private BigDecimal netIncome = BigDecimal.ZERO;
-    
+
     private LocalDateTime generatedAt;
-    
     private LocalDateTime createdAt;
-    
+
     @PrePersist
     protected void onCreate() {
         generatedAt = LocalDateTime.now();

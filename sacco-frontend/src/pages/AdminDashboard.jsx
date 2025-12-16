@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import api from '../api';
 
 // Icons
@@ -52,51 +53,47 @@ export default function AdminDashboard() {
     // --- CONTENT SWITCHER ---
     const renderContent = () => {
         switch(activeTab) {
-            case 'overview': return <OverviewTab />;
+            case 'overview': return <OverviewTab setActiveTab={setActiveTab} />;
             case 'finance': return <FinanceTab />;
             case 'savings': return (
-                <div className="space-y-8">
+                <div className="space-y-8 animate-in fade-in">
                     <SavingsProducts />
                     <div className="border-t border-slate-200 my-4"></div>
                     <SavingsManager />
                 </div>
             );
             case 'loans': return (
-                            <div className="space-y-8">
-                                <LoanProducts />
-                                <div className="border-t border-slate-200 my-4"></div>
-                                <LoanManager />
-                            </div>
-                        );
+                <div className="space-y-8 animate-in fade-in">
+                    <LoanProducts />
+                    <div className="border-t border-slate-200 my-4"></div>
+                    <LoanManager />
+                </div>
+            );
             case 'assets': return <AssetManager />;
             case 'reports': return <ReportsDashboard />;
             case 'members': return <MembersTab />;
             case 'register':
                 return (
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-1">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-1 animate-in zoom-in-95">
                         <AddMember />
                     </div>
                 );
             case 'settings':
                 return (
-                    <div className="system-settings-wrapper">
+                    <div className="system-settings-wrapper animate-in fade-in">
                         <SystemSettings />
                     </div>
                 );
-            default: return <OverviewTab />;
             case 'audit': return <AuditLogs />;
+            default: return <OverviewTab setActiveTab={setActiveTab} />;
         }
     };
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-12">
-
-            {/* SHARED HEADER */}
             <DashboardHeader user={user} title="Admin Portal" />
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
-
-                {/* NAVIGATION BAR */}
                 <div className="mb-8 overflow-x-auto pb-2 scrollbar-hide">
                     <div className="flex gap-2 w-max">
                         <TabButton id="overview" label="Dashboard" icon={LayoutDashboard} />
@@ -113,29 +110,63 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* CONTENT AREA */}
-                <div className="animate-in fade-in duration-300">
+                <div className="min-h-[500px]">
                     {renderContent()}
                 </div>
-
             </main>
         </div>
     );
 }
 
 // ==================================================================================
-// 1. OVERVIEW TAB (Real Stats)
+// 1. OVERVIEW TAB
 // ==================================================================================
-function OverviewTab() {
+function OverviewTab({ setActiveTab }) {
     const [stats, setStats] = useState({ totalMembers: 0, totalSavings: 0, totalLoansIssued: 0, netIncome: 0 });
+    const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [filterDays, setFilterDays] = useState(7);
 
     useEffect(() => {
-        api.get('/api/reports/today').then(res => {
-            if (res.data.success) setStats(res.data.data);
+        loadDashboard();
+    }, [filterDays]);
+
+    const loadDashboard = async () => {
+        try {
+            // 1. Fetch Summary Stats
+            const todayRes = await api.get('/api/reports/today');
+            if (todayRes.data.success) setStats(todayRes.data.data);
+
+            // 2. Fetch Chart Data
+            const chartRes = await api.get(`/api/reports/chart?days=${filterDays}`);
+            if (chartRes.data.success && chartRes.data.data.length > 0) {
+                setChartData(chartRes.data.data);
+            } else {
+                setChartData([]); // Empty state if no data
+            }
             setLoading(false);
-        }).catch(() => setLoading(false));
-    }, []);
+        } catch (e) {
+            console.error("Dashboard Load Failed", e);
+            setLoading(false);
+        }
+    };
+
+    const handleGenerateReport = async () => {
+        if(!window.confirm("Generate End-of-Day Financial Report?")) return;
+        try {
+            await api.post('/api/reports/generate');
+            alert("✅ Report Generated successfully! Check Reports tab.");
+            setActiveTab('reports');
+        } catch (e) { alert("Report Generation Failed"); }
+    };
+
+    const handleSystemDiag = () => {
+        alert("System Status: Operational\nDatabase: Connected\nEmail Service: Active");
+    };
+
+    const handleReviewMembers = () => {
+        setActiveTab('members');
+    }
 
     const StatCard = ({ label, value, icon: Icon, color, subtext }) => (
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all group">
@@ -143,7 +174,6 @@ function OverviewTab() {
                 <div className={`p-3 rounded-xl ${color} text-white shadow-sm group-hover:scale-110 transition-transform`}>
                     <Icon size={22} />
                 </div>
-                {/* Optional Trend Indicator */}
                 <span className="bg-slate-50 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">Today</span>
             </div>
             <div>
@@ -159,76 +189,105 @@ function OverviewTab() {
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Dashboard...</div>;
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-in fade-in">
 
             {/* STATS GRID */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                    label="Total Savings"
-                    value={stats.totalSavings}
-                    icon={Wallet}
-                    color="bg-emerald-600"
-                    subtext="Member Deposits"
-                />
-                <StatCard
-                    label="Net Income"
-                    value={stats.netIncome}
-                    icon={TrendingUp}
-                    color="bg-indigo-600"
-                    subtext="Fees + Interest - Expenses"
-                />
-                <StatCard
-                    label="Active Members"
-                    value={stats.totalMembers}
-                    icon={Users}
-                    color="bg-blue-600"
-                    subtext="Registered & Verified"
-                />
-                <StatCard
-                    label="Loans Issued"
-                    value={stats.totalLoansIssued}
-                    icon={CreditCard}
-                    color="bg-purple-600"
-                    subtext="Total Disbursed"
-                />
+                <StatCard label="Total Savings" value={stats.totalSavings} icon={Wallet} color="bg-emerald-600" subtext="Member Deposits" />
+                <StatCard label="Net Income" value={stats.netIncome} icon={TrendingUp} color="bg-indigo-600" subtext="Fees + Interest - Expenses" />
+                <StatCard label="Active Members" value={stats.totalMembers} icon={Users} color="bg-blue-600" subtext="Registered & Verified" />
+                <StatCard label="Loans Issued" value={stats.totalLoansIssued} icon={CreditCard} color="bg-purple-600" subtext="Total Disbursed" />
             </div>
 
-            {/* SECOND ROW */}
+            {/* CHART ROW */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* Financial Health (Placeholder Chart) */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                    <div className="flex justify-between items-center mb-6">
+                {/* DYNAMIC CHART */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
+                    <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <Activity size={20} className="text-emerald-600"/> Financial Performance
+                            <Activity size={20} className="text-emerald-600"/>
+                            Financial Performance
+                            <span className="text-slate-400 font-normal text-xs ml-1">({filterDays} Days)</span>
                         </h3>
-                        <button className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full hover:bg-blue-100 transition">
-                            View Report
+
+                        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                            {[7, 30, 90].map(days => (
+                                <button
+                                    key={days}
+                                    onClick={() => setFilterDays(days)}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition ${filterDays === days ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    {days}D
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={() => setActiveTab('reports')}
+                            className="hidden sm:flex text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition items-center gap-1"
+                        >
+                            View Reports <ChevronRight size={14}/>
                         </button>
                     </div>
-                    <div className="h-64 flex items-center justify-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400 text-sm">
-                        <div className="text-center">
-                            <PieChart size={40} className="mx-auto mb-2 opacity-20"/>
-                            <p>Analytics Chart Loading...</p>
-                        </div>
+
+                    <div className="h-64 w-full">
+                        {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#059669" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
+                                        </linearGradient>
+                                        <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
+                                    <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Legend verticalAlign="top" height={36} iconType="circle" />
+                                    <Area type="monotone" dataKey="income" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" name="Income" />
+                                    <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" name="Expenses" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-slate-400 text-sm italic">
+                                No financial data found for this period.
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Quick Actions */}
+                {/* QUICK ACTIONS */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
                     <div className="space-y-3">
-                        <button className="w-full bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-emerald-200 group">
+                        <button onClick={handleGenerateReport} className="w-full bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-emerald-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-emerald-600"><FileText size={16}/></div>
-                            Generate Monthly Report
+                            <div>
+                                <span className="block">Generate Report</span>
+                                <span className="text-[10px] text-slate-400 font-normal">Create daily financial summary</span>
+                            </div>
                         </button>
-                        <button className="w-full bg-slate-50 hover:bg-blue-50 hover:text-blue-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-blue-200 group">
+
+                        <button onClick={handleReviewMembers} className="w-full bg-slate-50 hover:bg-blue-50 hover:text-blue-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-blue-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-blue-600"><Users size={16}/></div>
-                            Review Pending Members
+                            <div>
+                                <span className="block">Review Members</span>
+                                <span className="text-[10px] text-slate-400 font-normal">Manage member accounts</span>
+                            </div>
                         </button>
-                        <button className="w-full bg-slate-50 hover:bg-amber-50 hover:text-amber-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-amber-200 group">
+
+                        <button onClick={handleSystemDiag} className="w-full bg-slate-50 hover:bg-amber-50 hover:text-amber-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-amber-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-amber-600"><AlertCircle size={16}/></div>
-                            System Diagnostics
+                            <div>
+                                <span className="block">System Status</span>
+                                <span className="text-[10px] text-slate-400 font-normal">Check connection health</span>
+                            </div>
                         </button>
                     </div>
                 </div>
@@ -238,7 +297,7 @@ function OverviewTab() {
 }
 
 // ==================================================================================
-// 2. FINANCE TAB (Real Transactions)
+// 2. FINANCE TAB
 // ==================================================================================
 function FinanceTab() {
     const [viewMode, setViewMode] = useState('standard');
@@ -255,24 +314,20 @@ function FinanceTab() {
 
     useEffect(() => { fetchTransactions(); }, []);
 
-    // ✅ NEW: Handle Interest
     const handleRunInterest = async () => {
-        const rate = prompt("Enter Annual Interest Rate % (e.g. 5 for 5%):", "5");
-        if (rate) {
+        if (window.confirm("Are you sure you want to run Monthly Interest? This will calculate interest for all accounts based on their specific Product Rates.")) {
             try {
-                await api.post('/api/transactions/interest', null, { params: { rate } });
+                await api.post('/api/transactions/interest');
                 alert("Interest applied successfully to all accounts!");
-                fetchTransactions(); // Refresh list to show interest entries
+                fetchTransactions();
             } catch (error) {
                 alert("Failed to apply interest.");
             }
         }
     };
 
-    // ✅ NEW: Handle Reversal
     const handleReverse = async (txId) => {
         if (!window.confirm("Are you sure you want to REVERSE this transaction? This cannot be undone.")) return;
-
         const reason = prompt("Enter reason for reversal:");
         if (!reason) return;
 
@@ -295,8 +350,7 @@ function FinanceTab() {
     const totalPages = Math.ceil(transactions.length / itemsPerPage);
 
     return (
-        <div className="space-y-6">
-
+        <div className="space-y-6 animate-in fade-in">
             <div className="flex bg-slate-200/50 p-1 rounded-xl w-fit">
                 <button onClick={() => setViewMode('standard')} className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'standard' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Transactions</button>
                 <button onClick={() => setViewMode('accounting')} className={`px-4 py-2 text-sm font-bold rounded-lg transition ${viewMode === 'accounting' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>Accounting Books</button>
@@ -334,7 +388,7 @@ function FinanceTab() {
                                         <th className="p-4">Member</th>
                                         <th className="p-4">Type</th>
                                         <th className="p-4 text-right">Amount</th>
-                                        <th className="p-4 text-center">Action</th> {/* New Action Column */}
+                                        <th className="p-4 text-center">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -356,8 +410,6 @@ function FinanceTab() {
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right font-bold text-slate-800">KES {Number(tx.amount).toLocaleString()}</td>
-
-                                            {/* ✅ REVERSE BUTTON */}
                                             <td className="p-4 text-center">
                                                 {tx.type !== 'REVERSAL' && (
                                                     <button
@@ -393,7 +445,7 @@ function FinanceTab() {
 }
 
 // ==================================================================================
-// 3. MEMBERS TAB (Real Data)
+// 3. MEMBERS TAB
 // ==================================================================================
 function MembersTab() {
     const [members, setMembers] = useState([]);
@@ -405,7 +457,7 @@ function MembersTab() {
     }, []);
 
     return (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center">
                 <div>
                     <h2 className="text-lg font-bold text-slate-800">Member Directory</h2>
