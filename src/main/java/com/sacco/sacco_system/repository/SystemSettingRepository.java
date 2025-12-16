@@ -8,5 +8,6 @@ import java.util.Optional;
 
 @Repository
 public interface SystemSettingRepository extends JpaRepository<SystemSetting, String> {
+    // Since 'key' is the ID, findById works, but we keep findByKey for code readability compatibility
     Optional<SystemSetting> findByKey(String key);
 }

@@ -1,14 +1,9 @@
 package com.sacco.sacco_system.entity;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -24,32 +19,22 @@ public class Guarantor {
     private UUID id;
 
     @ManyToOne
-    @JoinColumn(name = "loan_id", nullable = false)
+    @JoinColumn(name = "loan_id")
     private Loan loan;
 
     @ManyToOne
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member; // The person GIVING the guarantee
+    @JoinColumn(name = "member_id")
+    private Member member;
 
     private BigDecimal guaranteeAmount;
 
-    // ✅ ADDED: Status Field
     @Enumerated(EnumType.STRING)
-    @Builder.Default
-    private GuarantorStatus status = GuarantorStatus.PENDING;
+    private GuarantorStatus status;
 
-    // ✅ ADDED: Date Accepted
-    private LocalDate dateAccepted;
+    private LocalDate dateRequestSent;
+    private LocalDate dateResponded;
 
-    private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
-
-    // ✅ ADDED: Enum Definition
     public enum GuarantorStatus {
-        PENDING, ACCEPTED, REJECTED
+        PENDING, ACCEPTED, DECLINED
     }
 }

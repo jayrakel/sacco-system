@@ -1,10 +1,7 @@
 package com.sacco.sacco_system.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -21,54 +18,61 @@ public class Transaction {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(unique = true, nullable = false)
+    // Unique reference for the transaction (e.g., TXN123456789)
     private String transactionId;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne
     @JoinColumn(name = "member_id")
-    @JsonIgnoreProperties({"transactions", "loans", "savingsAccounts", "guaranteedLoans"})
     private Member member;
 
     @ManyToOne
     @JoinColumn(name = "savings_account_id")
-    @JsonIgnoreProperties("member")
     private SavingsAccount savingsAccount;
+
+    // Optional: Link to a loan if this transaction is related to one
+    @ManyToOne
+    @JoinColumn(name = "loan_id")
+    private Loan loan;
 
     @Enumerated(EnumType.STRING)
     private TransactionType type;
 
     private BigDecimal amount;
 
+    private String description;
+
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
 
-    private String referenceCode; // M-Pesa Code or Check No
-    private String description;
-
-    @CreationTimestamp
-    private LocalDateTime transactionDate;
+    private String referenceCode; // External ref (e.g. M-Pesa code, Check No)
 
     private BigDecimal balanceAfter;
 
+    private LocalDateTime transactionDate;
+
     @PrePersist
     protected void onCreate() {
+        transactionDate = LocalDateTime.now();
         if (transactionId == null) {
-            transactionId = "TRX-" + System.currentTimeMillis();
+            transactionId = "TXN" + System.currentTimeMillis();
         }
     }
 
     public enum TransactionType {
         DEPOSIT,
         WITHDRAWAL,
+        TRANSFER,
+        INTEREST_EARNED,
         REGISTRATION_FEE,
-        LOAN_DISBURSEMENT,
-        LOAN_REPAYMENT,
+        SHARE_PURCHASE,
 
-        // ✅ NEW TYPES ADDED
-        TRANSFER,       // Member to Member
-        REVERSAL,       // Correction
-        INTEREST_EARNED, // Savings Interest
-        BANK_CHARGE      // Fees
+        // ✅ LOAN RELATED TYPES
+        PROCESSING_FEE,         // Application/Processing Fee
+        LOAN_DISBURSEMENT,      // Money out to member
+        LOAN_REPAYMENT,         // Money in from member
+        LATE_PAYMENT_PENALTY,   // Penalty charge
+
+        REVERSAL                // Correction
     }
 
     public enum PaymentMethod {
@@ -76,6 +80,6 @@ public class Transaction {
         BANK_TRANSFER,
         MPESA,
         CHECK,
-        SYSTEM // For automated things like Interest
+        SYSTEM
     }
 }

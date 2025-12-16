@@ -15,6 +15,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -24,24 +25,26 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    private static final Map<String, String> DEFAULTS = Map.of(
-            "REGISTRATION_FEE", "1000",
-            "MIN_MONTHLY_CONTRIBUTION", "500",
-            "LOAN_INTEREST_RATE", "12",
-            "LOAN_LIMIT_MULTIPLIER", "3",
-            "SACCO_NAME", "Sacco System",
-            "SACCO_TAGLINE", "Empowering Your Future",
-            "SACCO_LOGO", "",
-            "SACCO_FAVICON", "",
-            "BRAND_COLOR_PRIMARY", "#059669",   // Emerald 600
-            "BRAND_COLOR_SECONDARY", "#0f172a"  // Slate 900
+    // ✅ FIXED: Using Map.ofEntries to support more than 10 items
+    private static final Map<String, String> DEFAULTS = Map.ofEntries(
+            Map.entry("REGISTRATION_FEE", "1000"),
+            Map.entry("MIN_MONTHLY_CONTRIBUTION", "500"),
+            Map.entry("LOAN_INTEREST_RATE", "12"),
+            Map.entry("LOAN_GRACE_PERIOD_WEEKS", "1"), // Added this for Loan Workflow
+            Map.entry("LOAN_LIMIT_MULTIPLIER", "3"),
+            Map.entry("SACCO_NAME", "Sacco System"),
+            Map.entry("SACCO_TAGLINE", "Empowering Your Future"),
+            Map.entry("SACCO_LOGO", ""),
+            Map.entry("SACCO_FAVICON", ""),
+            Map.entry("BRAND_COLOR_PRIMARY", "#059669"),   // Emerald 600
+            Map.entry("BRAND_COLOR_SECONDARY", "#0f172a")  // Slate 900
     );
 
     @PostConstruct
     public void initDefaults() {
         DEFAULTS.forEach((key, value) -> {
             if (repository.findByKey(key).isEmpty()) {
-                String type = key.contains("SACCO") ? "STRING" : "NUMBER"; // Simple type inference
+                String type = key.contains("SACCO") || key.contains("COLOR") ? "STRING" : "NUMBER";
                 repository.save(SystemSetting.builder()
                         .key(key)
                         .value(value)
@@ -56,6 +59,10 @@ public class SystemSettingService {
         return repository.findAll();
     }
 
+    public Optional<String> getSetting(String key) {
+        return repository.findByKey(key).map(SystemSetting::getValue);
+    }
+
     @Transactional
     public SystemSetting updateSetting(String key, String value) {
         SystemSetting setting = repository.findByKey(key)
@@ -64,23 +71,19 @@ public class SystemSettingService {
         return repository.save(setting);
     }
 
-    // ✅ NEW: Handle Image Uploads for Settings
     @Transactional
     public SystemSetting uploadSettingImage(String key, MultipartFile file) throws IOException {
         SystemSetting setting = repository.findByKey(key)
                 .orElseThrow(() -> new RuntimeException("Setting not found: " + key));
 
-        // Create directory
         Path uploadPath = Paths.get(UPLOAD_DIR);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }
 
-        // Generate unique filename to avoid caching issues
         String filename = key + "_" + UUID.randomUUID() + "_" + file.getOriginalFilename();
         Path filePath = uploadPath.resolve(filename);
 
-        // Delete old file if exists (optional cleanup)
         if (setting.getValue() != null && !setting.getValue().isEmpty()) {
             try {
                 Files.deleteIfExists(uploadPath.resolve(setting.getValue()));
@@ -89,10 +92,7 @@ public class SystemSettingService {
             }
         }
 
-        // Save new file
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
-
-        // Save relative path to DB
         setting.setValue(filename);
         return repository.save(setting);
     }

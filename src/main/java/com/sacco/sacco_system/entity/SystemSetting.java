@@ -22,5 +22,6 @@ public class SystemSetting {
     private String value; // e.g., "1000"
 
     private String description; // e.g., "Fee charged for new member registration"
-    private String dataType; // "STRING", "NUMBER", "BOOLEAN" to help frontend validation
+
+    private String dataType; // "STRING", "NUMBER", "BOOLEAN"
 }
