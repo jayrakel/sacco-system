@@ -341,6 +341,17 @@ public class LoanService {
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
+        // ✅ 1. LIQUIDITY CHECK (New)
+        // We check the "General Bank Account" (or whichever account holds disbursement funds)
+        // Assuming '1001' is your GL code for the main bank account.
+        // You might need to fetch this code dynamically from settings if you configured it there.
+        BigDecimal currentLiquidity = accountingService.getAccountBalance("1001");
+
+        if (currentLiquidity.compareTo(loan.getPrincipalAmount()) < 0) {
+            throw new RuntimeException("Disbursement Failed: Insufficient Sacco liquidity. Available: KES " + currentLiquidity);
+        }
+
+        // 2. Generate Schedule
         int graceWeeks = 1;
         try {
             graceWeeks = Integer.parseInt(systemSettingService.getSetting("LOAN_GRACE_PERIOD_WEEKS").orElse("1"));
@@ -350,8 +361,15 @@ public class LoanService {
         loan.setGracePeriodWeeks(graceWeeks);
         loan.setCheckNumber(checkNumber);
 
-        Transaction tx = Transaction.builder().member(loan.getMember()).amount(loan.getPrincipalAmount()).type(Transaction.TransactionType.LOAN_DISBURSEMENT).referenceCode(checkNumber).build();
+        // 3. Post Transaction
+        Transaction tx = Transaction.builder()
+                .member(loan.getMember())
+                .amount(loan.getPrincipalAmount())
+                .type(Transaction.TransactionType.LOAN_DISBURSEMENT)
+                .referenceCode(checkNumber)
+                .build();
         transactionRepository.save(tx);
+
         accountingService.postEvent("LOAN_DISBURSEMENT", "Disbursement " + checkNumber, checkNumber, loan.getPrincipalAmount());
 
         loan.setStatus(Loan.LoanStatus.DISBURSED);
@@ -374,8 +392,7 @@ public class LoanService {
     public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Rejected"); return getLoanById(id); }
     public LoanDTO disburseLoan(UUID id) { treasurerDisburse(id, "CASH-" + System.currentTimeMillis()); return getLoanById(id); }
 
-    // Explicit Helper for Start Review
-    public LoanDTO startReview(UUID id) { return officerReview(id); }
+
 
     public void writeOffLoan(UUID id, String reason) {
         Loan loan = loanRepository.findById(id).orElseThrow();
@@ -432,6 +449,7 @@ public class LoanService {
                 .disbursementDate(loan.getDisbursementDate())
                 .productName(loan.getProduct().getName())
                 .processingFee(loan.getProduct().getProcessingFee())
+                .memberSavings(loan.getMember().getTotalSavings())
                 .build();
     }
 }

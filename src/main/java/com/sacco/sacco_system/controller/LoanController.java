@@ -182,7 +182,8 @@ public class LoanController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Review Started",
-                    "data", loanService.startReview(id)
+                    // ✅ CALL THE LOGGABLE METHOD DIRECTLY
+                    "data", loanService.officerReview(id)
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));

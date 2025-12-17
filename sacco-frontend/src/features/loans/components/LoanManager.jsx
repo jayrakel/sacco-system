@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { CreditCard, Check, X, Eye, ArrowRight, Clock, FileText, AlertCircle } from 'lucide-react';
+import { CreditCard, Check, X, Eye, ArrowRight, Clock, FileText } from 'lucide-react';
+import LoanReviewModal from './LoanReviewModal'; // ✅ Import the new Modal
 
-export default function LoanManager() {
+export default function LoanManager({onUpdate}) {
     const [loans, setLoans] = useState([]);
-    const [filter, setFilter] = useState('SUBMITTED'); // Default to new applications
+    const [filter, setFilter] = useState('SUBMITTED');
     const [loading, setLoading] = useState(false);
+
+    // ✅ Review Modal State
+    const [reviewLoan, setReviewLoan] = useState(null);
 
     useEffect(() => { fetchLoans(); }, []);
 
@@ -18,17 +22,42 @@ export default function LoanManager() {
         finally { setLoading(false); }
     };
 
-    const handleAction = async (id, actionEndpoint, successMessage) => {
-        if (!window.confirm("Are you sure you want to proceed?")) return;
+    // ✅ Handle "Start Review"
+    const handleStartReview = async (loan) => {
+            if (!window.confirm(`Start review for ${loan.loanNumber}?`)) return;
+            try {
+                await api.post(`/api/loans/${loan.id}/review`);
+                setReviewLoan(loan);
 
-        try {
-            await api.post(`/api/loans/${id}/${actionEndpoint}`);
-            alert(successMessage);
-            fetchLoans(); // Refresh list
-        } catch (error) {
-            alert(error.response?.data?.message || "Action Failed");
-        }
+                fetchLoans(); // Refresh local table
+                if (onUpdate) onUpdate(); // ✅ Refresh parent stats immediately
+            } catch (error) {
+                alert(error.response?.data?.message || "Failed");
+            }
+        };
+
+    // ✅ Handle "Resume Review" (If already in review status)
+    const handleResumeReview = (loan) => {
+        setReviewLoan(loan);
     };
+
+    // ✅ Handle Decision from Modal
+    const handleDecision = async (id, action, payload) => {
+            try {
+                const endpoint = action === 'approve' ? 'approve' : 'reject';
+                const config = payload ? { params: payload } : {};
+
+                await api.post(`/api/loans/${id}/${endpoint}`, null, config);
+
+                alert(`Loan ${action}d successfully!`);
+                setReviewLoan(null);
+
+                fetchLoans(); // Refresh local table
+                if (onUpdate) onUpdate(); // ✅ Refresh parent stats immediately
+            } catch (error) {
+                alert(error.response?.data?.message || "Action Failed");
+            }
+        };
 
     // Filter Logic
     const getFilteredLoans = () => {
@@ -50,7 +79,7 @@ export default function LoanManager() {
             {/* Header & Filters */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    <CreditCard className="text-indigo-600" size={20}/> Loan Applications
+                    <CreditCard className="text-indigo-600" size={20}/> Loan Portfolio
                 </h2>
 
                 <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full">
@@ -81,7 +110,7 @@ export default function LoanManager() {
                             <th className="p-4">Applicant</th>
                             <th className="p-4">Product</th>
                             <th className="p-4 text-right">Amount</th>
-                            <th className="p-4">Date Submitted</th>
+                            <th className="p-4">Date</th>
                             <th className="p-4 text-center">Actions</th>
                         </tr>
                     </thead>
@@ -95,7 +124,6 @@ export default function LoanManager() {
                                 <td className="p-4 font-mono text-slate-500 text-xs">{loan.loanNumber}</td>
                                 <td className="p-4">
                                     <p className="font-bold text-slate-700">{loan.memberName}</p>
-                                    <p className="text-xs text-slate-400">ID: ...{loan.memberId?.substring(0, 5)}</p>
                                 </td>
                                 <td className="p-4 text-slate-600">
                                     <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{loan.productName}</span>
@@ -108,39 +136,30 @@ export default function LoanManager() {
                                 </td>
                                 <td className="p-4 flex justify-center gap-2">
 
-                                    {/* ACTION 1: START REVIEW (For New Submissions) */}
+                                    {/* STATUS: SUBMITTED (Start Review) */}
                                     {loan.status === 'SUBMITTED' && (
                                         <button
-                                            onClick={() => handleAction(loan.id, 'review', 'Review Started! Loan moved to "Under Review" tab.')}
+                                            onClick={() => handleStartReview(loan)}
                                             className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-200"
                                         >
                                             <Eye size={14}/> Start Review
                                         </button>
                                     )}
 
-                                    {/* ACTION 2: APPROVE/REJECT (For Under Review) */}
+                                    {/* STATUS: UNDER REVIEW (Resume Review) */}
                                     {loan.status === 'LOAN_OFFICER_REVIEW' && (
-                                        <>
-                                            <button
-                                                onClick={() => handleAction(loan.id, 'approve', 'Loan Forwarded to Secretary for Tabling.')}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-bold hover:bg-emerald-100 border border-emerald-200"
-                                                title="Forward to Secretary"
-                                            >
-                                                <Check size={14}/> Approve
-                                            </button>
-                                            <button
-                                                onClick={() => handleAction(loan.id, 'reject', 'Loan Rejected.')}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 border border-red-200"
-                                            >
-                                                <X size={14}/> Reject
-                                            </button>
-                                        </>
+                                        <button
+                                            onClick={() => handleResumeReview(loan)}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-lg text-xs font-bold hover:bg-amber-100 border border-amber-200"
+                                        >
+                                            <Clock size={14}/> Resume Review
+                                        </button>
                                     )}
 
-                                    {/* ACTION 3: VIEW STATUS (For Others) */}
+                                    {/* STATUS: OTHERS (View Only) */}
                                     {!['SUBMITTED', 'LOAN_OFFICER_REVIEW'].includes(loan.status) && (
                                         <span className="text-xs text-slate-400 italic flex items-center gap-1">
-                                            <FileText size={12}/> View Only
+                                            <FileText size={12}/> {loan.status.replace(/_/g, ' ')}
                                         </span>
                                     )}
                                 </td>
@@ -149,6 +168,15 @@ export default function LoanManager() {
                     </tbody>
                 </table>
             </div>
+
+            {/* ✅ RENDER REVIEW MODAL */}
+            {reviewLoan && (
+                <LoanReviewModal
+                    loan={reviewLoan}
+                    onClose={() => setReviewLoan(null)}
+                    onAction={handleDecision}
+                />
+            )}
         </div>
     );
 }

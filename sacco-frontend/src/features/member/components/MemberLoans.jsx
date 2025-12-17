@@ -57,34 +57,34 @@ export default function MemberLoans({ user }) {
         setSelectedLoan(null); // Reset selection so next "New Loan" click is fresh
     };
 
-    const getStatusBadge = (status) => {
-        switch(status) {
-            case 'APPROVED':
-            case 'DISBURSED':
-            case 'ACTIVE':
-                return <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><CheckCircle size={12}/> Active</span>;
+    // ✅ HELPER: Friendly Status Text
+        const getStatusBadge = (status) => {
+            const styles = {
+                DRAFT: "bg-slate-100 text-slate-600",
+                GUARANTORS_PENDING: "bg-amber-50 text-amber-600",
+                GUARANTORS_APPROVED: "bg-blue-50 text-blue-600",
+                SUBMITTED: "bg-indigo-50 text-indigo-600",
+                LOAN_OFFICER_REVIEW: "bg-purple-50 text-purple-600", // "Under Review"
+                SECRETARY_TABLED: "bg-orange-50 text-orange-600", // "Awaiting Committee"
+                VOTING_OPEN: "bg-pink-50 text-pink-600",
+                ADMIN_APPROVED: "bg-emerald-50 text-emerald-600",
+                DISBURSED: "bg-green-100 text-green-700",
+                REJECTED: "bg-red-50 text-red-600",
+            };
 
-            case 'PENDING':
-            case 'SUBMITTED':
-            case 'LOAN_OFFICER_REVIEW':
-            case 'SECRETARY_TABLED':
-            case 'VOTING_OPEN':
-            case 'ADMIN_APPROVED':
-                return <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> In Progress</span>;
+            const labels = {
+                LOAN_OFFICER_REVIEW: "Under Review",
+                SECRETARY_TABLED: "Tabled for Meeting",
+                VOTING_OPEN: "Voting in Progress",
+                ADMIN_APPROVED: "Approved - Pending Payout",
+                DISBURSED: "Active",
+            };
 
-            case 'GUARANTORS_PENDING':
-                return <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Users size={12}/> Guarantors Pending</span>;
+            const style = styles[status] || "bg-slate-100 text-slate-600";
+            const label = labels[status] || status.replace(/_/g, ' ');
 
-            case 'GUARANTORS_APPROVED':
-            case 'APPLICATION_FEE_PENDING':
-                return <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit animate-pulse"><Banknote size={12}/> Fee Pending</span>;
-
-            case 'REJECTED':
-                return <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><XCircle size={12}/> Rejected</span>;
-
-            default: return <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-[10px] font-bold uppercase">{status?.replace(/_/g, ' ')}</span>;
-        }
-    };
+            return <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${style}`}>{label}</span>;
+        };
 
     if(loading) return <div className="p-10 text-center text-slate-400">Loading your loan history...</div>;
 

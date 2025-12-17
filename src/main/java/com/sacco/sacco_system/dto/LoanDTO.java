@@ -25,9 +25,12 @@ public class LoanDTO {
     private Integer durationMonths;
     private BigDecimal monthlyRepayment;
     private String status;
+    private LocalDate applicationDate;
+    private LocalDate submissionDate;
     private LocalDate approvalDate;
     private LocalDate disbursementDate;
     private LocalDate expectedRepaymentDate;
     private String productName;
     private BigDecimal processingFee;
+    private BigDecimal memberSavings;
 }

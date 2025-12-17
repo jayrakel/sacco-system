@@ -124,6 +124,14 @@ public class AccountingService {
         accountRepository.save(account);
     }
 
+    public BigDecimal getAccountBalance(String glCode) {
+        // Use 'accountRepository' (the name defined at the top of your file)
+        GLAccount account = accountRepository.findById(glCode)
+                .orElseThrow(() -> new RuntimeException("GL Account not found: " + glCode));
+
+        return account.getBalance();
+    }
+
     @Data
     public static class ManualEntryRequest {
         private String description;

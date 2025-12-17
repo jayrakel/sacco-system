@@ -4,7 +4,7 @@ import com.sacco.sacco_system.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod; // <--- MAKE SURE THIS IS IMPORTED
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -32,19 +32,26 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Allow Static Resources (Images, Logos)
+                        // 1. PUBLIC ENDPOINTS
                         .requestMatchers("/uploads/**").permitAll()
-
-                        // 2. Allow Public API Endpoints
                         .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
-
-                        // 3. ✅ CRITICAL FIX: Allow READING settings publicly (for Login page)
                         .requestMatchers(HttpMethod.GET, "/api/settings").permitAll()
-
-                        // 4. Allow Swagger Documentation
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
-                        // 5. Everything else requires a Login
+                        // 2. ✅ LOAN OFFICER RESTRICTIONS (The Fix)
+                        // Only Loan Officers can Review, Approve, or Reject at the first stage
+                        .requestMatchers("/api/loans/*/review").hasAuthority("LOAN_OFFICER")
+                        .requestMatchers("/api/loans/*/approve").hasAnyAuthority("LOAN_OFFICER", "ADMIN") // Admins might need override
+                        .requestMatchers("/api/loans/*/reject").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
+
+                        // 3. ✅ FINANCE / TREASURER RESTRICTIONS
+                        .requestMatchers("/api/loans/*/disburse").hasAnyAuthority("TREASURER", "ADMIN")
+                        .requestMatchers("/api/finance/**").hasAnyAuthority("TREASURER", "ADMIN")
+
+                        // 4. ✅ ADMIN RESTRICTIONS
+                        .requestMatchers("/api/admin/**", "/api/settings/**").hasAuthority("ADMIN")
+
+                        // 5. MEMBER & SHARED
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -58,7 +65,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         //TODO: FIX THIS BEFORE PRODUCTION
-        configuration.setAllowedOrigins(List.of("*")); //❌ DANGEROUS
+        configuration.setAllowedOrigins(List.of("*")); //❌DANGEROUS
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 

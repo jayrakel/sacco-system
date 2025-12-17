@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import {
-    Briefcase, CheckCircle, XCircle, Clock, Wallet
-} from 'lucide-react';
+import { Briefcase, CheckCircle, XCircle, Clock, Wallet, RefreshCw } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import LoanManager from '../features/loans/components/LoanManager';
 
 export default function LoansDashboard() {
     const [user, setUser] = useState(null);
+    const [loadingStats, setLoadingStats] = useState(false);
     const [stats, setStats] = useState({
         pending: 0,
         active: 0,
@@ -18,25 +17,33 @@ export default function LoansDashboard() {
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
+
         fetchLoanStats();
+
+        // ✅ AUTO-REFRESH: Update stats every 15 seconds
+        const interval = setInterval(fetchLoanStats, 15000);
+        return () => clearInterval(interval);
     }, []);
 
     const fetchLoanStats = async () => {
+        setLoadingStats(true);
         try {
             const res = await api.get('/api/loans');
             if (res.data.success) {
                 const loans = res.data.data;
                 setStats({
-                    pending: loans.filter(l => l.status === 'PENDING').length,
-                    active: loans.filter(l => l.status === 'APPROVED' || l.status === 'DISBURSED').length,
+                    pending: loans.filter(l => l.status === 'PENDING' || l.status === 'SUBMITTED').length,
+                    active: loans.filter(l => ['APPROVED', 'DISBURSED', 'ACTIVE'].includes(l.status)).length,
                     rejected: loans.filter(l => l.status === 'REJECTED').length,
                     totalDisbursed: loans
-                        .filter(l => l.status === 'DISBURSED')
+                        .filter(l => l.status === 'DISBURSED' || l.status === 'ACTIVE')
                         .reduce((sum, l) => sum + (l.principalAmount || 0), 0)
                 });
             }
         } catch (e) {
             console.error("Failed to load stats", e);
+        } finally {
+            setLoadingStats(false);
         }
     };
 
@@ -45,41 +52,22 @@ export default function LoansDashboard() {
             <DashboardHeader user={user} title="Loan Officer Portal" />
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8 animate-in fade-in">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Loan Portfolio Overview</h1>
-                    <p className="text-slate-500 text-sm">Manage applications, approvals, and disbursements.</p>
+                <div className="flex justify-between items-end">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-800">Loan Portfolio Overview</h1>
+                        <p className="text-slate-500 text-sm">Manage applications, approvals, and disbursements.</p>
+                    </div>
+                    <button onClick={fetchLoanStats} className="p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-400 transition">
+                        <RefreshCw size={18} className={loadingStats ? "animate-spin" : ""} />
+                    </button>
                 </div>
 
-                {/* Stat Cards */}
+                {/* Dynamic Stat Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
-                        <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Clock size={24} /></div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Pending Review</p>
-                            <h3 className="text-2xl font-bold text-slate-800">{stats.pending}</h3>
-                        </div>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
-                        <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl"><CheckCircle size={24} /></div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Active Loans</p>
-                            <h3 className="text-2xl font-bold text-slate-800">{stats.active}</h3>
-                        </div>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
-                        <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl"><Wallet size={24} /></div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Total Disbursed</p>
-                            <h3 className="text-2xl font-bold text-slate-800">{(stats.totalDisbursed / 1000000).toFixed(1)}M <span className="text-xs text-slate-400">KES</span></h3>
-                        </div>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
-                        <div className="p-3 bg-red-100 text-red-600 rounded-xl"><XCircle size={24} /></div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Rejected</p>
-                            <h3 className="text-2xl font-bold text-slate-800">{stats.rejected}</h3>
-                        </div>
-                    </div>
+                    <StatCard icon={<Clock size={24}/>} color="amber" label="Pending Review" value={stats.pending} />
+                    <StatCard icon={<CheckCircle size={24}/>} color="emerald" label="Active Loans" value={stats.active} />
+                    <StatCard icon={<Wallet size={24}/>} color="indigo" label="Total Disbursed" value={`KES ${(stats.totalDisbursed / 1000000).toFixed(1)}M`} />
+                    <StatCard icon={<XCircle size={24}/>} color="red" label="Rejected" value={stats.rejected} />
                 </div>
 
                 {/* Main Workspace */}
@@ -89,9 +77,33 @@ export default function LoansDashboard() {
                             <Briefcase size={20} className="text-slate-400"/> Loan Applications
                         </h2>
                     </div>
-                    <LoanManager />
+
+                    {/* ✅ PASS REFRESH CALLBACK TO CHILD */}
+                    <LoanManager onUpdate={fetchLoanStats} />
                 </div>
             </main>
+        </div>
+    );
+}
+
+// Simple Helper Component for Cards
+function StatCard({ icon, color, label, value }) {
+    const colors = {
+        amber: "bg-amber-100 text-amber-600",
+        emerald: "bg-emerald-100 text-emerald-600",
+        indigo: "bg-indigo-100 text-indigo-600",
+        red: "bg-red-100 text-red-600",
+    };
+
+    return (
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 transition hover:shadow-md">
+            <div className={`p-3 rounded-xl ${colors[color] || colors.indigo}`}>
+                {icon}
+            </div>
+            <div>
+                <p className="text-xs font-bold text-slate-400 uppercase">{label}</p>
+                <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
+            </div>
         </div>
     );
 }
