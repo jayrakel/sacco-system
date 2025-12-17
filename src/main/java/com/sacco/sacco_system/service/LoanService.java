@@ -422,6 +422,8 @@ public class LoanService {
                 .status(loan.getStatus().toString())
                 .approvalDate(loan.getApprovalDate())
                 .disbursementDate(loan.getDisbursementDate())
+                .productName(loan.getProduct().getName())
+                .processingFee(loan.getProduct().getProcessingFee())
                 .build();
     }
 

@@ -506,6 +506,7 @@ function MembersTab() {
                         <tr>
                             <th className="p-4">Member No</th>
                             <th className="p-4">Name</th>
+                            <th className="p-4">Email</th> {/* ✅ Added Email Header */}
                             <th className="p-4">Contact</th>
                             <th className="p-4">Status</th>
                             <th className="p-4 text-right">Savings</th>
@@ -521,13 +522,15 @@ function MembersTab() {
                                     </div>
                                     {m.firstName} {m.lastName}
                                 </td>
+                                {/* ✅ Added Email Cell */}
+                                <td className="p-4 text-slate-500 text-xs">{m.email}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.phoneNumber}</td>
                                 <td className="p-4"><span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-[10px] font-bold uppercase">{m.status}</span></td>
                                 <td className="p-4 text-right font-bold text-slate-800">KES {Number(m.totalSavings || 0).toLocaleString()}</td>
                             </tr>
                         ))}
                         {members.length === 0 && (
-                            <tr><td colSpan="5" className="p-10 text-center text-slate-400 italic">No members found.</td></tr>
+                            <tr><td colSpan="6" className="p-10 text-center text-slate-400 italic">No members found.</td></tr>
                         )}
                     </tbody>
                 </table>

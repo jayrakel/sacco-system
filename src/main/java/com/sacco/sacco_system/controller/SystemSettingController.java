@@ -22,6 +22,20 @@ public class SystemSettingController {
         return ResponseEntity.ok(Map.of("success", true, "data", service.getAllSettings()));
     }
 
+    // ✅ ADD THIS METHOD: Handles the "Save" button from SystemSettings.jsx
+    @PostMapping
+    public ResponseEntity<Map<String, Object>> createOrUpdateSetting(@RequestBody Map<String, String> body) {
+        try {
+            String key = body.get("key");
+            String value = body.get("value");
+            // Reuse the existing update logic from your service
+            SystemSetting updated = service.updateSetting(key, value);
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Setting saved"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
     @PutMapping("/{key}")
     public ResponseEntity<Map<String, Object>> updateSetting(@PathVariable String key, @RequestBody Map<String, String> body) {
         try {

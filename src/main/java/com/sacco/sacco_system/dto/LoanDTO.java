@@ -28,4 +28,6 @@ public class LoanDTO {
     private LocalDate approvalDate;
     private LocalDate disbursementDate;
     private LocalDate expectedRepaymentDate;
+    private String productName;
+    private BigDecimal processingFee;
 }

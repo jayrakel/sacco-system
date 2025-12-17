@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import {
     Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon,
-    Banknote, Package, Link, FileText, PiggyBank, Calendar
+    Banknote, Package, Link, FileText, PiggyBank, Calculator, RefreshCw
 } from 'lucide-react';
 
-// Import Sub-Components (Ensure these files exist in your project structure)
+// Import Sub-Components
 import LoanProducts from '../../features/loans/components/LoanProducts';
 import SavingsProducts from '../../features/savings/components/SavingsProducts';
 import AccountingConfig from '../../features/finance/components/AccountingConfig';
@@ -15,13 +15,12 @@ export default function SystemSettings() {
     const [activeTab, setActiveTab] = useState('general');
     const navigate = useNavigate();
 
-    // --- GENERAL SETTINGS STATE ---
+    // --- STATE ---
     const [settings, setSettings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
 
-    // Base URL for image display
     const BASE_URL = import.meta.env.VITE_API_URL + "/uploads/settings/";
 
     useEffect(() => {
@@ -32,7 +31,14 @@ export default function SystemSettings() {
         try {
             const response = await api.get('/api/settings');
             if (response.data.success) {
-                setSettings(response.data.data);
+                const data = response.data.data;
+                setSettings(data);
+
+                // Ensure defaults exist for Loan Logic
+                if (!data.find(s => s.key === 'LOAN_LIMIT_MULTIPLIER'))
+                    setSettings(prev => [...prev, { key: 'LOAN_LIMIT_MULTIPLIER', value: '3.0' }]);
+                if (!data.find(s => s.key === 'LOAN_GRACE_PERIOD_WEEKS'))
+                    setSettings(prev => [...prev, { key: 'LOAN_GRACE_PERIOD_WEEKS', value: '1' }]);
             }
         } catch (error) {
             console.error("Failed to load settings");
@@ -42,12 +48,11 @@ export default function SystemSettings() {
     };
 
     const handleValueChange = (key, newValue) => {
-        setSettings(settings.map(s => s.key === key ? { ...s, value: newValue } : s));
+        setSettings(prev => prev.map(s => s.key === key ? { ...s, value: newValue } : s));
     };
 
     const handleFileUpload = async (key, file) => {
         if (!file) return;
-
         const formData = new FormData();
         formData.append("file", file);
 
@@ -55,7 +60,6 @@ export default function SystemSettings() {
             const response = await api.post(`/api/settings/upload/${key}`, formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
-
             if (response.data.success) {
                 setSettings(settings.map(s => s.key === key ? response.data.data : s));
                 setMessage(`Image for ${key.replace(/_/g, ' ')} updated!`);
@@ -69,11 +73,9 @@ export default function SystemSettings() {
         setSaving(true);
         setMessage('');
         try {
-            // Filter out image settings, only save text values here
             const textSettings = settings.filter(s => !s.key.includes('LOGO') && !s.key.includes('FAVICON'));
-
             await Promise.all(textSettings.map(s =>
-                api.put(`/api/settings/${s.key}`, { value: s.value })
+                api.post('/api/settings', { key: s.key, value: s.value }) // Use POST to ensure create/update
             ));
             setMessage('Configuration saved successfully!');
         } catch (error) {
@@ -84,11 +86,9 @@ export default function SystemSettings() {
 
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Configuration...</div>;
 
-    // Categorize Settings for General Tab
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
 
-    // --- RENDER ---
     return (
         <div className="min-h-screen bg-slate-50 p-4 sm:p-8 font-sans flex justify-center">
             <div className="max-w-6xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -99,87 +99,60 @@ export default function SystemSettings() {
                         <Settings className="text-emerald-400" size={28} />
                         <div>
                             <h2 className="text-xl font-bold">System Configuration</h2>
-                            <p className="text-slate-400 text-sm">Manage branding, products, and accounting rules.</p>
+                            <p className="text-slate-400 text-sm">Manage global variables and logic.</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => navigate('/admin-dashboard')}
-                        className="flex items-center gap-2 text-slate-400 hover:text-white transition"
-                    >
+                    <button onClick={() => navigate('/admin-dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-white transition">
                         <ArrowLeft size={20} /> Back
                     </button>
                 </div>
 
-                {/* Navigation Tabs */}
+                {/* Tabs */}
                 <div className="bg-slate-100 p-2 flex gap-2 overflow-x-auto border-b border-slate-200">
-                    <button
-                        onClick={() => setActiveTab('general')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Settings size={16}/> General & Branding
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('products')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Package size={16}/> Loan & Savings Products
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('accounting')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Link size={16}/> Accounting Rules
-                    </button>
+                    {['general', 'loanLogic', 'products', 'accounting'].map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap capitalize ${activeTab === tab ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            {tab === 'general' && <Settings size={16}/>}
+                            {tab === 'loanLogic' && <Calculator size={16}/>}
+                            {tab === 'products' && <Package size={16}/>}
+                            {tab === 'accounting' && <Link size={16}/>}
+                            {tab === 'loanLogic' ? 'Loan Logic' : tab}
+                        </button>
+                    ))}
                 </div>
 
                 <div className="p-8">
+                    {message && (
+                        <div className={`mb-6 p-4 rounded-lg flex items-center gap-3 border ${message.includes('Error') || message.includes('Failed') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                            <AlertCircle size={20} />
+                            <span>{message}</span>
+                        </div>
+                    )}
 
-                    {/* VIEW 1: GENERAL SETTINGS */}
+                    {/* VIEW 1: GENERAL */}
                     {activeTab === 'general' && (
                         <div className="space-y-8 animate-in fade-in">
-                            {message && (
-                                <div className={`p-4 rounded-lg flex items-center gap-3 border ${message.includes('Error') || message.includes('Failed') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                                    <AlertCircle size={20} />
-                                    <span>{message}</span>
-                                </div>
-                            )}
-
-                            {/* Branding Section */}
                             <div>
                                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Branding & Identity</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {brandingSettings.map((setting) => (
                                         <div key={setting.key} className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
-                                                {setting.key.replace(/_/g, ' ')}
-                                            </label>
-
+                                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">{setting.key.replace(/_/g, ' ')}</label>
                                             {setting.key.includes('LOGO') || setting.key.includes('FAVICON') ? (
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-16 h-16 bg-white border rounded-lg flex items-center justify-center overflow-hidden">
-                                                        {setting.value ? (
-                                                            <img src={`${BASE_URL}${setting.value}`} alt="Logo" className="w-full h-full object-contain" />
-                                                        ) : (
-                                                            <ImageIcon className="text-slate-300" />
-                                                        )}
+                                                        {setting.value ? <img src={`${BASE_URL}${setting.value}`} alt="Logo" className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-300" />}
                                                     </div>
-                                                    <div className="flex-1">
-                                                        <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded text-sm flex items-center gap-2 w-fit transition">
-                                                            <Upload size={14} /> Upload Image
-                                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(setting.key, e.target.files[0])} />
-                                                        </label>
-                                                        <p className="text-xs text-slate-400 mt-1">Recommended: PNG or JPG</p>
-                                                    </div>
+                                                    <label className="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded text-sm flex items-center gap-2 transition">
+                                                        <Upload size={14} /> Upload Image
+                                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(setting.key, e.target.files[0])} />
+                                                    </label>
                                                 </div>
                                             ) : (
-                                                setting.key.includes('COLOR') ? (
-                                                    <div className="flex items-center gap-3">
-                                                        <input type="color" value={setting.value || '#000000'} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-12 h-12 rounded cursor-pointer border-0 p-0" />
-                                                        <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
-                                                    </div>
-                                                ) : (
-                                                    <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" />
-                                                )
+                                                <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" />
                                             )}
                                         </div>
                                     ))}
@@ -188,66 +161,70 @@ export default function SystemSettings() {
 
                             {/* Banking Section */}
                             <div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
-                                    <Banknote size={20} className="text-indigo-600"/> Deposit Account Details
-                                </h3>
+                                <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2"><Banknote size={20} className="text-indigo-600"/> Banking & Paybill</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {bankSettings.map((setting) => (
                                         <div key={setting.key} className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                                            <label className="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wide">
-                                                {setting.key.replace(/_/g, ' ')}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={setting.value}
-                                                onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                                className="w-full p-2 border border-indigo-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                                                placeholder={setting.description}
-                                            />
-                                            <p className="text-xs text-indigo-400 mt-2">{setting.description}</p>
+                                            <label className="block text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wide">{setting.key.replace(/_/g, ' ')}</label>
+                                            <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border border-indigo-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
                                         </div>
                                     ))}
-                                    {bankSettings.length === 0 && <p className="text-slate-400 italic text-sm">No bank details configured. Restart backend to initialize.</p>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VIEW 2: LOAN LOGIC (NEW) */}
+                    {activeTab === 'loanLogic' && (
+                        <div className="space-y-6 animate-in fade-in max-w-2xl">
+                             <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 mb-6">
+                                <h4 className="font-bold text-amber-800 flex items-center gap-2 mb-1"><AlertCircle size={18}/> Critical Configuration</h4>
+                                <p className="text-sm text-amber-700">These settings directly affect loan qualification limits. Changes apply immediately to new applications.</p>
+                            </div>
+
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Loan Limit Multiplier (x Savings)</label>
+                                <div className="flex items-center gap-4">
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={settings.find(s => s.key === 'LOAN_LIMIT_MULTIPLIER')?.value || '3.0'}
+                                        onChange={(e) => handleValueChange('LOAN_LIMIT_MULTIPLIER', e.target.value)}
+                                        className="w-32 p-3 border border-slate-300 rounded-lg font-mono font-bold text-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    />
+                                    <p className="text-sm text-slate-500">
+                                        Example: If a member has <strong>KES 10,000</strong> savings, they can borrow up to <strong>KES {(10000 * (settings.find(s => s.key === 'LOAN_LIMIT_MULTIPLIER')?.value || 3)).toLocaleString()}</strong>.
+                                    </p>
                                 </div>
                             </div>
 
-                            {/* Save Button */}
-                            <div className="flex justify-end pt-4 border-t border-slate-200">
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={saving}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
-                                >
-                                    {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
-                                </button>
+                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Default Grace Period (Weeks)</label>
+                                <div className="flex items-center gap-4">
+                                    <input
+                                        type="number"
+                                        value={settings.find(s => s.key === 'LOAN_GRACE_PERIOD_WEEKS')?.value || '1'}
+                                        onChange={(e) => handleValueChange('LOAN_GRACE_PERIOD_WEEKS', e.target.value)}
+                                        className="w-32 p-3 border border-slate-300 rounded-lg font-mono font-bold text-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    />
+                                    <p className="text-sm text-slate-500">Period after disbursement before the first repayment installment is due.</p>
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* VIEW 2: PRODUCTS */}
-                    {activeTab === 'products' && (
-                        <div className="space-y-12 animate-in fade-in">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <FileText size={20} className="text-purple-600"/> Loan Products
-                                </h3>
-                                <LoanProducts />
-                            </div>
+                    {/* VIEW 3 & 4: PRODUCTS & ACCOUNTING */}
+                    {activeTab === 'products' && <div className="animate-in fade-in space-y-12"><LoanProducts /><div className="border-t pt-8"><SavingsProducts /></div></div>}
+                    {activeTab === 'accounting' && <AccountingConfig />}
 
-                            <div className="border-t pt-8">
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <PiggyBank size={20} className="text-emerald-600"/> Savings Products
-                                </h3>
-                                <SavingsProducts />
-                            </div>
+                    {/* GLOBAL SAVE BUTTON */}
+                    {(activeTab === 'general' || activeTab === 'loanLogic') && (
+                        <div className="mt-8 pt-6 border-t border-slate-200 flex justify-end">
+                            <button onClick={saveSettings} disabled={saving} className="bg-slate-900 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition disabled:opacity-50 shadow-lg">
+                                {saving ? <><RefreshCw className="animate-spin" size={20}/> Saving...</> : <><Save size={20} /> Save Configuration</>}
+                            </button>
                         </div>
                     )}
-
-                    {/* VIEW 3: ACCOUNTING */}
-                    {activeTab === 'accounting' && (
-                        <AccountingConfig />
-                    )}
-
                 </div>
             </div>
         </div>

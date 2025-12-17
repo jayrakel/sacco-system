@@ -23,8 +23,15 @@ public class AuditService {
         // Try to get current logged-in user
         try {
             Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
             if (principal instanceof User) {
-                username = ((User) principal).getUsername();
+                User user = (User) principal;
+                // ✅ CHANGED: Use Full Name instead of Email (username)
+                if (user.getFirstName() != null && user.getLastName() != null) {
+                    username = user.getFirstName() + " " + user.getLastName();
+                } else {
+                    username = user.getUsername(); // Fallback if names are missing
+                }
             } else {
                 username = principal.toString();
             }

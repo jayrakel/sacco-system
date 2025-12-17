@@ -3,6 +3,8 @@ package com.sacco.sacco_system.controller;
 import com.sacco.sacco_system.entity.Transaction;
 import com.sacco.sacco_system.service.SavingsService;
 import com.sacco.sacco_system.service.TransactionService;
+import lombok.Builder;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -12,9 +14,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -24,12 +29,27 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final SavingsService savingsService;
 
+    // ✅ FIXED: Return a DTO instead of the raw Entity to prevent Infinite Recursion
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllTransactions() {
         List<Transaction> transactions = transactionService.getAllTransactions();
+
+        // Convert to simplified DTO
+        List<TransactionDTO> dtos = transactions.stream().map(t -> TransactionDTO.builder()
+                .id(t.getId())
+                .amount(t.getAmount())
+                .type(t.getType().toString())
+                .transactionDate(t.getTransactionDate())
+                .referenceCode(t.getReferenceCode())
+                .description(t.getDescription())
+                // Safely get member name
+                .memberName(t.getMember() != null ? t.getMember().getFirstName() + " " + t.getMember().getLastName() : "System")
+                .build()
+        ).collect(Collectors.toList());
+
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
-        response.put("data", transactions);
+        response.put("data", dtos);
         return ResponseEntity.ok(response);
     }
 
@@ -48,8 +68,6 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Transaction reversed"));
     }
 
-    // ✅ FIXED: Removed 'rate' parameter.
-    // Interest is now calculated automatically based on each account's Product Rate.
     @PostMapping("/interest")
     public ResponseEntity<?> applyInterest() {
         savingsService.applyMonthlyInterest();
@@ -65,5 +83,18 @@ public class TransactionController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
                 .contentType(MediaType.parseMediaType("application/csv"))
                 .body(file);
+    }
+
+    // ✅ Simple Inner DTO Class
+    @Data
+    @Builder
+    public static class TransactionDTO {
+        private UUID id;
+        private BigDecimal amount;
+        private String type;
+        private LocalDateTime transactionDate;
+        private String referenceCode;
+        private String description;
+        private String memberName;
     }
 }
