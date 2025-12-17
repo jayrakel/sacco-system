@@ -1,172 +1,241 @@
 import React, { useState, useEffect, useRef } from 'react';
-import api from '../api'; // ✅ FIXED: Correct path (was ../../../api)
+import api from '../api';
 import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import BrandedSpinner from './BrandedSpinner'; // ✅ Added Spinner Import
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
-    const navigate = useNavigate();
-    const [notifications, setNotifications] = useState([]);
-    const [guarantorRequests, setGuarantorRequests] = useState([]);
-    const [showNotifications, setShowNotifications] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const dropdownRef = useRef(null);
+    // --- STATE MANAGEMENT ---
+    const [notifications, setNotifications] = useState({ unread: [], history: [], archive: [] });
+    const [requests, setRequests] = useState([]);
+    const [logo, setLogo] = useState(null);
+    const [isLoggingOut, setIsLoggingOut] = useState(false); // ✅ Added Logout State
 
+    // --- DROPDOWN VISIBILITY ---
+    const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+    const [showReqDropdown, setShowReqDropdown] = useState(false);
+    const [showArchive, setShowArchive] = useState(false);
+
+    const notifRef = useRef(null);
+    const reqRef = useRef(null);
+    const navigate = useNavigate();
+
+    const onLogout = () => {
+        setIsLoggingOut(true); // ✅ Trigger Spinner
+        setTimeout(() => {
+            localStorage.clear();
+            window.location.href = '/login';
+        }, 1500); // Small delay to show the branding
+    };
+
+    // --- CLICK OUTSIDE HANDLER ---
     useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 30000); // Poll every 30s
-        return () => clearInterval(interval);
+        function handleClickOutside(event) {
+            if (notifRef.current && !notifRef.current.contains(event.target)) setShowNotifDropdown(false);
+            if (reqRef.current && !reqRef.current.contains(event.target)) setShowReqDropdown(false);
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const fetchData = () => {
-        fetchNotifications();
-        fetchGuarantorRequests();
+    // --- FETCH DATA ---
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // 1. Notifications (Using Correct Endpoint)
+                const notifRes = await api.get('/api/notifications').catch(() => ({ data: { data: [] } }));
+                const rawNotifs = notifRes.data.data || [];
+
+                // Map to your structure (unread/history)
+                const unread = rawNotifs.filter(n => !n.read);
+                const history = rawNotifs.filter(n => n.read);
+                setNotifications({ unread, history, archive: [] });
+
+                // 2. Guarantor Requests (Using Correct Endpoint)
+                const reqRes = await api.get('/api/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
+                setRequests(reqRes.data.data || []);
+
+                // 3. Logo (System Settings)
+                const settingRes = await api.get('/api/settings').catch(() => ({ data: { data: [] } }));
+                const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
+
+                if (logoSetting && logoSetting.value) {
+                    setLogo(`http://localhost:8080/uploads/settings/${logoSetting.value}`);
+                }
+
+            } catch (err) { console.error("Fetch error", err); }
+        };
+        fetchData();
+
+        // Optional Polling
+        const interval = setInterval(fetchData, 30000);
+        return () => clearInterval(interval);
+    }, [user]);
+
+    // --- ACTIONS ---
+
+    const handleMarkAsRead = async (id) => {
+        const noteToMove = notifications.unread.find(n => n.id === id);
+        if (!noteToMove) return;
+
+        // Optimistic UI Update
+        setNotifications(prev => ({
+            ...prev,
+            unread: prev.unread.filter(n => n.id !== id),
+            history: [{ ...noteToMove, read: true }, ...prev.history]
+        }));
+
+        // Backend Call
+        await api.patch(`/api/notifications/${id}/read`);
     };
 
-    const fetchNotifications = async () => {
+    const respondToRequest = async (requestId, accepted) => {
+        const action = accepted ? "accept" : "decline";
+        if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
+
         try {
-            const res = await api.get('/api/notifications');
-            if (res.data.success) setNotifications(res.data.data);
-        } catch (e) { console.error("Notification Fetch Error", e); }
+            await api.post(`/api/loans/guarantors/${requestId}/respond?accepted=${accepted}`);
+            setRequests(prev => prev.filter(r => r.requestId !== requestId));
+            alert(`Request ${action}ed successfully.`);
+        } catch (err) { alert("Action failed"); }
     };
 
-    const fetchGuarantorRequests = async () => {
-        try {
-            const res = await api.get('/api/loans/guarantors/requests');
-            if (res.data.success) setGuarantorRequests(res.data.data);
-        } catch (e) { console.error("Request Fetch Error", e); }
-    };
-
-    const handleRespond = async (id, accepted) => {
-        setLoading(true);
-        try {
-            await api.post(`/api/loans/guarantors/${id}/respond?accepted=${accepted}`);
-            fetchData(); // Refresh both lists
-            alert(accepted ? "Request Accepted" : "Request Declined");
-        } catch (e) {
-            alert(e.response?.data?.message || "Action failed");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const markRead = async (id) => {
-        try {
-            await api.patch(`/api/notifications/${id}/read`);
-            setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n));
-        } catch (e) {}
-    };
-
-    const unreadCount = notifications.filter(n => !n.read).length + guarantorRequests.length;
+    // ✅ Render Full Screen Spinner on Logout
+    if (isLoggingOut) {
+        return (
+            <div className="fixed inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-300">
+                <BrandedSpinner size="xl" />
+            </div>
+        );
+    }
 
     return (
-        <header className="bg-white shadow-sm border-b border-slate-200 py-4 px-8 flex justify-between items-center sticky top-0 z-40">
-
-            {/* Title Section */}
-            <div className="flex items-center gap-3">
-                <div className="bg-indigo-900 p-2 rounded-lg text-white">
-                    <Wallet size={24} />
+        <>
+            {/* --- ARCHIVE MODAL --- */}
+            {showArchive && (
+                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                            <h3 className="font-bold text-lg flex items-center gap-2 text-slate-700"><Archive size={20} className="text-slate-400"/> Archive</h3>
+                            <button onClick={() => setShowArchive(false)}><XCircle size={24} className="text-slate-400 hover:text-red-500"/></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
+                            {notifications.history.length === 0 ? <p className="text-center text-slate-400 text-sm">No archives.</p> : notifications.history.map(n => (
+                                <div key={n.id} className="pb-4 border-b border-slate-100">
+                                    <p className="text-sm font-bold text-slate-700">{n.title}</p>
+                                    <p className="text-sm text-slate-600 whitespace-pre-line">{n.message}</p>
+                                    <p className="text-xs text-slate-400 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <h1 className="text-xl font-bold text-slate-800">{title}</h1>
-                    <p className="text-xs text-slate-500">Welcome back, {user?.firstName}</p>
+            )}
+
+            {/* --- NAVBAR --- */}
+            <nav className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
+
+                {/* LOGO AREA */}
+                <div className="flex items-center gap-3">
+                    {logo ? (
+                        <img src={logo} alt="Logo" className="h-10 w-auto object-contain" />
+                    ) : (
+                        <div className="bg-indigo-900 text-white p-2 rounded-lg shadow-lg"><Wallet size={20} /></div>
+                    )}
+                    <span className="font-bold text-xl hidden sm:block text-slate-800">{title}</span>
                 </div>
-            </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-6">
+                {/* ICONS AREA */}
+                <div className="flex items-center gap-4">
 
-                {/* Notifications Bell */}
-                <div className="relative" ref={dropdownRef}>
-                    <button
-                        onClick={() => setShowNotifications(!showNotifications)}
-                        className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-full transition"
-                    >
-                        <Bell size={22} />
-                        {unreadCount > 0 && (
-                            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full">
-                                {unreadCount}
-                            </span>
-                        )}
-                    </button>
+                    {/* 1. GUARANTOR REQUESTS */}
+                    <div className="relative" ref={reqRef}>
+                        <button onClick={() => setShowReqDropdown(!showReqDropdown)} className="p-2 relative hover:bg-slate-100 rounded-full transition text-slate-600">
+                            <Users size={22} />
+                            {requests.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}
+                        </button>
 
-                    {/* Dropdown */}
-                    {showNotifications && (
-                        <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                            <div className="bg-indigo-900 p-3 text-white flex justify-between items-center">
-                                <span className="font-bold text-sm">Notifications</span>
-                                <button onClick={() => setShowNotifications(false)}><XCircle size={16}/></button>
+                        {showReqDropdown && (
+                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
+                                    <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Guarantor Requests</span>
+                                    <button onClick={() => setShowReqDropdown(false)}><XCircle size={16} className="text-amber-400 hover:text-amber-600"/></button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                                    {requests.length === 0 ? <div className="p-6 text-center text-slate-400 text-xs italic">No pending requests.</div> : requests.map(r => (
+                                        <div key={r.requestId} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                            <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
+                                            <p className="text-xs text-slate-500 mb-3">
+                                                Requesting guarantee: <span className="font-mono font-bold text-slate-700">KES {parseInt(r.guaranteeAmount).toLocaleString()}</span>
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => respondToRequest(r.requestId, true)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+                                                    <Check size={14}/> Accept
+                                                </button>
+                                                <button onClick={() => respondToRequest(r.requestId, false)} className="flex-1 bg-white border border-red-200 text-red-600 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-red-50 transition-colors">
+                                                    <X size={14}/> Decline
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
+                        )}
+                    </div>
 
-                            <div className="max-h-96 overflow-y-auto">
+                    {/* 2. NOTIFICATIONS */}
+                    <div className="relative" ref={notifRef}>
+                        <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="p-2 relative hover:bg-slate-100 rounded-full transition text-slate-600">
+                            <Bell size={22} />
+                            {notifications.unread.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
+                        </button>
 
-                                {/* Guarantor Requests Section */}
-                                {guarantorRequests.length > 0 && (
-                                    <div className="bg-amber-50 border-b border-amber-100">
-                                        <div className="p-2 text-[10px] font-bold text-amber-800 uppercase tracking-wide">Action Required</div>
-                                        {guarantorRequests.map(req => (
-                                            <div key={req.requestId} className="p-3 border-b border-amber-100 last:border-0">
-                                                <div className="flex gap-2">
-                                                    <Users size={16} className="text-amber-600 mt-1"/>
+                        {showNotifDropdown && (
+                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="bg-slate-50 p-3 border-b border-slate-100 flex justify-between items-center">
+                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Notifications</span>
+                                    <button onClick={() => { setShowArchive(true); setShowNotifDropdown(false); }} className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1">
+                                        <Archive size={14}/> History
+                                    </button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                                    {[...notifications.unread, ...notifications.history].length === 0 ?
+                                        <div className="p-6 text-center text-slate-400 text-xs italic">No new notifications.</div> :
+                                        [...notifications.unread].slice(0,5).map(n => (
+                                            <div key={n.id} onClick={() => !n.read && handleMarkAsRead(n.id)} className={`p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors ${!n.read ? 'bg-indigo-50/40' : ''}`}>
+                                                <div className="flex gap-3">
+                                                    <div className={`mt-0.5 ${!n.read ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                        {!n.read ? <MailOpen size={16}/> : <Check size={16}/>}
+                                                    </div>
                                                     <div>
-                                                        <p className="text-sm font-bold text-slate-800">Guarantorship Request</p>
-                                                        <p className="text-xs text-slate-600 mt-1">
-                                                            <span className="font-bold">{req.applicantName}</span> requests you to guarantee <span className="font-mono font-bold">KES {req.guaranteeAmount}</span> for their loan.
-                                                        </p>
-                                                        <div className="flex gap-2 mt-3">
-                                                            <button
-                                                                onClick={() => handleRespond(req.requestId, true)}
-                                                                disabled={loading}
-                                                                className="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 hover:bg-emerald-700"
-                                                            >
-                                                                <Check size={12}/> Accept
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleRespond(req.requestId, false)}
-                                                                disabled={loading}
-                                                                className="bg-red-500 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 hover:bg-red-600"
-                                                            >
-                                                                <X size={12}/> Decline
-                                                            </button>
-                                                        </div>
+                                                        <p className={`text-sm ${!n.read ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{n.title}</p>
+                                                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                                                        <p className="text-[10px] text-slate-400 mt-2">{new Date(n.createdAt).toLocaleTimeString()} · {new Date(n.createdAt).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* General Notifications */}
-                                {notifications.length === 0 && guarantorRequests.length === 0 ? (
-                                    <div className="p-8 text-center text-slate-400 text-sm">No new notifications</div>
-                                ) : (
-                                    notifications.map(n => (
-                                        <div
-                                            key={n.id}
-                                            onClick={() => markRead(n.id)}
-                                            className={`p-3 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition ${!n.read ? 'bg-indigo-50/50' : ''}`}
-                                        >
-                                            <div className="flex gap-3">
-                                                <div className={`mt-1 ${!n.read ? 'text-indigo-600' : 'text-slate-400'}`}>
-                                                    {!n.read ? <MailOpen size={16}/> : <Archive size={16}/>}
-                                                </div>
-                                                <div>
-                                                    <p className={`text-sm ${!n.read ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{n.title}</p>
-                                                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                                                    <p className="text-[10px] text-slate-400 mt-2">{new Date(n.createdAt).toLocaleString()}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
+                                        ))
+                                    }
+                                </div>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
 
-                <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }} className="text-slate-400 hover:text-red-500 transition" title="Logout">
-                    <LogOut size={22} />
-                </button>
-            </div>
-        </header>
+                    {/* SEPARATOR */}
+                    <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
+
+                    {/* USER PROFILE */}
+                    <div className="text-right hidden sm:block">
+                        <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">{user?.role || 'MEMBER'}</p>
+                        <p className="text-sm font-bold text-slate-700">{user?.firstName} {user?.lastName}</p>
+                    </div>
+
+                    {/* LOGOUT */}
+                    <button onClick={onLogout} className="bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition border border-slate-200 hover:border-red-100">
+                        <LogOut size={18}/>
+                    </button>
+                </div>
+            </nav>
+        </>
     );
 }
