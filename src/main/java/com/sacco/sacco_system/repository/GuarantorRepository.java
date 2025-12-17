@@ -10,11 +10,9 @@ import java.util.UUID;
 
 @Repository
 public interface GuarantorRepository extends JpaRepository<Guarantor, UUID> {
-
-    List<Guarantor> findByLoanId(UUID loanId);
-
-    List<Guarantor> findByMemberId(UUID memberId);
-
-    // ✅ ADDED: Required for LoanService workflow checks
+    List<Guarantor> findByLoan(Loan loan);
     long countByLoanAndStatus(Loan loan, Guarantor.GuarantorStatus status);
+
+    // ✅ NEW: Find requests sent TO this member
+    List<Guarantor> findByMemberIdAndStatus(UUID memberId, Guarantor.GuarantorStatus status);
 }

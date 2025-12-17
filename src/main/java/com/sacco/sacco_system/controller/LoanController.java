@@ -51,7 +51,7 @@ public class LoanController {
     }
 
     // ========================================================================
-    // 2. LOAN APPLICATION WORKFLOW (Step-by-Step)
+    // 2. LOAN APPLICATION WORKFLOW
     // ========================================================================
 
     // ✅ STEP 1: CREATE DRAFT APPLICATION
@@ -78,7 +78,7 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 2: ADD GUARANTORS (One by one)
+    // ✅ STEP 2: ADD GUARANTORS
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
             @PathVariable UUID loanId,
@@ -91,7 +91,7 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 3: SUBMIT TO GUARANTORS (Changes status to GUARANTORS_PENDING)
+    // ✅ STEP 3: SUBMIT TO GUARANTORS
     @PostMapping("/{id}/send-requests")
     public ResponseEntity<Map<String, Object>> sendGuarantorRequests(@PathVariable UUID id) {
         try {
@@ -102,7 +102,31 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 4: PAY FEE & FINAL SUBMIT (After guarantors approve)
+    // ✅ NEW: Get Pending Requests for Logged-in User (Moved Logic to Service)
+    @GetMapping("/guarantors/requests")
+    public ResponseEntity<Map<String, Object>> getMyGuarantorRequests() {
+        try {
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            Member member = memberRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Member not found"));
+
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingGuarantorRequests(member.getId())));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Respond to Request (Moved Logic to Service)
+    @PostMapping("/guarantors/{id}/respond")
+    public ResponseEntity<Map<String, Object>> respondToGuarantorRequest(@PathVariable UUID id, @RequestParam boolean accepted) {
+        try {
+            loanService.respondToGuarantorship(id, accepted);
+            return ResponseEntity.ok(Map.of("success", true, "message", accepted ? "Request Accepted" : "Request Declined"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ STEP 4: PAY FEE
     @PostMapping("/{id}/pay-fee")
     public ResponseEntity<Map<String, Object>> payLoanFee(
             @PathVariable UUID id,
@@ -167,7 +191,6 @@ public class LoanController {
         }
     }
 
-    // ✅ FIXED: Repay endpoint now accepts LoanDTO return type
     @PostMapping("/{id}/repay")
     public ResponseEntity<Map<String, Object>> repayLoan(
             @PathVariable UUID id,
@@ -233,7 +256,7 @@ public class LoanController {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        BigDecimal limit = loanService.calculateMemberLoanLimit(member); // You might need to expose this in LoanService or call LoanLimitService directly if public
+        BigDecimal limit = loanService.calculateMemberLoanLimit(member);
 
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -242,7 +265,6 @@ public class LoanController {
         ));
     }
 
-    // ✅ NEW: Delete Endpoint
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> deleteLoan(@PathVariable UUID id) {
         try {
@@ -254,7 +276,6 @@ public class LoanController {
         }
     }
 
-    // ✅ NEW: Get Guarantors (to resume wizard)
     @GetMapping("/{id}/guarantors")
     public ResponseEntity<Map<String, Object>> getLoanGuarantors(@PathVariable UUID id) {
         try {

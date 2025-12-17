@@ -11,7 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,6 +43,12 @@ public class LoanService {
 
         if (amount.compareTo(product.getMaxLimit()) > 0) throw new RuntimeException("Amount exceeds product limit");
 
+        // Dynamic Limit Check
+        BigDecimal memberLimit = calculateMemberLoanLimit(member);
+        if (amount.compareTo(memberLimit) > 0) {
+            throw new RuntimeException("Amount exceeds your qualifying limit of " + memberLimit);
+        }
+
         Loan loan = Loan.builder()
                 .loanNumber("LN" + System.currentTimeMillis())
                 .member(member)
@@ -57,7 +65,12 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    //✅ NEW: Delete Draft/Pending Applications
+    // Legacy support for older controller calls defaulting to MONTHS
+    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
+        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
+    }
+
+    // ✅ NEW: Delete Draft/Pending Applications
     @Loggable(action = "DELETE_APPLICATION", category = "LOANS")
     public void deleteApplication(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -74,7 +87,6 @@ public class LoanService {
             throw new RuntimeException("Cannot delete loan application in status: " + loan.getStatus());
         }
 
-        // Verify no payments made (redundant check if logic is sound, but safe)
         if (loan.isApplicationFeePaid()) {
             throw new RuntimeException("Cannot delete application where fee is already paid.");
         }
@@ -96,11 +108,6 @@ public class LoanService {
                 .collect(Collectors.toList());
     }
 
-    // Legacy support for older controller calls (if any exist) defaulting to MONTHS
-    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
-        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
-    }
-
     @Loggable(action = "SUBMIT_TO_GUARANTORS", category = "LOANS")
     public void submitToGuarantors(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
@@ -117,6 +124,22 @@ public class LoanService {
                 "Your loan application has been sent to the selected guarantors for approval.",
                 Notification.NotificationType.INFO
         );
+
+        // Notify Guarantors
+        for (Guarantor g : loan.getGuarantors()) {
+            if (g.getMember().getUser() != null) {
+                String msg = String.format("Request from %s %s: Please guarantee loan %s for KES %s. Your liability: KES %s",
+                        loan.getMember().getFirstName(), loan.getMember().getLastName(),
+                        loan.getLoanNumber(), loan.getPrincipalAmount(), g.getGuaranteeAmount());
+
+                notificationService.createNotification(
+                        g.getMember().getUser(),
+                        "Guarantorship Request",
+                        msg,
+                        Notification.NotificationType.ACTION_REQUIRED
+                );
+            }
+        }
     }
 
     @Loggable(action = "ADD_GUARANTOR", category = "LOANS")
@@ -126,6 +149,11 @@ public class LoanService {
 
         if(guarantor.getId().equals(loan.getMember().getId()))
             throw new RuntimeException("Cannot guarantee self.");
+
+        // Check Savings
+        if(guarantor.getTotalSavings().compareTo(amount) < 0){
+            throw new RuntimeException("Guarantor " + guarantor.getFirstName() + " does not have enough savings (KES " + guarantor.getTotalSavings() + ") to cover KES " + amount);
+        }
 
         Guarantor g = Guarantor.builder()
                 .loan(loan)
@@ -137,22 +165,6 @@ public class LoanService {
 
         Guarantor saved = guarantorRepository.save(g);
 
-        // ✅ SEND NOTIFICATION TO GUARANTOR
-        if (guarantor.getUser() != null) {
-            String message = String.format("Member %s %s has requested you to guarantee their loan of KES %s. Your liability would be KES %s.",
-                    loan.getMember().getFirstName(),
-                    loan.getMember().getLastName(),
-                    loan.getPrincipalAmount(),
-                    amount);
-
-            notificationService.createNotification(
-                    guarantor.getUser(),
-                    "Guarantorship Request",
-                    message,
-                    Notification.NotificationType.ACTION_REQUIRED // Assuming you have this type or INFO
-            );
-        }
-
         return GuarantorDTO.builder()
                 .id(saved.getId())
                 .memberId(saved.getMember().getId())
@@ -160,6 +172,61 @@ public class LoanService {
                 .guaranteeAmount(saved.getGuaranteeAmount())
                 .status(saved.getStatus().toString())
                 .build();
+    }
+
+    // ✅ NEW: Get Pending Requests for a Member
+    public List<Map<String, Object>> getPendingGuarantorRequests(UUID memberId) {
+        return guarantorRepository.findByMemberIdAndStatus(memberId, Guarantor.GuarantorStatus.PENDING)
+                .stream()
+                .map(g -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("requestId", g.getId());
+                    map.put("loanAmount", g.getLoan().getPrincipalAmount());
+                    map.put("guaranteeAmount", g.getGuaranteeAmount());
+                    map.put("applicantName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName());
+                    map.put("loanProduct", g.getLoan().getProduct().getName());
+                    map.put("dateRequested", g.getDateRequestSent());
+                    return map;
+                })
+                .collect(Collectors.toList());
+    }
+
+    // ✅ NEW: Respond to Request
+    @Loggable(action = "RESPOND_GUARANTORSHIP", category = "LOANS")
+    public void respondToGuarantorship(UUID guarantorId, boolean accepted) {
+        Guarantor g = guarantorRepository.findById(guarantorId)
+                .orElseThrow(() -> new RuntimeException("Request not found"));
+
+        g.setStatus(accepted ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
+        g.setDateResponded(LocalDate.now());
+        guarantorRepository.save(g);
+
+        // Notify Applicant
+        Notification.NotificationType type = accepted ? Notification.NotificationType.SUCCESS : Notification.NotificationType.WARNING;
+        String statusText = accepted ? "Accepted" : "Declined";
+
+        notificationService.createNotification(
+                g.getLoan().getMember().getUser(),
+                "Guarantor Responded",
+                String.format("%s %s has %s your guarantorship request.", g.getMember().getFirstName(), g.getMember().getLastName(), statusText),
+                type
+        );
+
+        // Check if all approved
+        Loan loan = g.getLoan();
+        long pending = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.PENDING);
+        long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED);
+
+        if (pending == 0) {
+            if (declined == 0) {
+                loan.setStatus(Loan.LoanStatus.GUARANTORS_APPROVED);
+                notificationService.createNotification(loan.getMember().getUser(), "Guarantors Approved", "All guarantors have accepted! You can now pay the application fee.", Notification.NotificationType.SUCCESS);
+            } else {
+                // Optional: Notify that some declined
+                notificationService.createNotification(loan.getMember().getUser(), "Guarantor Update", "All guarantors responded, but some declined. Please review.", Notification.NotificationType.WARNING);
+            }
+            loanRepository.save(loan);
+        }
     }
 
     // ========================================================================
@@ -175,11 +242,19 @@ public class LoanService {
 
         Loan loan = g.getLoan();
         long pending = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.PENDING);
-        long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED);
+        long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED); // Optional Check
 
-        if (pending == 0 && declined == 0) {
+        if (pending == 0) {
             loan.setStatus(Loan.LoanStatus.GUARANTORS_APPROVED);
             loanRepository.save(loan);
+
+            // Notify Applicant
+            notificationService.createNotification(
+                    loan.getMember().getUser(),
+                    "Guarantors Approved",
+                    "All guarantors have responded. Please proceed to pay the application fee.",
+                    Notification.NotificationType.SUCCESS
+            );
         }
     }
 
