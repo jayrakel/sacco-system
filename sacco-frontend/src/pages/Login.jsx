@@ -154,7 +154,10 @@ export default function Login() {
                 {localLoading ? (
                     // ✅ 2. BUTTON SPINNER (Small)
                     <div className="flex items-center gap-2">
-                        <BrandedSpinner iconUrl={iconUrl} size="small" color="white" />
+                        {/* - Removed 'iconUrl={iconUrl}' (Spinner gets it from Context now)
+                           - Added 'showTagline={false}' (Critical for buttons)
+                        */}
+                        <BrandedSpinner size="small" color="white" showTagline={false} />
                         <span>Verifying...</span>
                     </div>
                 ) : (

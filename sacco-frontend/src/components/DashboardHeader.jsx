@@ -2,30 +2,37 @@ import React, { useState, useEffect, useRef } from 'react';
 import api from '../api';
 import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import BrandedSpinner from './BrandedSpinner'; // ✅ Added Spinner Import
+import BrandedSpinner from './BrandedSpinner';
+import { useSettings } from '../context/SettingsContext'; // ✅ Import Settings Context
+import { logoutUser } from '../features/auth/services/authService'; // ✅ Import Auth Service
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     // --- STATE MANAGEMENT ---
     const [notifications, setNotifications] = useState({ unread: [], history: [], archive: [] });
     const [requests, setRequests] = useState([]);
     const [logo, setLogo] = useState(null);
-    const [isLoggingOut, setIsLoggingOut] = useState(false); // ✅ Added Logout State
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+    // --- HOOKS ---
+    // ✅ 1. Destructure 'settings' to get the name and favicon for the logout screen
+    const { settings, getImageUrl } = useSettings();
+    const navigate = useNavigate();
+    const notifRef = useRef(null);
+    const reqRef = useRef(null);
 
     // --- DROPDOWN VISIBILITY ---
     const [showNotifDropdown, setShowNotifDropdown] = useState(false);
     const [showReqDropdown, setShowReqDropdown] = useState(false);
     const [showArchive, setShowArchive] = useState(false);
 
-    const notifRef = useRef(null);
-    const reqRef = useRef(null);
-    const navigate = useNavigate();
-
     const onLogout = () => {
-        setIsLoggingOut(true); // ✅ Trigger Spinner
+        setIsLoggingOut(true);
         setTimeout(() => {
-            localStorage.clear();
-            window.location.href = '/login';
-        }, 1500); // Small delay to show the branding
+            logoutUser();
+            // Use navigate to switch screens instantly without a browser reload
+            // This prevents the "double spinner" effect
+            navigate('/');
+        }, 1500);
     };
 
     // --- CLICK OUTSIDE HANDLER ---
@@ -42,16 +49,14 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // 1. Notifications (Using Correct Endpoint)
+                // 1. Notifications
                 const notifRes = await api.get('/api/notifications').catch(() => ({ data: { data: [] } }));
                 const rawNotifs = notifRes.data.data || [];
-
-                // Map to your structure (unread/history)
                 const unread = rawNotifs.filter(n => !n.read);
                 const history = rawNotifs.filter(n => n.read);
                 setNotifications({ unread, history, archive: [] });
 
-                // 2. Guarantor Requests (Using Correct Endpoint)
+                // 2. Guarantor Requests
                 const reqRes = await api.get('/api/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
                 setRequests(reqRes.data.data || []);
 
@@ -60,7 +65,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                 const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
 
                 if (logoSetting && logoSetting.value) {
-                    setLogo(`http://localhost:8080/uploads/settings/${logoSetting.value}`);
+                    setLogo(getImageUrl(logoSetting.value));
                 }
 
             } catch (err) { console.error("Fetch error", err); }
@@ -70,7 +75,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         // Optional Polling
         const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
-    }, [user]);
+    }, [user, getImageUrl]);
 
     // --- ACTIONS ---
 
@@ -78,14 +83,12 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         const noteToMove = notifications.unread.find(n => n.id === id);
         if (!noteToMove) return;
 
-        // Optimistic UI Update
         setNotifications(prev => ({
             ...prev,
             unread: prev.unread.filter(n => n.id !== id),
             history: [{ ...noteToMove, read: true }, ...prev.history]
         }));
 
-        // Backend Call
         await api.patch(`/api/notifications/${id}/read`);
     };
 
@@ -100,11 +103,18 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         } catch (err) { alert("Action failed"); }
     };
 
-    // ✅ Render Full Screen Spinner on Logout
+    // ✅ 2. LOGOUT SCREEN: EXACT MATCH TO APP.JSX SPLASH SCREEN
     if (isLoggingOut) {
+        // Resolve the favicon URL for consistency
+        const iconUrl = getImageUrl(settings?.SACCO_FAVICON);
+
         return (
-            <div className="fixed inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-300">
-                <BrandedSpinner size="xl" />
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-50 gap-6 animate-in fade-in duration-700">
+                <BrandedSpinner iconUrl={iconUrl} size="xl" />
+                <div className="text-center space-y-2">
+                    <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{settings?.SACCO_NAME}</h2>
+                    <p className="text-slate-400 text-sm font-medium animate-pulse">Securely Logging Out...</p>
+                </div>
             </div>
         );
     }

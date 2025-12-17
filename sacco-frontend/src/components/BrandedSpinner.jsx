@@ -54,11 +54,11 @@ export default function BrandedSpinner({ iconUrl, size = "large", color = "brand
       </div>
 
       {/* Tagline Display */}
-      {showTagline && settings?.SACCO_TAGLINE && (
-        <p className={`text-xs font-bold uppercase tracking-widest animate-pulse ${color === 'white' ? 'text-white/80' : 'text-slate-500'}`}>
-            {settings.SACCO_TAGLINE}
-        </p>
-      )}
+{/*       {showTagline && settings?.SACCO_TAGLINE && ( */}
+{/*         <p className={`text-xs font-bold uppercase tracking-widest animate-pulse ${color === 'white' ? 'text-white/80' : 'text-slate-500'}`}> */}
+{/*             {settings.SACCO_TAGLINE} */}
+{/*         </p> */}
+{/*       )} */}
     </div>
   );
 }
