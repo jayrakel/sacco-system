@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { X, CheckCircle, Calculator, UserPlus, Search, ArrowRight, ArrowLeft, Users, AlertCircle, Loader, Lock, Info } from 'lucide-react';
 
-export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user }) {
+export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user, resumeLoan }) { // ✅ Added resumeLoan
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [loanId, setLoanId] = useState(null);
@@ -13,8 +13,8 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
     const [calculatedRepayment, setCalculatedRepayment] = useState(null);
 
     // Limits
-    const [rawMemberLimit, setRawMemberLimit] = useState(0); // From Savings * 3 logic
-    const [effectiveLimit, setEffectiveLimit] = useState(0); // Min(MemberLimit, ProductLimit)
+    const [rawMemberLimit, setRawMemberLimit] = useState(0);
+    const [effectiveLimit, setEffectiveLimit] = useState(0);
 
     // Step 2 Data
     const [members, setMembers] = useState([]);
@@ -24,23 +24,33 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
 
     useEffect(() => {
         if (isOpen) {
-            setStep(1);
-            setLoanId(null);
-            setSelectedGuarantors([]);
-            setFormData({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
             fetchProducts();
             fetchMembers();
             fetchLimit();
-        }
-    }, [isOpen]);
 
-    // Recalculate Effective Limit whenever Product or Member Limit changes
+            if (resumeLoan) {
+                // ✅ RESUME MODE
+                setLoanId(resumeLoan.id);
+                // Try to pre-fill Step 1 if data is available, otherwise skip to Step 2
+                // Since resumeLoan might be a summary DTO, we might not have all details for Step 1
+                // But typically if it's DRAFT, we assume Step 1 was done.
+                // We'll jump to Step 2 to manage guarantors.
+                setStep(2);
+                fetchExistingGuarantors(resumeLoan.id);
+            } else {
+                // ✅ NEW MODE
+                setStep(1);
+                setLoanId(null);
+                setSelectedGuarantors([]);
+                setFormData({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
+            }
+        }
+    }, [isOpen, resumeLoan]);
+
+    // Recalculate Effective Limit
     useEffect(() => {
         const product = products.find(p => p.id === formData.productId);
         if (product && rawMemberLimit > 0) {
-            // The limit is the LOWER of the two:
-            // 1. What the member qualifies for (Savings * 3)
-            // 2. What the product allows (Max Limit)
             const limit = Math.min(rawMemberLimit, product.maxLimit);
             setEffectiveLimit(limit);
         } else {
@@ -61,7 +71,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
         try {
             const res = await api.get('/api/loans/products');
             if (res.data.success) setProducts(res.data.data);
-        } catch (e) { console.error("Error loading products", e); }
+        } catch (e) { console.error(e); }
     };
 
     const fetchMembers = async () => {
@@ -71,7 +81,24 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                 const others = res.data.data.filter(m => String(m.id) !== String(user?.memberId));
                 setMembers(others);
             }
-        } catch (e) { console.error("Error loading members", e); }
+        } catch (e) { console.error(e); }
+    };
+
+    const fetchExistingGuarantors = async (id) => {
+        try {
+            const res = await api.get(`/api/loans/${id}/guarantors`);
+            if (res.data.success) {
+                // Map backend DTO to frontend structure
+                const formatted = res.data.data.map(g => ({
+                    id: g.memberId, // Important for "already added" check
+                    firstName: g.memberName.split(' ')[0], // Simple split if full name provided
+                    lastName: g.memberName.split(' ').slice(1).join(' ') || '',
+                    memberNumber: '...',
+                    amount: g.guaranteeAmount
+                }));
+                setSelectedGuarantors(formatted);
+            }
+        } catch (e) { console.error(e); }
     };
 
     // --- STEP 1: CREATE DRAFT ---
@@ -106,18 +133,23 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
     // --- STEP 2: ADD GUARANTOR ---
     const handleAddGuarantor = async () => {
         if (!activeGuarantorId || !guaranteeAmount) return;
+
+        // Prevent duplicates
         if (selectedGuarantors.some(g => g.id === activeGuarantorId)) {
             alert("Member already added as guarantor.");
             return;
         }
+
         setLoading(true);
         try {
             await api.post(`/api/loans/${loanId}/guarantors`, {
                 memberId: activeGuarantorId,
                 guaranteeAmount: guaranteeAmount
             });
+
             const member = members.find(m => m.id === activeGuarantorId);
             setSelectedGuarantors([...selectedGuarantors, { ...member, amount: guaranteeAmount }]);
+
             setActiveGuarantorId('');
             setGuaranteeAmount('');
         } catch (e) {
@@ -154,8 +186,10 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
             const rate = product.interestRate || 0;
             const divisor = formData.durationUnit === 'WEEKS' ? 52 : 12;
             const N = parseInt(formData.duration);
+
             const totalInterest = P * (rate / 100) * (N / divisor);
             const monthly = (P + totalInterest) / N;
+
             setCalculatedRepayment(monthly.toFixed(2));
         } else {
             setCalculatedRepayment(null);
@@ -171,8 +205,8 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                 {/* Header */}
                 <div className="bg-indigo-900 p-5 flex justify-between items-center text-white shrink-0">
                     <div>
-                        <h3 className="font-bold text-lg flex items-center gap-2"><Calculator size={20}/> Loan Application</h3>
-                        <p className="text-indigo-200 text-xs mt-0.5">Complete the steps below to apply</p>
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Calculator size={20}/> {resumeLoan ? 'Continue Application' : 'New Loan Application'}</h3>
+                        <p className="text-indigo-200 text-xs mt-0.5">{resumeLoan ? 'Manage your guarantors' : 'Complete the steps below to apply'}</p>
                     </div>
                     <button onClick={onClose} className="hover:bg-white/10 p-1 rounded-full transition"><X size={20}/></button>
                 </div>
@@ -189,7 +223,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                 {/* Body */}
                 <div className="p-6 overflow-y-auto flex-1">
 
-                    {/* STEP 1: CONFIGURATION */}
+                    {/* STEP 1: CONFIGURATION (Only show if NOT resuming, or if we allowed editing draft details which we skip for simplicity) */}
                     {step === 1 && (
                         <form id="step1-form" onSubmit={handleCreateDraft} className="space-y-5">
 
@@ -203,7 +237,6 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                                     <p className={`text-xl font-bold font-mono ${effectiveLimit > 0 ? 'text-indigo-800' : 'text-red-700'}`}>
                                         KES {Number(effectiveLimit).toLocaleString()}
                                     </p>
-                                    {/* Helper Text */}
                                     <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                                         <Info size={10}/>
                                         {formData.productId
@@ -233,7 +266,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Amount (KES)</label>
                                     <input
                                         type="number" required min="100"
-                                        max={effectiveLimit} // ✅ Enforce Limit
+                                        max={effectiveLimit}
                                         className={`w-full p-3 border rounded-xl outline-none focus:ring-2 ${parseFloat(formData.amount) > effectiveLimit ? 'border-red-300 focus:ring-red-200 text-red-600' : 'border-slate-200 focus:ring-indigo-500'}`}
                                         value={formData.amount}
                                         onChange={e => setFormData({...formData, amount: e.target.value})}
@@ -364,12 +397,8 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user 
                             </div>
                             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 w-full max-w-sm">
                                 <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-slate-500">Loan Amount</span>
-                                    <span className="font-bold text-slate-800">KES {Number(formData.amount).toLocaleString()}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-slate-500">Duration</span>
-                                    <span className="font-bold text-slate-800">{formData.duration} {formData.durationUnit.toLowerCase()}s</span>
+                                    <span className="text-slate-500">Total Guaranteed</span>
+                                    <span className="font-bold text-slate-800">KES {selectedGuarantors.reduce((sum, g) => sum + parseFloat(g.amount), 0).toLocaleString()}</span>
                                 </div>
                             </div>
                         </div>

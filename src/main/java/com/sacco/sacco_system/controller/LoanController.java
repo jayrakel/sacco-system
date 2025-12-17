@@ -241,4 +241,26 @@ public class LoanController {
                 "savings", member.getTotalSavings()
         ));
     }
+
+    // ✅ NEW: Delete Endpoint
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> deleteLoan(@PathVariable UUID id) {
+        try {
+            loanService.deleteApplication(id);
+            auditService.logAction("DELETE_LOAN", "Loan", id.toString(), "Application Deleted");
+            return ResponseEntity.ok(Map.of("success", true, "message", "Application deleted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Get Guarantors (to resume wizard)
+    @GetMapping("/{id}/guarantors")
+    public ResponseEntity<Map<String, Object>> getLoanGuarantors(@PathVariable UUID id) {
+        try {
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanGuarantors(id)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
 }

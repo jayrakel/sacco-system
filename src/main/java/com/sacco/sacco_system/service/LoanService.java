@@ -28,6 +28,7 @@ public class LoanService {
     private final AccountingService accountingService;
     private final LoanRepaymentService repaymentService;
     private final SystemSettingService systemSettingService;
+    private final NotificationService notificationService;
 
     // ========================================================================
     // 1. MEMBER: APPLICATION PHASE
@@ -56,6 +57,45 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    //✅ NEW: Delete Draft/Pending Applications
+    @Loggable(action = "DELETE_APPLICATION", category = "LOANS")
+    public void deleteApplication(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        // Allow deletion only for specific statuses
+        List<Loan.LoanStatus> deletableStatuses = List.of(
+                Loan.LoanStatus.DRAFT,
+                Loan.LoanStatus.GUARANTORS_PENDING,
+                Loan.LoanStatus.GUARANTORS_APPROVED,
+                Loan.LoanStatus.APPLICATION_FEE_PENDING
+        );
+
+        if (!deletableStatuses.contains(loan.getStatus())) {
+            throw new RuntimeException("Cannot delete loan application in status: " + loan.getStatus());
+        }
+
+        // Verify no payments made (redundant check if logic is sound, but safe)
+        if (loan.isApplicationFeePaid()) {
+            throw new RuntimeException("Cannot delete application where fee is already paid.");
+        }
+
+        loanRepository.delete(loan);
+    }
+
+    // ✅ NEW: Helper to get guarantors for a loan (for resuming drafts)
+    public List<GuarantorDTO> getLoanGuarantors(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        return loan.getGuarantors().stream()
+                .map(g -> GuarantorDTO.builder()
+                        .id(g.getId())
+                        .memberId(g.getMember().getId())
+                        .memberName(g.getMember().getFirstName() + " " + g.getMember().getLastName())
+                        .guaranteeAmount(g.getGuaranteeAmount())
+                        .status(g.getStatus().toString())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
     // Legacy support for older controller calls (if any exist) defaulting to MONTHS
     public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
         return initiateApplication(memberId, productId, amount, duration, "MONTHS");
@@ -69,6 +109,14 @@ public class LoanService {
 
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
         loanRepository.save(loan);
+
+        // Notify Applicant
+        notificationService.createNotification(
+                loan.getMember().getUser(),
+                "Guarantor Requests Sent",
+                "Your loan application has been sent to the selected guarantors for approval.",
+                Notification.NotificationType.INFO
+        );
     }
 
     @Loggable(action = "ADD_GUARANTOR", category = "LOANS")
@@ -88,6 +136,22 @@ public class LoanService {
                 .build();
 
         Guarantor saved = guarantorRepository.save(g);
+
+        // ✅ SEND NOTIFICATION TO GUARANTOR
+        if (guarantor.getUser() != null) {
+            String message = String.format("Member %s %s has requested you to guarantee their loan of KES %s. Your liability would be KES %s.",
+                    loan.getMember().getFirstName(),
+                    loan.getMember().getLastName(),
+                    loan.getPrincipalAmount(),
+                    amount);
+
+            notificationService.createNotification(
+                    guarantor.getUser(),
+                    "Guarantorship Request",
+                    message,
+                    Notification.NotificationType.ACTION_REQUIRED // Assuming you have this type or INFO
+            );
+        }
 
         return GuarantorDTO.builder()
                 .id(saved.getId())

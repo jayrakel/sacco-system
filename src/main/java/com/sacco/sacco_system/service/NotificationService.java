@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j; // ✅ Import
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,5 +56,18 @@ public class NotificationService {
             n.setRead(true);
             notificationRepository.save(n);
         });
+    }
+
+    public void createNotification(User user, String title, String message, Notification.NotificationType type) {
+        Notification notification = Notification.builder()
+                .user(user)
+                .title(title)
+                .message(message)
+                .type(type)
+                .isRead(false)
+                .createdAt(LocalDateTime.now()) // Optional if @CreationTimestamp is used in entity
+                .build();
+
+        notificationRepository.save(notification);
     }
 }

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText, Banknote, ArrowRight } from 'lucide-react';
+import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText, Banknote, ArrowRight, Trash2, Edit, Users } from 'lucide-react';
 import LoanApplicationModal from './LoanApplicationModal';
-import LoanFeePaymentModal from './LoanFeePaymentModal'; // ✅ Updated Import
+import LoanFeePaymentModal from './LoanFeePaymentModal';
 
 export default function MemberLoans({ user }) {
     const [loans, setLoans] = useState([]);
@@ -11,7 +11,9 @@ export default function MemberLoans({ user }) {
     // Modal States
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
     const [isPayFeeModalOpen, setIsPayFeeModalOpen] = useState(false);
-    const [selectedLoanForFee, setSelectedLoanForFee] = useState(null);
+
+    // Used for both Paying Fee AND Resuming Draft
+    const [selectedLoan, setSelectedLoan] = useState(null);
 
     useEffect(() => {
         fetchLoans();
@@ -19,7 +21,6 @@ export default function MemberLoans({ user }) {
 
     const fetchLoans = async () => {
         try {
-            // Using secure endpoint
             const res = await api.get('/api/loans/my-loans');
             if (res.data.success) setLoans(res.data.data);
         } catch (e) {
@@ -29,9 +30,31 @@ export default function MemberLoans({ user }) {
         }
     };
 
+    // --- ACTIONS ---
+
+    const handleDelete = async (id) => {
+        if(!window.confirm("Are you sure you want to delete this application?")) return;
+        try {
+            await api.delete(`/api/loans/${id}`);
+            fetchLoans(); // Refresh list
+        } catch (e) {
+            alert(e.response?.data?.message || "Delete failed");
+        }
+    };
+
+    const handleContinue = (loan) => {
+        setSelectedLoan(loan);
+        setIsApplyModalOpen(true); // Re-open Wizard in Resume Mode
+    };
+
     const handlePayFee = (loan) => {
-        setSelectedLoanForFee(loan);
+        setSelectedLoan(loan);
         setIsPayFeeModalOpen(true);
+    };
+
+    const handleCloseApplyModal = () => {
+        setIsApplyModalOpen(false);
+        setSelectedLoan(null); // Reset selection so next "New Loan" click is fresh
     };
 
     const getStatusBadge = (status) => {
@@ -50,11 +73,10 @@ export default function MemberLoans({ user }) {
                 return <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> In Progress</span>;
 
             case 'GUARANTORS_PENDING':
-                return <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> Guarantors Pending</span>;
+                return <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Users size={12}/> Guarantors Pending</span>;
 
             case 'GUARANTORS_APPROVED':
             case 'APPLICATION_FEE_PENDING':
-                // Special Badge for Action Required
                 return <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit animate-pulse"><Banknote size={12}/> Fee Pending</span>;
 
             case 'REJECTED':
@@ -105,19 +127,46 @@ export default function MemberLoans({ user }) {
                                     <td className="p-4">{getStatusBadge(loan.status)}</td>
                                     <td className="p-4 text-right text-slate-500 text-xs">{loan.expectedRepaymentDate || '-'}</td>
                                     <td className="p-4 text-center">
-                                        {/* Action Button Logic */}
-                                        {(loan.status === 'GUARANTORS_APPROVED' || loan.status === 'APPLICATION_FEE_PENDING') ? (
-                                            <button
-                                                onClick={() => handlePayFee(loan)}
-                                                className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition shadow-md shadow-purple-600/20 flex items-center gap-1 mx-auto"
-                                            >
-                                                Pay Fee <ArrowRight size={12}/>
-                                            </button>
-                                        ) : (
-                                            <button className="text-blue-600 hover:text-blue-800 font-bold text-xs underline decoration-dotted flex items-center justify-center gap-1 mx-auto">
-                                                <FileText size={12}/> Details
-                                            </button>
-                                        )}
+                                        <div className="flex items-center justify-center gap-2">
+
+                                            {/* 1. Continue Draft */}
+                                            {loan.status === 'DRAFT' && (
+                                                <button onClick={() => handleContinue(loan)} className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-lg border border-transparent hover:border-indigo-100 transition" title="Continue Application">
+                                                    <Edit size={16}/>
+                                                </button>
+                                            )}
+
+                                            {/* 2. Manage Guarantors */}
+                                            {loan.status === 'GUARANTORS_PENDING' && (
+                                                <button onClick={() => handleContinue(loan)} className="text-amber-600 hover:bg-amber-50 p-1.5 rounded-lg border border-transparent hover:border-amber-100 transition" title="Manage Guarantors">
+                                                    <Users size={16}/>
+                                                </button>
+                                            )}
+
+                                            {/* 3. Pay Fee */}
+                                            {(loan.status === 'GUARANTORS_APPROVED' || loan.status === 'APPLICATION_FEE_PENDING') && (
+                                                <button
+                                                    onClick={() => handlePayFee(loan)}
+                                                    className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition shadow-md shadow-purple-600/20 flex items-center gap-1"
+                                                >
+                                                    Pay <ArrowRight size={12}/>
+                                                </button>
+                                            )}
+
+                                            {/* 4. Delete Application (If draft/pending) */}
+                                            {['DRAFT', 'GUARANTORS_PENDING', 'GUARANTORS_APPROVED', 'APPLICATION_FEE_PENDING'].includes(loan.status) && (
+                                                <button onClick={() => handleDelete(loan.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg border border-transparent hover:border-red-100 transition" title="Delete Application">
+                                                    <Trash2 size={16}/>
+                                                </button>
+                                            )}
+
+                                            {/* 5. View Details (Active) */}
+                                            {['SUBMITTED', 'ACTIVE', 'DISBURSED', 'COMPLETED', 'REJECTED', 'LOAN_OFFICER_REVIEW', 'SECRETARY_TABLED', 'VOTING_OPEN', 'ADMIN_APPROVED'].includes(loan.status) && (
+                                                <button className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition">
+                                                    <FileText size={16}/>
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -134,20 +183,21 @@ export default function MemberLoans({ user }) {
                 </div>
             </div>
 
-            {/* Application Wizard */}
+            {/* Application Wizard (Now handles New + Resume) */}
             <LoanApplicationModal
                 isOpen={isApplyModalOpen}
-                onClose={() => setIsApplyModalOpen(false)}
+                onClose={handleCloseApplyModal}
                 onSuccess={fetchLoans}
                 user={user}
+                resumeLoan={selectedLoan} // ✅ Pass the loan to resume
             />
 
-            {/* Payment Modal */}
+            {/* Fee Payment Modal */}
             <LoanFeePaymentModal
                 isOpen={isPayFeeModalOpen}
                 onClose={() => setIsPayFeeModalOpen(false)}
                 onSuccess={fetchLoans}
-                loan={selectedLoanForFee}
+                loan={selectedLoan}
             />
         </div>
     );

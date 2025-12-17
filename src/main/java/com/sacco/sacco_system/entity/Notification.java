@@ -34,6 +34,6 @@ public class Notification {
     private LocalDateTime createdAt;
 
     public enum NotificationType {
-        INFO, WARNING, SUCCESS, ERROR
+        INFO, WARNING, SUCCESS, ERROR, ACTION_REQUIRED
     }
 }
