@@ -16,6 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -314,6 +315,25 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> getLoanGuarantors(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanGuarantors(id)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 5. SECRETARY ACTIONS
+    // ========================================================================
+
+    // ✅ NEW: Table Loan (Opens Voting)
+    @PostMapping("/{id}/table")
+    public ResponseEntity<Map<String, Object>> tableLoanForMeeting(
+            @PathVariable UUID id,
+            @RequestParam String meetingDate // ISO Date String "2023-12-31"
+    ) {
+        try {
+            LocalDate date = LocalDate.parse(meetingDate);
+            loanService.openVoting(id, date);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Tabled & Voting Opened"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

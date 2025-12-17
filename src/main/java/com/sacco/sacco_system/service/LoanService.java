@@ -8,6 +8,7 @@ import com.sacco.sacco_system.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.sacco.sacco_system.repository.UserRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,9 +32,8 @@ public class LoanService {
     private final LoanRepaymentService repaymentService;
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
-
-    // ✅ INJECT LIMIT SERVICE (Removes duplication)
     private final LoanLimitService loanLimitService;
+    private final UserRepository userRepository;
 
     // ========================================================================
     // 1. MEMBER: APPLICATION PHASE
@@ -291,6 +291,18 @@ public class LoanService {
         }
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
+
+        // ✅ NEW: Notify all Secretaries
+        List<User> secretaries = userRepository.findByRole(User.Role.SECRETARY);
+        for (User secretary : secretaries) {
+            notificationService.createNotification(
+                    secretary,
+                    "New Loan Tabled",
+                    String.format("Loan %s for %s has been approved by the Loan Officer and is ready for tabling.",
+                            loan.getLoanNumber(), loan.getMember().getFirstName()),
+                    Notification.NotificationType.ACTION_REQUIRED
+            );
+        }
     }
 
     @Loggable(action = "OPEN_VOTING", category = "LOANS")

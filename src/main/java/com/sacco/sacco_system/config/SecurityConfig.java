@@ -38,6 +38,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/settings").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
+                        .requestMatchers(HttpMethod.GET, "/api/loans").hasAnyAuthority("LOAN_OFFICER", "ADMIN", "TREASURER", "CHAIRPERSON", "SECRETARY")
+
                         // 2. ✅ LOAN OFFICER RESTRICTIONS (The Fix)
                         // Only Loan Officers can Review, Approve, or Reject at the first stage
                         .requestMatchers("/api/loans/*/review").hasAuthority("LOAN_OFFICER")
@@ -53,6 +55,7 @@ public class SecurityConfig {
 
                         // 5. MEMBER & SHARED
                         .anyRequest().authenticated()
+                        .requestMatchers("/api/loans/my-loans").authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
