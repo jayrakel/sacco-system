@@ -8,7 +8,6 @@ import com.sacco.sacco_system.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.sacco.sacco_system.repository.UserRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -47,7 +46,6 @@ public class LoanService {
         if (amount.compareTo(product.getMaxLimit()) > 0)
             throw new RuntimeException("Amount exceeds product limit of " + product.getMaxLimit());
 
-        // ✅ Use Centralized Limit Service
         BigDecimal memberLimit = loanLimitService.calculateMemberLoanLimit(member);
         if (amount.compareTo(memberLimit) > 0) {
             throw new RuntimeException("Amount exceeds your qualifying limit of KES " + memberLimit);
@@ -89,6 +87,10 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
+        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
+    }
+
     @Loggable(action = "DELETE_APPLICATION", category = "LOANS")
     public void deleteApplication(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -110,10 +112,6 @@ public class LoanService {
 
         loanRepository.delete(loan);
     }
-
-    // ========================================================================
-    // 2. GUARANTORS
-    // ========================================================================
 
     public List<GuarantorDTO> getLoanGuarantors(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -209,8 +207,7 @@ public class LoanService {
 
     @Loggable(action = "RESPOND_GUARANTORSHIP", category = "LOANS")
     public void respondToGuarantorship(UUID guarantorId, boolean accepted) {
-        Guarantor g = guarantorRepository.findById(guarantorId)
-                .orElseThrow(() -> new RuntimeException("Request not found"));
+        Guarantor g = guarantorRepository.findById(guarantorId).orElseThrow(() -> new RuntimeException("Request not found"));
 
         g.setStatus(accepted ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
         g.setDateResponded(LocalDate.now());
@@ -280,7 +277,6 @@ public class LoanService {
         if (loan.getStatus() != Loan.LoanStatus.LOAN_OFFICER_REVIEW && loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
             throw new RuntimeException("Loan must be reviewed before approval.");
         }
-
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
 
@@ -297,31 +293,37 @@ public class LoanService {
         }
     }
 
-    // ✅ NEW: SECRETARY TABLES LOAN (Moves to ON_AGENDA)
+    // ✅ FIXED: ADDED NOTIFICATION LOGIC BACK TO TABLE LOAN
     @Loggable(action = "TABLE_LOAN", category = "LOANS")
     public void tableLoan(UUID loanId, LocalDate meetingDate) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
         if (loan.getStatus() != Loan.LoanStatus.SECRETARY_TABLED) {
-            throw new RuntimeException("Loan is not ready for tabling (Current Status: " + loan.getStatus() + ")");
+            throw new RuntimeException("Loan is not ready for tabling.");
         }
 
         loan.setMeetingDate(meetingDate);
         loan.setStatus(Loan.LoanStatus.ON_AGENDA);
         loanRepository.save(loan);
 
-        // ✅ 1. NOTIFY APPLICANT
-        notificationService.createNotification(
-                loan.getMember().getUser(),
-                "Application Tabled",
-                "Your loan application has been added to the agenda for the committee meeting on " + meetingDate + ". Please be patient as we deliberate.",
-                Notification.NotificationType.INFO
-        );
+        // 1. Notify Applicant
+        if (loan.getMember().getUser() != null) {
+            notificationService.createNotification(
+                    loan.getMember().getUser(),
+                    "Application Tabled",
+                    "Your loan application has been added to the agenda for the committee meeting on " + meetingDate,
+                    Notification.NotificationType.INFO
+            );
+        }
 
-        // ✅ 2. NOTIFY COMMITTEE (Chairperson & Treasurer)
+        // 2. Notify Chairperson & Treasurer
         List<User.Role> committeeRoles = List.of(User.Role.CHAIRPERSON, User.Role.TREASURER);
+
         for (User.Role role : committeeRoles) {
             List<User> officials = userRepository.findByRole(role);
+            if (officials.isEmpty()) {
+                System.out.println("⚠️ Warning: No users found with role " + role + ". Notification skipped.");
+            }
             for (User official : officials) {
                 notificationService.createNotification(
                         official,
@@ -334,7 +336,6 @@ public class LoanService {
         }
     }
 
-    // ✅ UPDATED: CHAIRPERSON OPENS VOTING (Moves to VOTING_OPEN)
     @Loggable(action = "OPEN_VOTING", category = "LOANS")
     public void openVoting(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -387,7 +388,6 @@ public class LoanService {
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        // ✅ LIQUIDITY CHECK
         BigDecimal currentLiquidity = accountingService.getAccountBalance("1001");
         if (currentLiquidity.compareTo(loan.getPrincipalAmount()) < 0) {
             throw new RuntimeException("Disbursement Failed: Insufficient Sacco liquidity. Available: KES " + currentLiquidity);
