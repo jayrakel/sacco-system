@@ -226,4 +226,19 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> getTotalInterest() {
         return ResponseEntity.ok(Map.of("success", true, "totalInterest", loanService.getTotalInterestCollected()));
     }
+
+    @GetMapping("/limits/check")
+    public ResponseEntity<Map<String, Object>> checkLoanLimit() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        BigDecimal limit = loanService.calculateMemberLoanLimit(member); // You might need to expose this in LoanService or call LoanLimitService directly if public
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "limit", limit,
+                "savings", member.getTotalSavings()
+        ));
+    }
 }

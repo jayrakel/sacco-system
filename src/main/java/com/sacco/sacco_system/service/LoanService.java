@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.service;
 
+import com.sacco.sacco_system.annotation.Loggable;
 import com.sacco.sacco_system.dto.GuarantorDTO;
 import com.sacco.sacco_system.dto.LoanDTO;
 import com.sacco.sacco_system.entity.*;
@@ -32,6 +33,7 @@ public class LoanService {
     // 1. MEMBER: APPLICATION PHASE
     // ========================================================================
 
+    @Loggable(action = "INITIATE_APPLICATION", category = "LOANS")
     public LoanDTO initiateApplication(UUID memberId, UUID productId, BigDecimal amount, Integer duration, String unit) {
         Member member = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
@@ -54,6 +56,12 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    // Legacy support for older controller calls (if any exist) defaulting to MONTHS
+    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
+        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
+    }
+
+    @Loggable(action = "SUBMIT_TO_GUARANTORS", category = "LOANS")
     public void submitToGuarantors(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         if(loan.getGuarantors() == null || loan.getGuarantors().isEmpty())
@@ -63,6 +71,7 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "ADD_GUARANTOR", category = "LOANS")
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
@@ -93,6 +102,7 @@ public class LoanService {
     // 2. GUARANTORS & FEE
     // ========================================================================
 
+    @Loggable(action = "GUARANTOR_RESPOND", category = "LOANS")
     public void guarantorRespond(UUID guarantorId, boolean accepted) {
         Guarantor g = guarantorRepository.findById(guarantorId).orElseThrow();
         g.setStatus(accepted ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
@@ -109,6 +119,7 @@ public class LoanService {
         }
     }
 
+    @Loggable(action = "PAY_APPLICATION_FEE", category = "LOANS")
     public void payApplicationFee(UUID loanId, String refCode) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         if(loan.getStatus() != Loan.LoanStatus.GUARANTORS_APPROVED)
@@ -128,15 +139,17 @@ public class LoanService {
     }
 
     // ========================================================================
-    // 3. WORKFLOW (OFFICER -> SECRETARY -> VOTING -> ADMIN -> TREASURER)
+    // 3. WORKFLOW
     // ========================================================================
 
+    @Loggable(action = "OFFICER_APPROVE", category = "LOANS")
     public void officerApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "OPEN_VOTING", category = "LOANS")
     public void openVoting(UUID loanId, LocalDate meetingDate) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setMeetingDate(meetingDate);
@@ -145,6 +158,7 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "CAST_VOTE", category = "LOANS")
     public void castVote(UUID loanId, boolean voteYes) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         if(!loan.isVotingOpen()) throw new RuntimeException("Voting is closed");
@@ -155,6 +169,7 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "SECRETARY_FINALIZE", category = "LOANS")
     public void secretaryFinalize(UUID loanId, boolean approved, String comments) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setVotingOpen(false);
@@ -170,6 +185,7 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "ADMIN_APPROVE", category = "LOANS")
     public void adminApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setStatus(Loan.LoanStatus.TREASURER_DISBURSEMENT);
@@ -177,6 +193,7 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    @Loggable(action = "DISBURSE_LOAN", category = "LOANS")
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
@@ -185,12 +202,10 @@ public class LoanService {
             graceWeeks = Integer.parseInt(systemSettingService.getSetting("LOAN_GRACE_PERIOD_WEEKS").orElse("1"));
         } catch (Exception e) {}
 
-        // Generate Schedule
         repaymentService.generateRepaymentSchedule(loan, graceWeeks);
         loan.setGracePeriodWeeks(graceWeeks);
         loan.setCheckNumber(checkNumber);
 
-        // Financials
         Transaction tx = Transaction.builder().member(loan.getMember()).amount(loan.getPrincipalAmount()).type(Transaction.TransactionType.LOAN_DISBURSEMENT).referenceCode(checkNumber).build();
         transactionRepository.save(tx);
         accountingService.postEvent("LOAN_DISBURSEMENT", "Disbursement " + checkNumber, checkNumber, loan.getPrincipalAmount());
@@ -200,27 +215,16 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
-    // ========================================================================
-    // 4. REPAYMENT (✅ NEW METHOD)
-    // ========================================================================
-
+    @Loggable(action = "REPAY_LOAN", category = "LOANS")
     public LoanDTO repayLoan(UUID loanId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
-
-        // Delegate to the Repayment Engine (Complex logic: Arrears vs Prepayment)
         repaymentService.processPayment(loan, amount);
-
         return convertToDTO(loanRepository.save(loan));
     }
 
     // ========================================================================
-    // 5. HELPERS
+    // 4. HELPERS
     // ========================================================================
-
-    // Legacy/Controller Compatibility
-    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
-        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
-    }
 
     public LoanDTO approveLoan(UUID id) { officerApprove(id); return getLoanById(id); }
     public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Admin Rejected"); return getLoanById(id); }
@@ -280,5 +284,26 @@ public class LoanService {
                 .approvalDate(loan.getApprovalDate())
                 .disbursementDate(loan.getDisbursementDate())
                 .build();
+    }
+
+    public BigDecimal calculateMemberLoanLimit(Member member) {
+        // 1. Get the multiplier from settings (Default to 3 if not set)
+        double multiplier = systemSettingService.getDouble("LOAN_LIMIT_MULTIPLIER");
+        if (multiplier <= 0) multiplier = 3.0;
+
+        // 2. Calculate Max Potential: Total Savings * Multiplier
+        BigDecimal maxPotential = member.getTotalSavings().multiply(BigDecimal.valueOf(multiplier));
+
+        // 3. Calculate Current Debt: Sum of balances of all active loans
+        List<Loan> loans = loanRepository.findByMemberId(member.getId());
+        BigDecimal currentDebt = loans.stream()
+                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED ||
+                        l.getStatus() == Loan.LoanStatus.ACTIVE ||
+                        l.getStatus() == Loan.LoanStatus.APPROVED)
+                .map(Loan::getLoanBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 4. Final Limit: Max Potential - Current Debt (Ensure it's not negative)
+        return maxPotential.subtract(currentDebt).max(BigDecimal.ZERO);
     }
 }

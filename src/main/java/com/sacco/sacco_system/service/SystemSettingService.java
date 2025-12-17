@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static java.util.Map.entry; // Import for entry()
+
 @Service
 @RequiredArgsConstructor
 public class SystemSettingService {
@@ -25,24 +27,24 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // ✅ FIXED: Added BANK and PAYBILL details to defaults
+    // ✅ FIXED: Used Map.ofEntries to support > 10 items
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
-            Map.entry("REGISTRATION_FEE", "1000"),
-            Map.entry("MIN_MONTHLY_CONTRIBUTION", "500"),
-            Map.entry("LOAN_INTEREST_RATE", "12"),
-            Map.entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
-            Map.entry("LOAN_LIMIT_MULTIPLIER", "3"),
-            Map.entry("SACCO_NAME", "Sacco System"),
-            Map.entry("SACCO_TAGLINE", "Empowering Your Future"),
-            Map.entry("SACCO_LOGO", ""),
-            Map.entry("SACCO_FAVICON", ""),
-            Map.entry("BRAND_COLOR_PRIMARY", "#059669"),
-            Map.entry("BRAND_COLOR_SECONDARY", "#0f172a"),
-            // Bank Details (Required for Frontend to display the section)
-            Map.entry("BANK_NAME", "Co-operative Bank"),
-            Map.entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
-            Map.entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
-            Map.entry("PAYBILL_NUMBER", "400200")
+            entry("REGISTRATION_FEE", "1000"),
+            entry("MIN_MONTHLY_CONTRIBUTION", "500"),
+            entry("LOAN_INTEREST_RATE", "12"),
+            entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
+            entry("LOAN_LIMIT_MULTIPLIER", "3"),
+            entry("SACCO_NAME", "Sacco System"),
+            entry("SACCO_TAGLINE", "Empowering Your Future"),
+            entry("SACCO_LOGO", ""),
+            entry("SACCO_FAVICON", ""),
+            entry("BRAND_COLOR_PRIMARY", "#059669"),
+            entry("BRAND_COLOR_SECONDARY", "#0f172a"),
+            // Bank Details
+            entry("BANK_NAME", "Co-operative Bank"),
+            entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
+            entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
+            entry("PAYBILL_NUMBER", "400200")
     );
 
     @PostConstruct

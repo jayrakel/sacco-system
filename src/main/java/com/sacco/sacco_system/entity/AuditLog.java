@@ -19,16 +19,17 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    private String username; // The user who performed the action
+    private String username;
 
-    private String action; // e.g., "APPROVE_LOAN", "UPDATE_SETTINGS"
+    private String action;
 
-    private String entityName; // e.g., "Loan", "Member"
+    private String entityName;
 
-    private String entityId; // The ID of the item affected
+    private String entityId;
 
-    @Column(length = 1000)
-    private String details; // e.g., "Changed Interest Rate from 12% to 14%"
+    // ✅ FIX: Use TEXT to allow long descriptions (JSON payloads etc.)
+    @Column(columnDefinition = "TEXT")
+    private String details;
 
     private String ipAddress;
 
