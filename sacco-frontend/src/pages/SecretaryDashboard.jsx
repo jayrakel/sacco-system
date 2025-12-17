@@ -178,12 +178,13 @@ export default function SecretaryDashboard() {
                                 className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition"
                             >
                                 Cancel
-                            </button>
+                                </button>
                             <button
                                 onClick={handleTableLoan}
                                 className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20"
                             >
-                                Confirm & Open Voting
+                                {/* ✅ CORRECTED TEXT */}
+                                Confirm & Add to Agenda
                             </button>
                         </div>
                     </div>

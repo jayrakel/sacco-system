@@ -140,9 +140,14 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> getMyGuarantorRequests() {
         try {
             String email = SecurityContextHolder.getContext().getAuthentication().getName();
-            Member member = memberRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Member not found"));
 
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingGuarantorRequests(member.getId())));
+            // ✅ FIX: Check if member exists. If the user is just Staff (Admin/Secretary), return empty list.
+            var memberOpt = memberRepository.findByEmail(email);
+            if (memberOpt.isEmpty()) {
+                return ResponseEntity.ok(Map.of("success", true, "data", List.of()));
+            }
+
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingGuarantorRequests(memberOpt.get().getId())));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -326,16 +331,15 @@ public class LoanController {
 
     // ✅ NEW: Table Loan (Opens Voting)
     @PostMapping("/{id}/table")
-    public ResponseEntity<Map<String, Object>> tableLoanForMeeting(
-            @PathVariable UUID id,
-            @RequestParam String meetingDate // ISO Date String "2023-12-31"
-    ) {
-        try {
-            LocalDate date = LocalDate.parse(meetingDate);
-            loanService.openVoting(id, date);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Tabled & Voting Opened"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
+    public ResponseEntity<?> tableLoanForMeeting(@PathVariable UUID id, @RequestParam String meetingDate) {
+        // ... (Calls loanService.tableLoan) ...
+        loanService.tableLoan(id, LocalDate.parse(meetingDate));
+        return ResponseEntity.ok(Map.of("success", true, "message", "Loan added to Meeting Agenda"));
+    }
+    // CHAIRPERSON: Start Voting
+    @PostMapping("/{id}/start-voting")
+    public ResponseEntity<?> startVoting(@PathVariable UUID id) {
+        loanService.openVoting(id);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Voting Opened"));
     }
 }

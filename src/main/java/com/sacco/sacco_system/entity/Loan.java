@@ -87,6 +87,7 @@ public class Loan {
         SUBMITTED,              // 5. Sent to Loan Officer
         LOAN_OFFICER_REVIEW,    // 6. Officer reviewing
         SECRETARY_TABLED,       // 7. Tabled for meeting
+        ON_AGENDA,
         VOTING_OPEN,            // 8. Members voting
         VOTING_CLOSED,          // 9. Voting ended
         SECRETARY_DECISION,     // 10. Secretary calculating result

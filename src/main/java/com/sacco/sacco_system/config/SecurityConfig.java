@@ -32,30 +32,56 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. PUBLIC ENDPOINTS
+                        // ====================================================
+                        // 1. PUBLIC ENDPOINTS (Specific Rules FIRST)
+                        // ====================================================
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/settings").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
-                        .requestMatchers(HttpMethod.GET, "/api/loans").hasAnyAuthority("LOAN_OFFICER", "ADMIN", "TREASURER", "CHAIRPERSON", "SECRETARY")
-
-                        // 2. ✅ LOAN OFFICER RESTRICTIONS (The Fix)
-                        // Only Loan Officers can Review, Approve, or Reject at the first stage
+                        // ====================================================
+                        // 2. LOAN OFFICER RESTRICTIONS
+                        // ====================================================
+                        // Actions only for Officers
                         .requestMatchers("/api/loans/*/review").hasAuthority("LOAN_OFFICER")
-                        .requestMatchers("/api/loans/*/approve").hasAnyAuthority("LOAN_OFFICER", "ADMIN") // Admins might need override
+                        .requestMatchers("/api/loans/*/approve").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
                         .requestMatchers("/api/loans/*/reject").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
 
-                        // 3. ✅ FINANCE / TREASURER RESTRICTIONS
+                        // ====================================================
+                        // 3. FINANCE / TREASURER RESTRICTIONS
+                        // ====================================================
                         .requestMatchers("/api/loans/*/disburse").hasAnyAuthority("TREASURER", "ADMIN")
                         .requestMatchers("/api/finance/**").hasAnyAuthority("TREASURER", "ADMIN")
 
-                        // 4. ✅ ADMIN RESTRICTIONS
+                        // ====================================================
+                        // 4. SECRETARY RESTRICTIONS (Fixes your 403 Error)
+                        // ====================================================
+                        .requestMatchers("/api/loans/*/table").hasAnyAuthority("SECRETARY", "ADMIN")
+
+                        // ====================================================
+                        // 5. CHAIRPERSON RESTRICTIONS
+                        // ====================================================
+                        .requestMatchers("/api/loans/*/start-voting").hasAnyAuthority("CHAIRPERSON", "ADMIN")
+
+                        // ====================================================
+                        // 6. ADMIN RESTRICTIONS
+                        // ====================================================
                         .requestMatchers("/api/admin/**", "/api/settings/**").hasAuthority("ADMIN")
 
-                        // 5. MEMBER & SHARED
-                        .anyRequest().authenticated()
+                        // ====================================================
+                        // 7. VIEWING DATA (Secure Lists)
+                        // ====================================================
+                        // Members can ONLY view their own loans
                         .requestMatchers("/api/loans/my-loans").authenticated()
+
+                        // Only Staff can view the full list of loans
+                        .requestMatchers(HttpMethod.GET, "/api/loans").hasAnyAuthority("LOAN_OFFICER", "ADMIN", "TREASURER", "CHAIRPERSON", "SECRETARY")
+
+                        // ====================================================
+                        // 8. CATCH-ALL (MUST BE LAST)
+                        // ====================================================
+                        .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
@@ -67,8 +93,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        //TODO: FIX THIS BEFORE PRODUCTION
-        configuration.setAllowedOrigins(List.of("*")); //❌DANGEROUS
+        configuration.setAllowedOrigins(List.of("*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 

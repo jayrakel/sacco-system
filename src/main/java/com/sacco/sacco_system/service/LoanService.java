@@ -69,7 +69,6 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    // ✅ NEW: Update Draft Application
     @Loggable(action = "UPDATE_DRAFT", category = "LOANS")
     public LoanDTO updateApplication(UUID loanId, BigDecimal amount, Integer duration, String unit) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -78,7 +77,6 @@ public class LoanService {
             throw new RuntimeException("Cannot edit application that is already submitted.");
         }
 
-        // Re-check Limits
         BigDecimal memberLimit = loanLimitService.calculateMemberLoanLimit(loan.getMember());
         if (amount.compareTo(memberLimit) > 0) {
             throw new RuntimeException("New amount exceeds limit of KES " + memberLimit);
@@ -139,7 +137,6 @@ public class LoanService {
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
         loanRepository.save(loan);
 
-        // Notify Applicant
         notificationService.createNotification(
                 loan.getMember().getUser(),
                 "Guarantor Requests Sent",
@@ -147,7 +144,6 @@ public class LoanService {
                 Notification.NotificationType.INFO
         );
 
-        // Notify Guarantors
         for (Guarantor g : loan.getGuarantors()) {
             if (g.getMember().getUser() != null) {
                 String msg = String.format("Request from %s %s: Please guarantee loan %s for KES %s. Your liability: KES %s",
@@ -245,10 +241,6 @@ public class LoanService {
         }
     }
 
-    // ========================================================================
-    // 3. PAYMENT & FEES
-    // ========================================================================
-
     @Loggable(action = "PAY_APPLICATION_FEE", category = "LOANS")
     public void payApplicationFee(UUID loanId, String refCode) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
@@ -269,7 +261,7 @@ public class LoanService {
     }
 
     // ========================================================================
-    // 4. WORKFLOW & APPROVALS (OFFICER -> SECRETARY -> ADMIN)
+    // 3. WORKFLOW & APPROVALS (OFFICER -> SECRETARY -> CHAIRPERSON -> ADMIN)
     // ========================================================================
 
     @Loggable(action = "OFFICER_REVIEW", category = "LOANS")
@@ -285,14 +277,14 @@ public class LoanService {
     @Loggable(action = "OFFICER_APPROVE", category = "LOANS")
     public void officerApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
-        // Sequential check
         if (loan.getStatus() != Loan.LoanStatus.LOAN_OFFICER_REVIEW && loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
             throw new RuntimeException("Loan must be reviewed before approval.");
         }
+
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
 
-        // ✅ NEW: Notify all Secretaries
+        // Notify Secretaries
         List<User> secretaries = userRepository.findByRole(User.Role.SECRETARY);
         for (User secretary : secretaries) {
             notificationService.createNotification(
@@ -305,10 +297,52 @@ public class LoanService {
         }
     }
 
-    @Loggable(action = "OPEN_VOTING", category = "LOANS")
-    public void openVoting(UUID loanId, LocalDate meetingDate) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+    // ✅ NEW: SECRETARY TABLES LOAN (Moves to ON_AGENDA)
+    @Loggable(action = "TABLE_LOAN", category = "LOANS")
+    public void tableLoan(UUID loanId, LocalDate meetingDate) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.SECRETARY_TABLED) {
+            throw new RuntimeException("Loan is not ready for tabling (Current Status: " + loan.getStatus() + ")");
+        }
+
         loan.setMeetingDate(meetingDate);
+        loan.setStatus(Loan.LoanStatus.ON_AGENDA);
+        loanRepository.save(loan);
+
+        // ✅ 1. NOTIFY APPLICANT
+        notificationService.createNotification(
+                loan.getMember().getUser(),
+                "Application Tabled",
+                "Your loan application has been added to the agenda for the committee meeting on " + meetingDate + ". Please be patient as we deliberate.",
+                Notification.NotificationType.INFO
+        );
+
+        // ✅ 2. NOTIFY COMMITTEE (Chairperson & Treasurer)
+        List<User.Role> committeeRoles = List.of(User.Role.CHAIRPERSON, User.Role.TREASURER);
+        for (User.Role role : committeeRoles) {
+            List<User> officials = userRepository.findByRole(role);
+            for (User official : officials) {
+                notificationService.createNotification(
+                        official,
+                        "New Agenda Item",
+                        String.format("Loan Ref %s (Applicant: %s) has been tabled for the meeting on %s.",
+                                loan.getLoanNumber(), loan.getMember().getFirstName(), meetingDate),
+                        Notification.NotificationType.ACTION_REQUIRED
+                );
+            }
+        }
+    }
+
+    // ✅ UPDATED: CHAIRPERSON OPENS VOTING (Moves to VOTING_OPEN)
+    @Loggable(action = "OPEN_VOTING", category = "LOANS")
+    public void openVoting(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.ON_AGENDA) {
+            throw new RuntimeException("Loan must be tabled on the agenda before voting can start.");
+        }
+
         loan.setVotingOpen(true);
         loan.setStatus(Loan.LoanStatus.VOTING_OPEN);
         loanRepository.save(loan);
@@ -353,17 +387,12 @@ public class LoanService {
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        // ✅ 1. LIQUIDITY CHECK (New)
-        // We check the "General Bank Account" (or whichever account holds disbursement funds)
-        // Assuming '1001' is your GL code for the main bank account.
-        // You might need to fetch this code dynamically from settings if you configured it there.
+        // ✅ LIQUIDITY CHECK
         BigDecimal currentLiquidity = accountingService.getAccountBalance("1001");
-
         if (currentLiquidity.compareTo(loan.getPrincipalAmount()) < 0) {
             throw new RuntimeException("Disbursement Failed: Insufficient Sacco liquidity. Available: KES " + currentLiquidity);
         }
 
-        // 2. Generate Schedule
         int graceWeeks = 1;
         try {
             graceWeeks = Integer.parseInt(systemSettingService.getSetting("LOAN_GRACE_PERIOD_WEEKS").orElse("1"));
@@ -373,15 +402,8 @@ public class LoanService {
         loan.setGracePeriodWeeks(graceWeeks);
         loan.setCheckNumber(checkNumber);
 
-        // 3. Post Transaction
-        Transaction tx = Transaction.builder()
-                .member(loan.getMember())
-                .amount(loan.getPrincipalAmount())
-                .type(Transaction.TransactionType.LOAN_DISBURSEMENT)
-                .referenceCode(checkNumber)
-                .build();
+        Transaction tx = Transaction.builder().member(loan.getMember()).amount(loan.getPrincipalAmount()).type(Transaction.TransactionType.LOAN_DISBURSEMENT).referenceCode(checkNumber).build();
         transactionRepository.save(tx);
-
         accountingService.postEvent("LOAN_DISBURSEMENT", "Disbursement " + checkNumber, checkNumber, loan.getPrincipalAmount());
 
         loan.setStatus(Loan.LoanStatus.DISBURSED);
@@ -403,8 +425,6 @@ public class LoanService {
     public LoanDTO approveLoan(UUID id) { officerApprove(id); return getLoanById(id); }
     public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Rejected"); return getLoanById(id); }
     public LoanDTO disburseLoan(UUID id) { treasurerDisburse(id, "CASH-" + System.currentTimeMillis()); return getLoanById(id); }
-
-
 
     public void writeOffLoan(UUID id, String reason) {
         Loan loan = loanRepository.findById(id).orElseThrow();
