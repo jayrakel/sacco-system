@@ -110,7 +110,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
         return (
             <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-50 gap-6 animate-in fade-in duration-700">
-                <BrandedSpinner iconUrl={iconUrl} size="xl" borderColor="border-red-100" />
+                <BrandedSpinner iconUrl={iconUrl} size="xl" borderColor="border-white-100" />
                 <div className="text-center space-y-2">
                     <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{settings?.SACCO_NAME}</h2>
                     <p className="text-slate-400 text-sm font-medium animate-pulse">Securely Logging Out...</p>

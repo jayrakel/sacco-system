@@ -32,6 +32,9 @@ public class LoanService {
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
 
+    // ✅ INJECT LIMIT SERVICE (Removes duplication)
+    private final LoanLimitService loanLimitService;
+
     // ========================================================================
     // 1. MEMBER: APPLICATION PHASE
     // ========================================================================
@@ -41,12 +44,13 @@ public class LoanService {
         Member member = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
 
-        if (amount.compareTo(product.getMaxLimit()) > 0) throw new RuntimeException("Amount exceeds product limit");
+        if (amount.compareTo(product.getMaxLimit()) > 0)
+            throw new RuntimeException("Amount exceeds product limit of " + product.getMaxLimit());
 
-        // Dynamic Limit Check
-        BigDecimal memberLimit = calculateMemberLoanLimit(member);
+        // ✅ Use Centralized Limit Service
+        BigDecimal memberLimit = loanLimitService.calculateMemberLoanLimit(member);
         if (amount.compareTo(memberLimit) > 0) {
-            throw new RuntimeException("Amount exceeds your qualifying limit of " + memberLimit);
+            throw new RuntimeException("Amount exceeds your qualifying limit of KES " + memberLimit);
         }
 
         Loan loan = Loan.builder()
@@ -65,17 +69,32 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    // Legacy support for older controller calls defaulting to MONTHS
-    public LoanDTO applyForLoan(UUID memberId, UUID productId, BigDecimal amount, Integer duration) {
-        return initiateApplication(memberId, productId, amount, duration, "MONTHS");
+    // ✅ NEW: Update Draft Application
+    @Loggable(action = "UPDATE_DRAFT", category = "LOANS")
+    public LoanDTO updateApplication(UUID loanId, BigDecimal amount, Integer duration, String unit) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.DRAFT) {
+            throw new RuntimeException("Cannot edit application that is already submitted.");
+        }
+
+        // Re-check Limits
+        BigDecimal memberLimit = loanLimitService.calculateMemberLoanLimit(loan.getMember());
+        if (amount.compareTo(memberLimit) > 0) {
+            throw new RuntimeException("New amount exceeds limit of KES " + memberLimit);
+        }
+
+        loan.setPrincipalAmount(amount);
+        loan.setDuration(duration);
+        loan.setDurationUnit(Loan.DurationUnit.valueOf(unit));
+
+        return convertToDTO(loanRepository.save(loan));
     }
 
-    // ✅ NEW: Delete Draft/Pending Applications
     @Loggable(action = "DELETE_APPLICATION", category = "LOANS")
     public void deleteApplication(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        // Allow deletion only for specific statuses
         List<Loan.LoanStatus> deletableStatuses = List.of(
                 Loan.LoanStatus.DRAFT,
                 Loan.LoanStatus.GUARANTORS_PENDING,
@@ -94,7 +113,10 @@ public class LoanService {
         loanRepository.delete(loan);
     }
 
-    // ✅ NEW: Helper to get guarantors for a loan (for resuming drafts)
+    // ========================================================================
+    // 2. GUARANTORS
+    // ========================================================================
+
     public List<GuarantorDTO> getLoanGuarantors(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         return loan.getGuarantors().stream()
@@ -150,7 +172,6 @@ public class LoanService {
         if(guarantor.getId().equals(loan.getMember().getId()))
             throw new RuntimeException("Cannot guarantee self.");
 
-        // Check Savings
         if(guarantor.getTotalSavings().compareTo(amount) < 0){
             throw new RuntimeException("Guarantor " + guarantor.getFirstName() + " does not have enough savings (KES " + guarantor.getTotalSavings() + ") to cover KES " + amount);
         }
@@ -174,7 +195,6 @@ public class LoanService {
                 .build();
     }
 
-    // ✅ NEW: Get Pending Requests for a Member
     public List<Map<String, Object>> getPendingGuarantorRequests(UUID memberId) {
         return guarantorRepository.findByMemberIdAndStatus(memberId, Guarantor.GuarantorStatus.PENDING)
                 .stream()
@@ -191,7 +211,6 @@ public class LoanService {
                 .collect(Collectors.toList());
     }
 
-    // ✅ NEW: Respond to Request
     @Loggable(action = "RESPOND_GUARANTORSHIP", category = "LOANS")
     public void respondToGuarantorship(UUID guarantorId, boolean accepted) {
         Guarantor g = guarantorRepository.findById(guarantorId)
@@ -201,7 +220,6 @@ public class LoanService {
         g.setDateResponded(LocalDate.now());
         guarantorRepository.save(g);
 
-        // Notify Applicant
         Notification.NotificationType type = accepted ? Notification.NotificationType.SUCCESS : Notification.NotificationType.WARNING;
         String statusText = accepted ? "Accepted" : "Declined";
 
@@ -212,7 +230,6 @@ public class LoanService {
                 type
         );
 
-        // Check if all approved
         Loan loan = g.getLoan();
         long pending = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.PENDING);
         long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED);
@@ -222,7 +239,6 @@ public class LoanService {
                 loan.setStatus(Loan.LoanStatus.GUARANTORS_APPROVED);
                 notificationService.createNotification(loan.getMember().getUser(), "Guarantors Approved", "All guarantors have accepted! You can now pay the application fee.", Notification.NotificationType.SUCCESS);
             } else {
-                // Optional: Notify that some declined
                 notificationService.createNotification(loan.getMember().getUser(), "Guarantor Update", "All guarantors responded, but some declined. Please review.", Notification.NotificationType.WARNING);
             }
             loanRepository.save(loan);
@@ -230,33 +246,8 @@ public class LoanService {
     }
 
     // ========================================================================
-    // 2. GUARANTORS & FEE
+    // 3. PAYMENT & FEES
     // ========================================================================
-
-    @Loggable(action = "GUARANTOR_RESPOND", category = "LOANS")
-    public void guarantorRespond(UUID guarantorId, boolean accepted) {
-        Guarantor g = guarantorRepository.findById(guarantorId).orElseThrow();
-        g.setStatus(accepted ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
-        g.setDateResponded(LocalDate.now());
-        guarantorRepository.save(g);
-
-        Loan loan = g.getLoan();
-        long pending = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.PENDING);
-        long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED); // Optional Check
-
-        if (pending == 0) {
-            loan.setStatus(Loan.LoanStatus.GUARANTORS_APPROVED);
-            loanRepository.save(loan);
-
-            // Notify Applicant
-            notificationService.createNotification(
-                    loan.getMember().getUser(),
-                    "Guarantors Approved",
-                    "All guarantors have responded. Please proceed to pay the application fee.",
-                    Notification.NotificationType.SUCCESS
-            );
-        }
-    }
 
     @Loggable(action = "PAY_APPLICATION_FEE", category = "LOANS")
     public void payApplicationFee(UUID loanId, String refCode) {
@@ -278,12 +269,26 @@ public class LoanService {
     }
 
     // ========================================================================
-    // 3. WORKFLOW
+    // 4. WORKFLOW & APPROVALS (OFFICER -> SECRETARY -> ADMIN)
     // ========================================================================
+
+    @Loggable(action = "OFFICER_REVIEW", category = "LOANS")
+    public LoanDTO officerReview(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        if (loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
+            throw new RuntimeException("Loan must be in SUBMITTED status to start review.");
+        }
+        loan.setStatus(Loan.LoanStatus.LOAN_OFFICER_REVIEW);
+        return convertToDTO(loanRepository.save(loan));
+    }
 
     @Loggable(action = "OFFICER_APPROVE", category = "LOANS")
     public void officerApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
+        // Sequential check
+        if (loan.getStatus() != Loan.LoanStatus.LOAN_OFFICER_REVIEW && loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
+            throw new RuntimeException("Loan must be reviewed before approval.");
+        }
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
     }
@@ -362,12 +367,15 @@ public class LoanService {
     }
 
     // ========================================================================
-    // 4. HELPERS
+    // 5. HELPERS
     // ========================================================================
 
     public LoanDTO approveLoan(UUID id) { officerApprove(id); return getLoanById(id); }
-    public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Admin Rejected"); return getLoanById(id); }
+    public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Rejected"); return getLoanById(id); }
     public LoanDTO disburseLoan(UUID id) { treasurerDisburse(id, "CASH-" + System.currentTimeMillis()); return getLoanById(id); }
+
+    // Explicit Helper for Start Review
+    public LoanDTO startReview(UUID id) { return officerReview(id); }
 
     public void writeOffLoan(UUID id, String reason) {
         Loan loan = loanRepository.findById(id).orElseThrow();
@@ -425,26 +433,5 @@ public class LoanService {
                 .productName(loan.getProduct().getName())
                 .processingFee(loan.getProduct().getProcessingFee())
                 .build();
-    }
-
-    public BigDecimal calculateMemberLoanLimit(Member member) {
-        // 1. Get the multiplier from settings (Default to 3 if not set)
-        double multiplier = systemSettingService.getDouble("LOAN_LIMIT_MULTIPLIER");
-        if (multiplier <= 0) multiplier = 3.0;
-
-        // 2. Calculate Max Potential: Total Savings * Multiplier
-        BigDecimal maxPotential = member.getTotalSavings().multiply(BigDecimal.valueOf(multiplier));
-
-        // 3. Calculate Current Debt: Sum of balances of all active loans
-        List<Loan> loans = loanRepository.findByMemberId(member.getId());
-        BigDecimal currentDebt = loans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED ||
-                        l.getStatus() == Loan.LoanStatus.ACTIVE ||
-                        l.getStatus() == Loan.LoanStatus.APPROVED)
-                .map(Loan::getLoanBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // 4. Final Limit: Max Potential - Current Debt (Ensure it's not negative)
-        return maxPotential.subtract(currentDebt).max(BigDecimal.ZERO);
     }
 }

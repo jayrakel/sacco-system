@@ -101,34 +101,43 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
         } catch (e) { console.error(e); }
     };
 
-    // --- STEP 1: CREATE DRAFT ---
-    const handleCreateDraft = async (e) => {
-        e.preventDefault();
+    // --- STEP 1: CREATE OR UPDATE DRAFT ---
+        const handleCreateDraft = async (e) => {
+            e.preventDefault();
 
-        if (parseFloat(formData.amount) > effectiveLimit) {
-            alert(`Amount cannot exceed your limit of KES ${Number(effectiveLimit).toLocaleString()}`);
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            params.append('productId', formData.productId);
-            params.append('amount', formData.amount);
-            params.append('duration', formData.duration);
-            params.append('durationUnit', formData.durationUnit);
-
-            const res = await api.post('/api/loans/apply', params);
-            if (res.data.success) {
-                setLoanId(res.data.data.id);
-                setStep(2);
+            if (parseFloat(formData.amount) > effectiveLimit) {
+                alert(`Amount cannot exceed your limit of KES ${Number(effectiveLimit).toLocaleString()}`);
+                return;
             }
-        } catch (e) {
-            alert(e.response?.data?.message || "Failed to create draft");
-        } finally {
-            setLoading(false);
-        }
-    };
+
+            setLoading(true);
+            try {
+                const params = new URLSearchParams();
+                // params.append('productId', formData.productId); // Product usually shouldn't change on update to simplify logic
+                params.append('amount', formData.amount);
+                params.append('duration', formData.duration);
+                params.append('durationUnit', formData.durationUnit);
+
+                let res;
+                if (loanId) {
+                    // ✅ UPDATE EXISTING DRAFT
+                    res = await api.put(`/api/loans/${loanId}/update`, params);
+                } else {
+                    // ✅ CREATE NEW DRAFT
+                    params.append('productId', formData.productId); // Only needed for creation
+                    res = await api.post('/api/loans/apply', params);
+                }
+
+                if (res.data.success) {
+                    setLoanId(res.data.data.id);
+                    setStep(2);
+                }
+            } catch (e) {
+                alert(e.response?.data?.message || "Failed to process request");
+            } finally {
+                setLoading(false);
+            }
+        };
 
     // --- STEP 2: ADD GUARANTOR ---
     const handleAddGuarantor = async () => {

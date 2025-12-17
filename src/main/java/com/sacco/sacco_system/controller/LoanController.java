@@ -8,6 +8,7 @@ import com.sacco.sacco_system.repository.LoanProductRepository;
 import com.sacco.sacco_system.repository.MemberRepository;
 import com.sacco.sacco_system.service.AuditService;
 import com.sacco.sacco_system.service.LoanService;
+import com.sacco.sacco_system.service.LoanLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,7 @@ import java.util.UUID;
 public class LoanController {
 
     private final LoanService loanService;
+    private final LoanLimitService loanLimitService; // ✅ Inject Limit Service
     private final LoanProductRepository loanProductRepository;
     private final MemberRepository memberRepository;
     private final AuditService auditService;
@@ -54,25 +56,52 @@ public class LoanController {
     // 2. LOAN APPLICATION WORKFLOW
     // ========================================================================
 
-    // ✅ STEP 1: CREATE DRAFT APPLICATION
+    // ✅ CHECK LIMIT ENDPOINT
+    @GetMapping("/limits/check")
+    public ResponseEntity<Map<String, Object>> checkLoanLimit() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "limit", limit,
+                "savings", member.getTotalSavings()
+        ));
+    }
+
+    // ✅ STEP 1: CREATE DRAFT
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
-            @RequestParam(required = false) UUID memberId,
             @RequestParam UUID productId,
             @RequestParam BigDecimal amount,
             @RequestParam Integer duration,
             @RequestParam(defaultValue = "MONTHS") String durationUnit) {
         try {
-            if (memberId == null) {
-                String email = SecurityContextHolder.getContext().getAuthentication().getName();
-                memberId = memberRepository.findByEmail(email)
-                        .orElseThrow(() -> new RuntimeException("Member not found")).getId();
-            }
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            Member member = memberRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
 
-            LoanDTO loan = loanService.initiateApplication(memberId, productId, amount, duration, durationUnit);
-            auditService.logAction("INITIATE_APPLICATION", "Loan", loan.getId().toString(), "Draft Created: " + loan.getLoanNumber());
+            LoanDTO loan = loanService.initiateApplication(member.getId(), productId, amount, duration, durationUnit);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Loan Draft Created", "data", loan));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ STEP 1.5: UPDATE DRAFT
+    @PutMapping("/{id}/update")
+    public ResponseEntity<Map<String, Object>> updateLoanDraft(
+            @PathVariable UUID id,
+            @RequestParam BigDecimal amount,
+            @RequestParam Integer duration,
+            @RequestParam String durationUnit) {
+        try {
+            LoanDTO loan = loanService.updateApplication(id, amount, duration, durationUnit);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Draft Updated", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -82,9 +111,12 @@ public class LoanController {
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
             @PathVariable UUID loanId,
-            @RequestBody GuarantorDTO request) {
+            @RequestBody Map<String, Object> payload) {
         try {
-            GuarantorDTO responseDTO = loanService.addGuarantor(loanId, request.getMemberId(), request.getGuaranteeAmount());
+            UUID memberId = UUID.fromString(payload.get("memberId").toString());
+            BigDecimal amount = new BigDecimal(payload.get("guaranteeAmount").toString());
+
+            GuarantorDTO responseDTO = loanService.addGuarantor(loanId, memberId, amount);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Guarantor added", "data", responseDTO));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -102,7 +134,7 @@ public class LoanController {
         }
     }
 
-    // ✅ NEW: Get Pending Requests for Logged-in User (Moved Logic to Service)
+    // ✅ NEW: Get Pending Requests for Logged-in User
     @GetMapping("/guarantors/requests")
     public ResponseEntity<Map<String, Object>> getMyGuarantorRequests() {
         try {
@@ -115,7 +147,7 @@ public class LoanController {
         }
     }
 
-    // ✅ NEW: Respond to Request (Moved Logic to Service)
+    // ✅ NEW: Respond to Request
     @PostMapping("/guarantors/{id}/respond")
     public ResponseEntity<Map<String, Object>> respondToGuarantorRequest(@PathVariable UUID id, @RequestParam boolean accepted) {
         try {
@@ -143,14 +175,30 @@ public class LoanController {
     // 3. APPROVAL & DISBURSEMENT
     // ========================================================================
 
-    @PostMapping("/{id}/approve")
-    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
+    // ✅ NEW: Start Review Endpoint
+    @PostMapping("/{id}/review")
+    public ResponseEntity<Map<String, Object>> reviewLoan(@PathVariable UUID id) {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Approved", "data", loanService.approveLoan(id)));
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Review Started",
+                    "data", loanService.startReview(id)
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
+        try {
+            // This calls officerApprove -> moves to SECRETARY_TABLED
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Forwarded to Secretary", "data", loanService.approveLoan(id)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
 
     @PostMapping("/{id}/disburse")
     public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
@@ -248,21 +296,6 @@ public class LoanController {
     @GetMapping("/totals/interest")
     public ResponseEntity<Map<String, Object>> getTotalInterest() {
         return ResponseEntity.ok(Map.of("success", true, "totalInterest", loanService.getTotalInterestCollected()));
-    }
-
-    @GetMapping("/limits/check")
-    public ResponseEntity<Map<String, Object>> checkLoanLimit() {
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
-
-        BigDecimal limit = loanService.calculateMemberLoanLimit(member);
-
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "limit", limit,
-                "savings", member.getTotalSavings()
-        ));
     }
 
     @DeleteMapping("/{id}")

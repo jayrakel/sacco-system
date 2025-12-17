@@ -1,75 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { CreditCard, Check, X, Ban, RefreshCw, Play, Receipt, AlertCircle } from 'lucide-react';
+import { CreditCard, Check, X, Eye, ArrowRight, Clock, FileText, AlertCircle } from 'lucide-react';
 
 export default function LoanManager() {
     const [loans, setLoans] = useState([]);
-    const [filter, setFilter] = useState('ALL');
-
-    // ✅ NEW: Charges Modal State
-    const [showChargesModal, setShowChargesModal] = useState(false);
-    const [selectedLoanCharges, setSelectedLoanCharges] = useState([]);
-    const [loadingCharges, setLoadingCharges] = useState(false);
+    const [filter, setFilter] = useState('SUBMITTED'); // Default to new applications
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => { fetchLoans(); }, []);
 
     const fetchLoans = async () => {
+        setLoading(true);
         try {
             const res = await api.get('/api/loans');
             if (res.data.success) setLoans(res.data.data);
         } catch (error) { console.error(error); }
+        finally { setLoading(false); }
     };
 
-    const handleAction = async (id, action, promptText = null) => {
-        let params = {};
-        if (promptText) {
-            const value = prompt(promptText);
-            if (!value) return;
-            if (action === 'write-off') params = { reason: value };
-            if (action === 'restructure') params = { newDuration: value };
+    const handleAction = async (id, actionEndpoint, successMessage) => {
+        if (!window.confirm("Are you sure you want to proceed?")) return;
+
+        try {
+            await api.post(`/api/loans/${id}/${actionEndpoint}`);
+            alert(successMessage);
+            fetchLoans(); // Refresh list
+        } catch (error) {
+            alert(error.response?.data?.message || "Action Failed");
         }
-
-        if (!window.confirm(`Confirm ${action.toUpperCase()}?`)) return;
-
-        try {
-            await api.post(`/api/loans/${id}/${action}`, null, { params });
-            alert("Action Successful!");
-            fetchLoans();
-        } catch (error) { alert(error.response?.data?.message || "Action Failed"); }
     };
 
-    // ✅ View Charges
-    const handleViewCharges = async (loanId) => {
-        setShowChargesModal(true);
-        setLoadingCharges(true);
-        try {
-            const res = await api.get(`/api/charges/loan/${loanId}`);
-            if (res.data.success) setSelectedLoanCharges(res.data.data);
-        } catch (e) { console.error(e); }
-        finally { setLoadingCharges(false); }
+    // Filter Logic
+    const getFilteredLoans = () => {
+        switch (filter) {
+            case 'SUBMITTED': return loans.filter(l => l.status === 'SUBMITTED');
+            case 'REVIEW': return loans.filter(l => l.status === 'LOAN_OFFICER_REVIEW');
+            case 'TABLED': return loans.filter(l => l.status === 'SECRETARY_TABLED' || l.status === 'VOTING_OPEN');
+            case 'APPROVED': return loans.filter(l => l.status === 'ADMIN_APPROVED' || l.status === 'TREASURER_DISBURSEMENT');
+            case 'ACTIVE': return loans.filter(l => l.status === 'DISBURSED' || l.status === 'ACTIVE');
+            case 'REJECTED': return loans.filter(l => l.status === 'REJECTED');
+            default: return loans;
+        }
     };
 
-    // ✅ Waive Charge
-    const handleWaive = async (chargeId) => {
-        const reason = prompt("Enter waiver reason:");
-        if (!reason) return;
-        try {
-            await api.post(`/api/charges/${chargeId}/waive`, null, { params: { reason } });
-            alert("Charge Waived!");
-            setShowChargesModal(false); // Close to refresh context
-        } catch (e) { alert("Failed to waive charge"); }
-    };
-
-    const filteredLoans = filter === 'ALL' ? loans : loans.filter(l => l.status === filter);
+    const displayLoans = getFilteredLoans();
 
     return (
         <div className="space-y-6 animate-in fade-in">
-            {/* Header */}
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2"><CreditCard className="text-purple-600" size={20}/> Loan Portfolio</h2>
-                <div className="flex bg-slate-100 p-1 rounded-lg">
-                    {['ALL', 'PENDING', 'APPROVED', 'DISBURSED', 'DEFAULTED'].map(f => (
-                        <button key={f} onClick={() => setFilter(f)} className={`px-3 py-1 text-xs font-bold rounded transition ${filter === f ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>{f}</button>
+            {/* Header & Filters */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    <CreditCard className="text-indigo-600" size={20}/> Loan Applications
+                </h2>
+
+                <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto max-w-full">
+                    {[
+                        { id: 'SUBMITTED', label: 'New Inbox' },
+                        { id: 'REVIEW', label: 'Under Review' },
+                        { id: 'TABLED', label: 'Tabled' },
+                        { id: 'APPROVED', label: 'Approved' },
+                        { id: 'ACTIVE', label: 'Active Portfolio' }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setFilter(tab.id)}
+                            className={`px-4 py-2 text-xs font-bold rounded-md transition whitespace-nowrap ${filter === tab.id ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            {tab.label}
+                        </button>
                     ))}
                 </div>
             </div>
@@ -77,68 +75,80 @@ export default function LoanManager() {
             {/* Table */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-50 text-slate-500 font-bold border-b">
+                    <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase text-xs">
                         <tr>
-                            <th className="p-4">Loan No</th>
-                            <th className="p-4">Member</th>
+                            <th className="p-4">Ref</th>
+                            <th className="p-4">Applicant</th>
+                            <th className="p-4">Product</th>
                             <th className="p-4 text-right">Amount</th>
-                            <th className="p-4">Status</th>
+                            <th className="p-4">Date Submitted</th>
                             <th className="p-4 text-center">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y">
-                        {filteredLoans.map(loan => (
-                            <tr key={loan.id} className="hover:bg-slate-50">
-                                <td className="p-4 font-mono text-slate-500">{loan.loanNumber}</td>
-                                <td className="p-4 font-bold text-slate-700">{loan.memberName}</td>
-                                <td className="p-4 text-right font-mono">KES {Number(loan.principalAmount).toLocaleString()}</td>
-                                <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{loan.status}</span></td>
+                    <tbody className="divide-y divide-slate-100">
+                        {loading ? (
+                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">Loading loans...</td></tr>
+                        ) : displayLoans.length === 0 ? (
+                            <tr><td colSpan="6" className="p-8 text-center text-slate-400 italic">No loans found in this category.</td></tr>
+                        ) : displayLoans.map(loan => (
+                            <tr key={loan.id} className="hover:bg-slate-50 transition">
+                                <td className="p-4 font-mono text-slate-500 text-xs">{loan.loanNumber}</td>
+                                <td className="p-4">
+                                    <p className="font-bold text-slate-700">{loan.memberName}</p>
+                                    <p className="text-xs text-slate-400">ID: ...{loan.memberId?.substring(0, 5)}</p>
+                                </td>
+                                <td className="p-4 text-slate-600">
+                                    <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{loan.productName}</span>
+                                </td>
+                                <td className="p-4 text-right font-mono font-bold text-slate-700">
+                                    KES {Number(loan.principalAmount).toLocaleString()}
+                                </td>
+                                <td className="p-4 text-slate-500 text-xs">
+                                    {loan.submissionDate || loan.applicationDate}
+                                </td>
                                 <td className="p-4 flex justify-center gap-2">
-                                    {loan.status === 'PENDING' && (
+
+                                    {/* ACTION 1: START REVIEW (For New Submissions) */}
+                                    {loan.status === 'SUBMITTED' && (
+                                        <button
+                                            onClick={() => handleAction(loan.id, 'review', 'Review Started! Loan moved to "Under Review" tab.')}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-200"
+                                        >
+                                            <Eye size={14}/> Start Review
+                                        </button>
+                                    )}
+
+                                    {/* ACTION 2: APPROVE/REJECT (For Under Review) */}
+                                    {loan.status === 'LOAN_OFFICER_REVIEW' && (
                                         <>
-                                            <button onClick={() => handleAction(loan.id, 'approve')} className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100" title="Approve"><Check size={16}/></button>
-                                            <button onClick={() => handleAction(loan.id, 'reject')} className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100" title="Reject"><X size={16}/></button>
+                                            <button
+                                                onClick={() => handleAction(loan.id, 'approve', 'Loan Forwarded to Secretary for Tabling.')}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-bold hover:bg-emerald-100 border border-emerald-200"
+                                                title="Forward to Secretary"
+                                            >
+                                                <Check size={14}/> Approve
+                                            </button>
+                                            <button
+                                                onClick={() => handleAction(loan.id, 'reject', 'Loan Rejected.')}
+                                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 border border-red-200"
+                                            >
+                                                <X size={14}/> Reject
+                                            </button>
                                         </>
                                     )}
-                                    {loan.status === 'APPROVED' && (
-                                        <button onClick={() => handleAction(loan.id, 'disburse')} className="flex items-center gap-1 px-3 py-1 bg-emerald-600 text-white rounded text-xs font-bold hover:bg-emerald-700"><Play size={12}/> Disburse</button>
+
+                                    {/* ACTION 3: VIEW STATUS (For Others) */}
+                                    {!['SUBMITTED', 'LOAN_OFFICER_REVIEW'].includes(loan.status) && (
+                                        <span className="text-xs text-slate-400 italic flex items-center gap-1">
+                                            <FileText size={12}/> View Only
+                                        </span>
                                     )}
-                                    <button onClick={() => handleViewCharges(loan.id)} className="p-1.5 bg-purple-50 text-purple-600 rounded hover:bg-purple-100" title="View Charges"><Receipt size={16}/></button>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-
-            {/* ✅ CHARGES MODAL */}
-            {showChargesModal && (
-                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95">
-                        <div className="flex justify-between items-center mb-4 border-b pb-2">
-                            <h3 className="font-bold text-lg">Applied Charges</h3>
-                            <button onClick={() => setShowChargesModal(false)}><X size={20} className="text-slate-400"/></button>
-                        </div>
-                        <div className="space-y-3">
-                            {selectedLoanCharges.length === 0 ? <p className="text-slate-400 text-center italic">No charges found.</p> : selectedLoanCharges.map(charge => (
-                                <div key={charge.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                    <div>
-                                        <p className="font-bold text-sm text-slate-700">{charge.type.replace(/_/g, ' ')}</p>
-                                        <p className="text-xs text-slate-500">{charge.description}</p>
-                                        {charge.isWaived && <span className="text-[10px] bg-red-100 text-red-600 px-1 rounded">WAIVED: {charge.waiverReason}</span>}
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-mono font-bold text-slate-800">KES {charge.amount}</p>
-                                        {!charge.isWaived && charge.status !== 'PAID' && (
-                                            <button onClick={() => handleWaive(charge.id)} className="text-[10px] text-blue-600 underline font-bold">Waive</button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
