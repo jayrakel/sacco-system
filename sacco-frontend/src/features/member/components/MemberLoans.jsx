@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText } from 'lucide-react';
-import LoanApplicationModal from './LoanApplicationModal'; // ✅ Import Modal
+import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText, Banknote, ArrowRight } from 'lucide-react';
+import LoanApplicationModal from './LoanApplicationModal';
+import LoanFeePaymentModal from './LoanFeePaymentModal'; // ✅ Updated Import
 
 export default function MemberLoans({ user }) {
     const [loans, setLoans] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Modal States
+    const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+    const [isPayFeeModalOpen, setIsPayFeeModalOpen] = useState(false);
+    const [selectedLoanForFee, setSelectedLoanForFee] = useState(null);
 
     useEffect(() => {
         fetchLoans();
@@ -14,7 +19,7 @@ export default function MemberLoans({ user }) {
 
     const fetchLoans = async () => {
         try {
-            // ✅ Use the secured endpoint (No ID required in URL)
+            // Using secure endpoint
             const res = await api.get('/api/loans/my-loans');
             if (res.data.success) setLoans(res.data.data);
         } catch (e) {
@@ -24,13 +29,38 @@ export default function MemberLoans({ user }) {
         }
     };
 
+    const handlePayFee = (loan) => {
+        setSelectedLoanForFee(loan);
+        setIsPayFeeModalOpen(true);
+    };
+
     const getStatusBadge = (status) => {
         switch(status) {
-            case 'APPROVED': return <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><CheckCircle size={12}/> Approved</span>;
-            case 'PENDING': return <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> Pending</span>;
-            case 'REJECTED': return <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><XCircle size={12}/> Rejected</span>;
-            case 'DISBURSED': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><CreditCard size={12}/> Active</span>;
-            default: return <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-[10px] font-bold uppercase">{status}</span>;
+            case 'APPROVED':
+            case 'DISBURSED':
+            case 'ACTIVE':
+                return <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><CheckCircle size={12}/> Active</span>;
+
+            case 'PENDING':
+            case 'SUBMITTED':
+            case 'LOAN_OFFICER_REVIEW':
+            case 'SECRETARY_TABLED':
+            case 'VOTING_OPEN':
+            case 'ADMIN_APPROVED':
+                return <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> In Progress</span>;
+
+            case 'GUARANTORS_PENDING':
+                return <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><Clock size={12}/> Guarantors Pending</span>;
+
+            case 'GUARANTORS_APPROVED':
+            case 'APPLICATION_FEE_PENDING':
+                // Special Badge for Action Required
+                return <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit animate-pulse"><Banknote size={12}/> Fee Pending</span>;
+
+            case 'REJECTED':
+                return <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] font-bold uppercase flex items-center gap-1 w-fit"><XCircle size={12}/> Rejected</span>;
+
+            default: return <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-[10px] font-bold uppercase">{status?.replace(/_/g, ' ')}</span>;
         }
     };
 
@@ -45,7 +75,7 @@ export default function MemberLoans({ user }) {
                     <p className="text-slate-500 text-sm mt-1">Track repayments and application status.</p>
                 </div>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => setIsApplyModalOpen(true)}
                     className="bg-indigo-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-800 transition shadow-lg shadow-indigo-900/20"
                 >
                     <PlusCircle size={18}/> Apply New Loan
@@ -62,7 +92,7 @@ export default function MemberLoans({ user }) {
                                 <th className="p-4 text-right">Principal</th>
                                 <th className="p-4 text-right">Balance</th>
                                 <th className="p-4">Status</th>
-                                <th className="p-4">Next Due</th>
+                                <th className="p-4 text-right">Next Due</th>
                                 <th className="p-4 text-center">Action</th>
                             </tr>
                         </thead>
@@ -73,11 +103,21 @@ export default function MemberLoans({ user }) {
                                     <td className="p-4 text-right font-medium text-slate-700">KES {Number(loan.principalAmount).toLocaleString()}</td>
                                     <td className="p-4 text-right font-bold text-slate-900">KES {Number(loan.loanBalance).toLocaleString()}</td>
                                     <td className="p-4">{getStatusBadge(loan.status)}</td>
-                                    <td className="p-4 text-slate-500 text-xs">{loan.expectedRepaymentDate || '-'}</td>
+                                    <td className="p-4 text-right text-slate-500 text-xs">{loan.expectedRepaymentDate || '-'}</td>
                                     <td className="p-4 text-center">
-                                        <button className="text-blue-600 hover:text-blue-800 font-bold text-xs underline decoration-dotted flex items-center justify-center gap-1 mx-auto">
-                                            <FileText size={12}/> Details
-                                        </button>
+                                        {/* Action Button Logic */}
+                                        {(loan.status === 'GUARANTORS_APPROVED' || loan.status === 'APPLICATION_FEE_PENDING') ? (
+                                            <button
+                                                onClick={() => handlePayFee(loan)}
+                                                className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-purple-700 transition shadow-md shadow-purple-600/20 flex items-center gap-1 mx-auto"
+                                            >
+                                                Pay Fee <ArrowRight size={12}/>
+                                            </button>
+                                        ) : (
+                                            <button className="text-blue-600 hover:text-blue-800 font-bold text-xs underline decoration-dotted flex items-center justify-center gap-1 mx-auto">
+                                                <FileText size={12}/> Details
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -94,12 +134,20 @@ export default function MemberLoans({ user }) {
                 </div>
             </div>
 
-            {/* Application Modal */}
+            {/* Application Wizard */}
             <LoanApplicationModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                isOpen={isApplyModalOpen}
+                onClose={() => setIsApplyModalOpen(false)}
                 onSuccess={fetchLoans}
-                memberId={user?.memberId} // Pass ID if available, else modal relies on backend context
+                user={user}
+            />
+
+            {/* Payment Modal */}
+            <LoanFeePaymentModal
+                isOpen={isPayFeeModalOpen}
+                onClose={() => setIsPayFeeModalOpen(false)}
+                onSuccess={fetchLoans}
+                loan={selectedLoanForFee}
             />
         </div>
     );
