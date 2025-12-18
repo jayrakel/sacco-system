@@ -293,7 +293,6 @@ public class LoanService {
         }
     }
 
-    // ✅ FIXED: ADDED NOTIFICATION LOGIC BACK TO TABLE LOAN
     @Loggable(action = "TABLE_LOAN", category = "LOANS")
     public void tableLoan(UUID loanId, LocalDate meetingDate) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -372,20 +371,75 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
-    @Loggable(action = "SECRETARY_FINALIZE", category = "LOANS")
-    public void secretaryFinalize(UUID loanId, boolean approved, String comments) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+    @Loggable(action = "FINALIZE_VOTE", category = "LOANS")
+    public void finalizeVote(UUID loanId, Boolean manualApproved, String comments) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        // 1. Check Configuration
+        String votingMethod = systemSettingService.getSetting("LOAN_VOTING_METHOD").orElse("AUTOMATIC");
+
         loan.setVotingOpen(false);
-        loan.setSecretaryComments(comments);
         loan.setStatus(Loan.LoanStatus.VOTING_CLOSED);
 
-        if(approved) {
-            loan.setStatus(Loan.LoanStatus.ADMIN_APPROVED);
-        } else {
-            loan.setStatus(Loan.LoanStatus.REJECTED);
-            loan.setRejectionReason(comments);
+        // ====================================================================
+        // OPTION A: AUTOMATIC (50% + 1 Rule)
+        // ====================================================================
+        if ("AUTOMATIC".equalsIgnoreCase(votingMethod)) {
+            long totalMembers = memberRepository.count();
+            long eligibleVoters = totalMembers > 0 ? totalMembers - 1 : 0; // Exclude applicant
+            long threshold = (eligibleVoters / 2) + 1;
+
+            String resultDetails = String.format("Votes: Yes(%d) vs No(%d). Threshold: %d/%d",
+                    loan.getVotesYes(), loan.getVotesNo(), threshold, eligibleVoters);
+
+            if (loan.getVotesYes() >= threshold) {
+                approveLoanInternal(loan, "System: Passed automatic voting threshold. " + resultDetails);
+            } else {
+                rejectLoanInternal(loan, "System: Failed to meet voting threshold. " + resultDetails);
+            }
         }
+
+        // ====================================================================
+        // OPTION B: MANUAL (Secretary/Committee Decision)
+        // ====================================================================
+        else {
+            if (manualApproved == null) {
+                throw new RuntimeException("Manual approval is required when System Setting 'LOAN_VOTING_METHOD' is set to MANUAL.");
+            }
+
+            if (manualApproved) {
+                approveLoanInternal(loan, "Secretary: " + comments);
+            } else {
+                rejectLoanInternal(loan, "Secretary: " + comments);
+            }
+        }
+    }
+
+    // Helper to keep code clean
+    private void approveLoanInternal(Loan loan, String note) {
+        loan.setStatus(Loan.LoanStatus.ADMIN_APPROVED);
+        loan.setSecretaryComments(note);
         loanRepository.save(loan);
+
+        notificationService.createNotification(
+                loan.getMember().getUser(),
+                "Loan Approved",
+                "Your loan application has been approved! " + note,
+                Notification.NotificationType.SUCCESS
+        );
+    }
+
+    private void rejectLoanInternal(Loan loan, String reason) {
+        loan.setStatus(Loan.LoanStatus.REJECTED);
+        loan.setRejectionReason(reason);
+        loanRepository.save(loan);
+
+        notificationService.createNotification(
+                loan.getMember().getUser(),
+                "Loan Rejected",
+                reason,
+                Notification.NotificationType.ERROR
+        );
     }
 
     @Loggable(action = "ADMIN_APPROVE", category = "LOANS")
@@ -435,7 +489,10 @@ public class LoanService {
     // ========================================================================
 
     public LoanDTO approveLoan(UUID id) { officerApprove(id); return getLoanById(id); }
-    public LoanDTO rejectLoan(UUID id) { secretaryFinalize(id, false, "Rejected"); return getLoanById(id); }
+
+    // ✅ FIX: Updated to use 'finalizeVote' instead of 'secretaryFinalize'
+    public LoanDTO rejectLoan(UUID id) { finalizeVote(id, false, "Rejected"); return getLoanById(id); }
+
     public LoanDTO disburseLoan(UUID id) { treasurerDisburse(id, "CASH-" + System.currentTimeMillis()); return getLoanById(id); }
 
     public void writeOffLoan(UUID id, String reason) {

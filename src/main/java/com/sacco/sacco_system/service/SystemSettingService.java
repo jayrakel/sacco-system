@@ -44,7 +44,8 @@ public class SystemSettingService {
             entry("BANK_NAME", "Co-operative Bank"),
             entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
             entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
-            entry("PAYBILL_NUMBER", "400200")
+            entry("PAYBILL_NUMBER", "400200"),
+            entry("LOAN_VOTING_METHOD", "MANUAL")
     );
 
     @PostConstruct

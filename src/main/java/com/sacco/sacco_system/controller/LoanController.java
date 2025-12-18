@@ -376,13 +376,15 @@ public class LoanController {
     @PostMapping("/{id}/finalize")
     public ResponseEntity<Map<String, Object>> finalizeVote(
             @PathVariable UUID id,
-            @RequestParam boolean approved,
+            @RequestParam(required = false) Boolean approved, // Changed to Boolean (wrapper) to allow nulls
             @RequestParam(required = false) String comments) {
         try {
-            loanService.secretaryFinalize(id, approved, comments != null ? comments : "General Assembly Decision");
+            // ✅ FIX: Changed method name from 'secretaryFinalize' to 'finalizeVote'
+            loanService.finalizeVote(id, approved, comments != null ? comments : "General Assembly Decision");
+
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "message", approved ? "Loan Approved by Assembly" : "Loan Rejected by Assembly"
+                    "message", "Voting finalized successfully."
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
