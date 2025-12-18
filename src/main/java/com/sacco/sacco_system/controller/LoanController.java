@@ -345,12 +345,19 @@ public class LoanController {
     // ✅ NEW: Members/Committee Voting
     @GetMapping("/agenda/active")
     public ResponseEntity<Map<String, Object>> getActiveVotingAgenda() {
-        // Filter to return ONLY loans where voting is currently open
-        List<LoanDTO> activeLoans = loanService.getAllLoans().stream()
-                .filter(loan -> "VOTING_OPEN".equals(loan.getStatus()))
-                .toList();
+        try {
+            // Get logged-in user
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            var user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return ResponseEntity.ok(Map.of("success", true, "data", activeLoans));
+            // Use the SMART service method that filters out loans I've already voted on
+            List<LoanDTO> myAgenda = loanService.getVotingAgendaForUser(user.getId());
+
+            return ResponseEntity.ok(Map.of("success", true, "data", myAgenda));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
     }
 
     @PostMapping("/{id}/vote")

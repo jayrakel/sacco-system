@@ -345,44 +345,51 @@ public class LoanService {
 
         loan.setVotingOpen(true);
         loan.setStatus(Loan.LoanStatus.VOTING_OPEN);
+        // Ensure list is ready
+        if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new java.util.ArrayList<>());
+
         loanRepository.save(loan);
     }
 
+    // 2. CAST VOTE (Strict Rules)
     @Loggable(action = "CAST_VOTE", category = "LOANS")
     public void castVote(UUID loanId, boolean voteYes, UUID voterId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        // 🛠️ FIX 1: Auto-correct Data Inconsistency
-        // If status is VOTING_OPEN but the boolean flag is false, we trust the status.
-        if (!loan.isVotingOpen() && loan.getStatus() == Loan.LoanStatus.VOTING_OPEN) {
-            System.out.println("⚠️ Auto-Fixing: Loan " + loan.getLoanNumber() + " was in VOTING_OPEN state but flag was false.");
-            loan.setVotingOpen(true);
-            // We don't save yet, we'll save at the end
-        }
-
         if (!loan.isVotingOpen()) {
             throw new RuntimeException("Voting is closed for this loan.");
         }
 
-        // 🛠️ FIX 2: Null-Safe Conflict Check
-        // If the applicant doesn't have a User linked (e.g. legacy data), skip the check to prevent crashing.
-        if (loan.getMember().getUser() != null) {
-            if (loan.getMember().getUser().getId().equals(voterId)) {
-                throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
-            }
-        } else {
-            System.out.println("⚠️ Warning: Loan applicant (Member ID " + loan.getMember().getId() + ") has no linked User account. Skipping conflict check.");
+        // ✅ RULE 1: Prevent Double Voting
+        if (loan.getVotedUserIds() != null && loan.getVotedUserIds().contains(voterId)) {
+            throw new RuntimeException("You have already voted on this loan.");
+        }
+
+        // ✅ RULE 2: Conflict of Interest (Self-Voting Blocked)
+        if (loan.getMember().getUser() != null && loan.getMember().getUser().getId().equals(voterId)) {
+            throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
         }
 
         // Record Vote
-        if (voteYes) {
-            loan.setVotesYes(loan.getVotesYes() + 1);
-        } else {
-            loan.setVotesNo(loan.getVotesNo() + 1);
-        }
+        if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
+        else loan.setVotesNo(loan.getVotesNo() + 1);
+
+        // Add to 'Voted' list
+        if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new java.util.ArrayList<>());
+        loan.getVotedUserIds().add(voterId);
 
         loanRepository.save(loan);
+    }
+
+    // 3. GET AGENDA (Filter out voted loans so card disappears)
+    public List<LoanDTO> getVotingAgendaForUser(UUID userId) {
+        return loanRepository.findAll().stream()
+                .filter(l -> l.getStatus() == Loan.LoanStatus.VOTING_OPEN) // Must be open
+                .filter(l -> l.getVotedUserIds() == null || !l.getVotedUserIds().contains(userId)) // Must NOT have voted
+                .filter(l -> l.getMember().getUser() == null || !l.getMember().getUser().getId().equals(userId)) // Optional: Hide own loan from list entirely
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 
     // ========================================================================
@@ -602,6 +609,7 @@ public class LoanService {
         return BigDecimal.ZERO;
     }
 
+    // ✅ CORRECTED DTO CONVERSION (MOVED TO BOTTOM, DUPLICATE REMOVED)
     private LoanDTO convertToDTO(Loan loan) {
         return LoanDTO.builder()
                 .id(loan.getId())
@@ -616,6 +624,9 @@ public class LoanService {
                 .productName(loan.getProduct().getName())
                 .processingFee(loan.getProduct().getProcessingFee())
                 .memberSavings(loan.getMember().getTotalSavings())
+                // ✅ MAP VOTES
+                .votesYes(loan.getVotesYes())
+                .votesNo(loan.getVotesNo())
                 .build();
     }
 }

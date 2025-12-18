@@ -78,6 +78,9 @@ public class Loan {
     @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL)
     private List<Guarantor> guarantors;
 
+    @ElementCollection
+    private List<UUID> votedUserIds = new java.util.ArrayList<>();
+
     // ✅ THE MISSING ENUMS ARE DEFINED HERE
     public enum LoanStatus {
         DRAFT,                  // 1. Member editing
