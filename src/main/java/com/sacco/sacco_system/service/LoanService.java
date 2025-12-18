@@ -349,84 +349,126 @@ public class LoanService {
     }
 
     @Loggable(action = "CAST_VOTE", category = "LOANS")
-    public void castVote(UUID loanId, boolean voteYes, UUID voterId) { // ✅ Added voterId param
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+    public void castVote(UUID loanId, boolean voteYes, UUID voterId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        // 🛠️ FIX 1: Auto-correct Data Inconsistency
+        // If status is VOTING_OPEN but the boolean flag is false, we trust the status.
+        if (!loan.isVotingOpen() && loan.getStatus() == Loan.LoanStatus.VOTING_OPEN) {
+            System.out.println("⚠️ Auto-Fixing: Loan " + loan.getLoanNumber() + " was in VOTING_OPEN state but flag was false.");
+            loan.setVotingOpen(true);
+            // We don't save yet, we'll save at the end
+        }
 
         if (!loan.isVotingOpen()) {
             throw new RuntimeException("Voting is closed for this loan.");
         }
 
-        // 🛑 CONFLICT OF INTEREST CHECK
-        if (loan.getMember().getUser().getId().equals(voterId)) {
-            throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
+        // 🛠️ FIX 2: Null-Safe Conflict Check
+        // If the applicant doesn't have a User linked (e.g. legacy data), skip the check to prevent crashing.
+        if (loan.getMember().getUser() != null) {
+            if (loan.getMember().getUser().getId().equals(voterId)) {
+                throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
+            }
+        } else {
+            System.out.println("⚠️ Warning: Loan applicant (Member ID " + loan.getMember().getId() + ") has no linked User account. Skipping conflict check.");
         }
 
-        // (Optional) Prevent Double Voting
-        // You would need a separate table/collection to track who has voted for which loan
-        // e.g. if (voteRepository.existsByLoanAndUser(loan, voterId)) throw ...
-
-        if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
-        else loan.setVotesNo(loan.getVotesNo() + 1);
+        // Record Vote
+        if (voteYes) {
+            loan.setVotesYes(loan.getVotesYes() + 1);
+        } else {
+            loan.setVotesNo(loan.getVotesNo() + 1);
+        }
 
         loanRepository.save(loan);
     }
+
+    // ========================================================================
+    // CORRECTED VOTING LOGIC
+    // ========================================================================
 
     @Loggable(action = "FINALIZE_VOTE", category = "LOANS")
     public void finalizeVote(UUID loanId, Boolean manualApproved, String comments) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        // 1. Check Configuration
-        String votingMethod = systemSettingService.getSetting("LOAN_VOTING_METHOD").orElse("AUTOMATIC");
+        if (!loan.isVotingOpen() && loan.getStatus() != Loan.LoanStatus.VOTING_OPEN) {
+            // Allow finalizing if it's already closed but waiting for decision, otherwise warn
+            if (loan.getStatus() != Loan.LoanStatus.VOTING_CLOSED) {
+                throw new RuntimeException("Voting is not currently active for this loan.");
+            }
+        }
 
         loan.setVotingOpen(false);
         loan.setStatus(Loan.LoanStatus.VOTING_CLOSED);
+        loanRepository.save(loan); // Save intermediate state
 
-        // ====================================================================
-        // OPTION A: AUTOMATIC (50% + 1 Rule)
-        // ====================================================================
-        if ("AUTOMATIC".equalsIgnoreCase(votingMethod)) {
-            long totalMembers = memberRepository.count();
-            long eligibleVoters = totalMembers > 0 ? totalMembers - 1 : 0; // Exclude applicant
-            long threshold = (eligibleVoters / 2) + 1;
-
-            String resultDetails = String.format("Votes: Yes(%d) vs No(%d). Threshold: %d/%d",
-                    loan.getVotesYes(), loan.getVotesNo(), threshold, eligibleVoters);
-
-            if (loan.getVotesYes() >= threshold) {
-                approveLoanInternal(loan, "System: Passed automatic voting threshold. " + resultDetails);
+        // 1. PRIORITY: Manual Override (Secretary/Admin Decision)
+        // If the official explicitly sends 'true' or 'false', we use that decision regardless of vote counts.
+        if (manualApproved != null) {
+            if (manualApproved) {
+                approveLoanInternal(loan, "Committee Decision: " + comments);
             } else {
-                rejectLoanInternal(loan, "System: Failed to meet voting threshold. " + resultDetails);
+                rejectLoanInternal(loan, "Committee Decision: " + comments);
             }
+            return;
         }
 
-        // ====================================================================
-        // OPTION B: MANUAL (Secretary/Committee Decision)
-        // ====================================================================
-        else {
-            if (manualApproved == null) {
-                throw new RuntimeException("Manual approval is required when System Setting 'LOAN_VOTING_METHOD' is set to MANUAL.");
+        // 2. FALLBACK: Automatic Logic (System Settings)
+        String votingMethod = systemSettingService.getSetting("LOAN_VOTING_METHOD").orElse("AUTOMATIC");
+
+        if ("AUTOMATIC".equalsIgnoreCase(votingMethod)) {
+            // FIX: Use 'Votes Cast' logic instead of 'Total Membership' to prevent getting stuck
+            // Logic: Must have more YES than NO, and at least 1 vote cast.
+
+            int totalVotes = loan.getVotesYes() + loan.getVotesNo();
+            String resultDetails = String.format("Votes: Yes(%d) vs No(%d).", loan.getVotesYes(), loan.getVotesNo());
+
+            if (totalVotes == 0) {
+                // Edge Case: No one voted. Do not Auto-Reject. Move to manual review.
+                loan.setStatus(Loan.LoanStatus.SECRETARY_DECISION);
+                loan.setSecretaryComments("Voting closed with 0 votes. Manual decision required.");
+                loanRepository.save(loan);
+                return;
             }
 
-            if (manualApproved) {
-                approveLoanInternal(loan, "Secretary: " + comments);
+            if (loan.getVotesYes() > loan.getVotesNo()) {
+                approveLoanInternal(loan, "Passed automatic voting (Simple Majority). " + resultDetails);
             } else {
-                rejectLoanInternal(loan, "Secretary: " + comments);
+                rejectLoanInternal(loan, "Failed automatic voting. " + resultDetails);
             }
+        } else {
+            // If Method is MANUAL but no decision was provided in the API call
+            loan.setStatus(Loan.LoanStatus.SECRETARY_DECISION);
+            loanRepository.save(loan);
         }
     }
 
-    // Helper to keep code clean
+    // Helper to keep code clean and Notify ADMIN
     private void approveLoanInternal(Loan loan, String note) {
-        loan.setStatus(Loan.LoanStatus.ADMIN_APPROVED);
+        loan.setStatus(Loan.LoanStatus.ADMIN_APPROVED); // Next Step: Admin Approval
         loan.setSecretaryComments(note);
         loanRepository.save(loan);
 
+        // Notify Member
         notificationService.createNotification(
                 loan.getMember().getUser(),
-                "Loan Approved",
-                "Your loan application has been approved! " + note,
+                "Loan Voted Successfully",
+                "Your loan has passed the committee vote! It is now pending final Admin approval.",
                 Notification.NotificationType.SUCCESS
         );
+
+        // FIX: Notify ADMIN that they need to give final sign-off
+        List<User> admins = userRepository.findByRole(User.Role.ADMIN);
+        for (User admin : admins) {
+            notificationService.createNotification(
+                    admin,
+                    "Final Approval Required",
+                    String.format("Loan %s has passed voting and requires your final sign-off.", loan.getLoanNumber()),
+                    Notification.NotificationType.ACTION_REQUIRED
+            );
+        }
     }
 
     private void rejectLoanInternal(Loan loan, String reason) {
@@ -442,12 +484,35 @@ public class LoanService {
         );
     }
 
+    // ========================================================================
+    // CORRECTED ADMIN APPROVAL
+    // ========================================================================
+
     @Loggable(action = "ADMIN_APPROVE", category = "LOANS")
     public void adminApprove(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        // FIX: Ensure we don't skip the voting stage accidentally
+        // We allow ADMIN_APPROVED (Standard flow) or SECRETARY_DECISION (Fallback flow)
+        if (loan.getStatus() != Loan.LoanStatus.ADMIN_APPROVED &&
+                loan.getStatus() != Loan.LoanStatus.SECRETARY_DECISION) {
+            throw new RuntimeException("Loan is not in the correct state for Final Approval. Current: " + loan.getStatus());
+        }
+
         loan.setStatus(Loan.LoanStatus.TREASURER_DISBURSEMENT);
         loan.setApprovalDate(LocalDate.now());
         loanRepository.save(loan);
+
+        // FIX: Notify Treasurer
+        List<User> treasurers = userRepository.findByRole(User.Role.TREASURER);
+        for (User treasurer : treasurers) {
+            notificationService.createNotification(
+                    treasurer,
+                    "Disbursement Pending",
+                    String.format("Loan %s is fully approved and ready for disbursement.", loan.getLoanNumber()),
+                    Notification.NotificationType.ACTION_REQUIRED
+            );
+        }
     }
 
     @Loggable(action = "DISBURSE_LOAN", category = "LOANS")

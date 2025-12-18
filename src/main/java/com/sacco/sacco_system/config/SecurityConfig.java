@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         // ====================================================
-                        // 1. PUBLIC ENDPOINTS (Specific Rules FIRST)
+                        // 1. PUBLIC ENDPOINTS
                         // ====================================================
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers("/api/auth/**", "/api/verify/**").permitAll()
@@ -41,53 +41,50 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
                         // ====================================================
-                        // 2. LOAN OFFICER RESTRICTIONS
+                        // 2. VOTING (FIXED: Allow Members + Officials)
                         // ====================================================
-                        .requestMatchers("/api/loans/*/vote").hasAnyAuthority("CHAIRPERSON", "TREASURER", "SECRETARY", "ADMIN")
-                        // Actions only for Officers
-                        .requestMatchers("/api/loans/*/review").hasAuthority("LOAN_OFFICER")
+                        // This was causing the 403. We allow MEMBER and officials here.
+                        .requestMatchers("/api/loans/*/vote").hasAnyAuthority("MEMBER", "CHAIRPERSON", "TREASURER", "SECRETARY", "ADMIN")
+
+                        // New: Allow members to see active agenda items to vote on
+                        .requestMatchers("/api/loans/agenda/active").hasAnyAuthority("MEMBER", "CHAIRPERSON", "TREASURER", "SECRETARY", "ADMIN")
+
+                        // ====================================================
+                        // 3. LOAN OFFICER ACTIONS
+                        // ====================================================
+                        .requestMatchers("/api/loans/*/review").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
                         .requestMatchers("/api/loans/*/approve").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
                         .requestMatchers("/api/loans/*/reject").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
 
                         // ====================================================
-                        // 3. FINANCE / TREASURER RESTRICTIONS
+                        // 4. GOVERNANCE (Secretary / Chair)
+                        // ====================================================
+                        .requestMatchers("/api/loans/*/table").hasAnyAuthority("SECRETARY", "ADMIN")
+                        .requestMatchers("/api/loans/*/finalize").hasAnyAuthority("SECRETARY", "ADMIN")
+                        .requestMatchers("/api/loans/*/start-voting").hasAnyAuthority("CHAIRPERSON", "ADMIN")
+
+                        // ====================================================
+                        // 5. FINANCE (Treasurer)
                         // ====================================================
                         .requestMatchers("/api/loans/*/disburse").hasAnyAuthority("TREASURER", "ADMIN")
                         .requestMatchers("/api/finance/**").hasAnyAuthority("TREASURER", "ADMIN")
 
                         // ====================================================
-                        // 4. SECRETARY RESTRICTIONS (Fixes your 403 Error)
-                        // ====================================================
-                        .requestMatchers("/api/loans/*/table").hasAnyAuthority("SECRETARY", "ADMIN")
-                        .requestMatchers("/api/loans/*/finalize").hasAnyAuthority("SECRETARY", "ADMIN")
-
-                        // ====================================================
-                        // 5. CHAIRPERSON RESTRICTIONS
-                        // ====================================================
-                        .requestMatchers("/api/loans/*/start-voting").hasAnyAuthority("CHAIRPERSON", "ADMIN")
-
-                        // ====================================================
-                        // 6. ADMIN RESTRICTIONS
+                        // 6. ADMIN
                         // ====================================================
                         .requestMatchers("/api/admin/**", "/api/settings/**").hasAuthority("ADMIN")
                         .requestMatchers("/api/loans/*/admin-approve").hasAuthority("ADMIN")
 
                         // ====================================================
-                        // 7. VIEWING DATA (Secure Lists)
+                        // 7. GENERAL ACCESS
                         // ====================================================
-                        // Members can ONLY view their own loans
                         .requestMatchers("/api/loans/my-loans").authenticated()
 
-                        .requestMatchers("/api/loans/agenda/active").hasAnyAuthority("MEMBER")
-
-                        // Allow Members to Cast Votes
-                        .requestMatchers("/api/loans/*/vote").hasAnyAuthority("MEMBER")
-
-                        // Only Staff can view the full list of loans
+                        // Only Staff/Admin can view ALL loans
                         .requestMatchers(HttpMethod.GET, "/api/loans").hasAnyAuthority("LOAN_OFFICER", "ADMIN", "TREASURER", "CHAIRPERSON", "SECRETARY")
 
                         // ====================================================
-                        // 8. CATCH-ALL (MUST BE LAST)
+                        // 8. CATCH-ALL
                         // ====================================================
                         .anyRequest().authenticated()
                 )
@@ -101,7 +98,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*"));
+        configuration.setAllowedOrigins(List.of("*")); // In production, replace * with your frontend domain
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 
@@ -109,5 +106,4 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
 }
