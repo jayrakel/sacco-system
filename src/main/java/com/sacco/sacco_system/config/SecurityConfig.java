@@ -43,6 +43,7 @@ public class SecurityConfig {
                         // ====================================================
                         // 2. LOAN OFFICER RESTRICTIONS
                         // ====================================================
+                        .requestMatchers("/api/loans/*/vote").hasAnyAuthority("CHAIRPERSON", "TREASURER", "SECRETARY", "ADMIN")
                         // Actions only for Officers
                         .requestMatchers("/api/loans/*/review").hasAuthority("LOAN_OFFICER")
                         .requestMatchers("/api/loans/*/approve").hasAnyAuthority("LOAN_OFFICER", "ADMIN")
@@ -58,6 +59,7 @@ public class SecurityConfig {
                         // 4. SECRETARY RESTRICTIONS (Fixes your 403 Error)
                         // ====================================================
                         .requestMatchers("/api/loans/*/table").hasAnyAuthority("SECRETARY", "ADMIN")
+                        .requestMatchers("/api/loans/*/finalize").hasAnyAuthority("SECRETARY", "ADMIN")
 
                         // ====================================================
                         // 5. CHAIRPERSON RESTRICTIONS
@@ -68,12 +70,18 @@ public class SecurityConfig {
                         // 6. ADMIN RESTRICTIONS
                         // ====================================================
                         .requestMatchers("/api/admin/**", "/api/settings/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/loans/*/admin-approve").hasAuthority("ADMIN")
 
                         // ====================================================
                         // 7. VIEWING DATA (Secure Lists)
                         // ====================================================
                         // Members can ONLY view their own loans
                         .requestMatchers("/api/loans/my-loans").authenticated()
+
+                        .requestMatchers("/api/loans/agenda/active").hasAnyAuthority("MEMBER")
+
+                        // Allow Members to Cast Votes
+                        .requestMatchers("/api/loans/*/vote").hasAnyAuthority("MEMBER")
 
                         // Only Staff can view the full list of loans
                         .requestMatchers(HttpMethod.GET, "/api/loans").hasAnyAuthority("LOAN_OFFICER", "ADMIN", "TREASURER", "CHAIRPERSON", "SECRETARY")
@@ -101,4 +109,5 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
+
 }

@@ -6,6 +6,7 @@ import com.sacco.sacco_system.entity.LoanProduct;
 import com.sacco.sacco_system.entity.Member;
 import com.sacco.sacco_system.repository.LoanProductRepository;
 import com.sacco.sacco_system.repository.MemberRepository;
+import com.sacco.sacco_system.repository.UserRepository; // ✅ Import this
 import com.sacco.sacco_system.service.AuditService;
 import com.sacco.sacco_system.service.LoanService;
 import com.sacco.sacco_system.service.LoanLimitService;
@@ -28,10 +29,13 @@ import java.util.UUID;
 public class LoanController {
 
     private final LoanService loanService;
-    private final LoanLimitService loanLimitService; // ✅ Inject Limit Service
+    private final LoanLimitService loanLimitService;
     private final LoanProductRepository loanProductRepository;
     private final MemberRepository memberRepository;
     private final AuditService auditService;
+
+    // ✅ FIX: Inject UserRepository to resolve the error
+    private final UserRepository userRepository;
 
     // ========================================================================
     // 1. LOAN PRODUCTS
@@ -57,7 +61,6 @@ public class LoanController {
     // 2. LOAN APPLICATION WORKFLOW
     // ========================================================================
 
-    // ✅ CHECK LIMIT ENDPOINT
     @GetMapping("/limits/check")
     public ResponseEntity<Map<String, Object>> checkLoanLimit() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -73,7 +76,6 @@ public class LoanController {
         ));
     }
 
-    // ✅ STEP 1: CREATE DRAFT
     @PostMapping("/apply")
     public ResponseEntity<Map<String, Object>> applyForLoan(
             @RequestParam UUID productId,
@@ -86,14 +88,12 @@ public class LoanController {
                     .orElseThrow(() -> new RuntimeException("Member not found"));
 
             LoanDTO loan = loanService.initiateApplication(member.getId(), productId, amount, duration, durationUnit);
-
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Loan Draft Created", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ STEP 1.5: UPDATE DRAFT
     @PutMapping("/{id}/update")
     public ResponseEntity<Map<String, Object>> updateLoanDraft(
             @PathVariable UUID id,
@@ -108,7 +108,6 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 2: ADD GUARANTORS
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<Map<String, Object>> addGuarantor(
             @PathVariable UUID loanId,
@@ -124,7 +123,6 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 3: SUBMIT TO GUARANTORS
     @PostMapping("/{id}/send-requests")
     public ResponseEntity<Map<String, Object>> sendGuarantorRequests(@PathVariable UUID id) {
         try {
@@ -135,14 +133,12 @@ public class LoanController {
         }
     }
 
-    // ✅ NEW: Get Pending Requests for Logged-in User
     @GetMapping("/guarantors/requests")
     public ResponseEntity<Map<String, Object>> getMyGuarantorRequests() {
         try {
             String email = SecurityContextHolder.getContext().getAuthentication().getName();
-
-            // ✅ FIX: Check if member exists. If the user is just Staff (Admin/Secretary), return empty list.
             var memberOpt = memberRepository.findByEmail(email);
+
             if (memberOpt.isEmpty()) {
                 return ResponseEntity.ok(Map.of("success", true, "data", List.of()));
             }
@@ -153,7 +149,6 @@ public class LoanController {
         }
     }
 
-    // ✅ NEW: Respond to Request
     @PostMapping("/guarantors/{id}/respond")
     public ResponseEntity<Map<String, Object>> respondToGuarantorRequest(@PathVariable UUID id, @RequestParam boolean accepted) {
         try {
@@ -164,7 +159,6 @@ public class LoanController {
         }
     }
 
-    // ✅ STEP 4: PAY FEE
     @PostMapping("/{id}/pay-fee")
     public ResponseEntity<Map<String, Object>> payLoanFee(
             @PathVariable UUID id,
@@ -181,14 +175,12 @@ public class LoanController {
     // 3. APPROVAL & DISBURSEMENT
     // ========================================================================
 
-    // ✅ NEW: Start Review Endpoint
     @PostMapping("/{id}/review")
     public ResponseEntity<Map<String, Object>> reviewLoan(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Review Started",
-                    // ✅ CALL THE LOGGABLE METHOD DIRECTLY
                     "data", loanService.officerReview(id)
             ));
         } catch (Exception e) {
@@ -199,13 +191,12 @@ public class LoanController {
     @PostMapping("/{id}/approve")
     public ResponseEntity<Map<String, Object>> approveLoan(@PathVariable UUID id) {
         try {
-            // This calls officerApprove -> moves to SECRETARY_TABLED
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Forwarded to Secretary", "data", loanService.approveLoan(id)));
+            loanService.officerApprove(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan Forwarded to Secretary"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
-
 
     @PostMapping("/{id}/disburse")
     public ResponseEntity<Map<String, Object>> disburseLoan(@PathVariable UUID id) {
@@ -326,20 +317,86 @@ public class LoanController {
     }
 
     // ========================================================================
-    // 5. SECRETARY ACTIONS
+    // 5. GOVERNANCE (SECRETARY, CHAIRPERSON, ASSEMBLY)
     // ========================================================================
 
-    // ✅ NEW: Table Loan (Opens Voting)
+    // ✅ SECRETARY: Table Loan (Opens Voting)
     @PostMapping("/{id}/table")
-    public ResponseEntity<?> tableLoanForMeeting(@PathVariable UUID id, @RequestParam String meetingDate) {
-        // ... (Calls loanService.tableLoan) ...
-        loanService.tableLoan(id, LocalDate.parse(meetingDate));
-        return ResponseEntity.ok(Map.of("success", true, "message", "Loan added to Meeting Agenda"));
+    public ResponseEntity<Map<String, Object>> tableLoanForMeeting(@PathVariable UUID id, @RequestParam String meetingDate) {
+        try {
+            loanService.tableLoan(id, LocalDate.parse(meetingDate));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan added to Meeting Agenda"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
     }
-    // CHAIRPERSON: Start Voting
+
+    // ✅ CHAIRPERSON: Start Voting
     @PostMapping("/{id}/start-voting")
-    public ResponseEntity<?> startVoting(@PathVariable UUID id) {
-        loanService.openVoting(id);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Voting Opened"));
+    public ResponseEntity<Map<String, Object>> startVoting(@PathVariable UUID id) {
+        try {
+            loanService.openVoting(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Voting Floor Opened"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Members/Committee Voting
+    @GetMapping("/agenda/active")
+    public ResponseEntity<Map<String, Object>> getActiveVotingAgenda() {
+        // Filter to return ONLY loans where voting is currently open
+        List<LoanDTO> activeLoans = loanService.getAllLoans().stream()
+                .filter(loan -> "VOTING_OPEN".equals(loan.getStatus()))
+                .toList();
+
+        return ResponseEntity.ok(Map.of("success", true, "data", activeLoans));
+    }
+
+    @PostMapping("/{id}/vote")
+    public ResponseEntity<Map<String, Object>> castVote(
+            @PathVariable UUID id,
+            @RequestParam boolean voteYes) {
+        try {
+            // Get logged-in user to check for conflict of interest
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            var user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // Pass user ID to service to enforce "No Self-Voting" rule
+            loanService.castVote(id, voteYes, user.getId());
+
+            return ResponseEntity.ok(Map.of("success", true, "message", "Vote Cast Successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ SECRETARY: Finalize (Close Voting)
+    @PostMapping("/{id}/finalize")
+    public ResponseEntity<Map<String, Object>> finalizeVote(
+            @PathVariable UUID id,
+            @RequestParam boolean approved,
+            @RequestParam(required = false) String comments) {
+        try {
+            loanService.secretaryFinalize(id, approved, comments != null ? comments : "General Assembly Decision");
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", approved ? "Loan Approved by Assembly" : "Loan Rejected by Assembly"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ ADMIN: Final System Approval
+    @PostMapping("/{id}/admin-approve")
+    public ResponseEntity<Map<String, Object>> adminApprove(@PathVariable UUID id) {
+        try {
+            loanService.adminApprove(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Final Approval Granted. Sent to Treasurer."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
     }
 }

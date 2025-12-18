@@ -350,11 +350,23 @@ public class LoanService {
     }
 
     @Loggable(action = "CAST_VOTE", category = "LOANS")
-    public void castVote(UUID loanId, boolean voteYes) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
-        if(!loan.isVotingOpen()) throw new RuntimeException("Voting is closed");
+    public void castVote(UUID loanId, boolean voteYes, UUID voterId) { // ✅ Added voterId param
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        if(voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
+        if (!loan.isVotingOpen()) {
+            throw new RuntimeException("Voting is closed for this loan.");
+        }
+
+        // 🛑 CONFLICT OF INTEREST CHECK
+        if (loan.getMember().getUser().getId().equals(voterId)) {
+            throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
+        }
+
+        // (Optional) Prevent Double Voting
+        // You would need a separate table/collection to track who has voted for which loan
+        // e.g. if (voteRepository.existsByLoanAndUser(loan, voterId)) throw ...
+
+        if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
         else loan.setVotesNo(loan.getVotesNo() + 1);
 
         loanRepository.save(loan);

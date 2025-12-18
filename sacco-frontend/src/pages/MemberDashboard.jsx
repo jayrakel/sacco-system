@@ -1,103 +1,124 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-    LayoutDashboard, PiggyBank, CreditCard, User, Bell, LogOut, Menu, X
-} from 'lucide-react';
-
-// Components
+import { CreditCard, Wallet, PiggyBank, HandCoins, ThumbsUp, ThumbsDown, Megaphone } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import MemberOverview from '../features/member/components/MemberOverview';
 import MemberSavings from '../features/member/components/MemberSavings';
 import MemberLoans from '../features/member/components/MemberLoans';
-import MemberProfile from '../features/member/components/MemberProfile';
+import api from '../api';
 
 export default function MemberDashboard() {
     const [user, setUser] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const navigate = useNavigate();
+    const [votingAgenda, setVotingAgenda] = useState([]); // ✅ Store Active Votes
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
-        if (!storedUser) {
-            navigate('/login');
-            return;
-        }
-        setUser(JSON.parse(storedUser));
-    }, [navigate]);
+        if (storedUser) setUser(JSON.parse(storedUser));
 
-    const handleLogout = () => {
-        localStorage.removeItem('sacco_token');
-        localStorage.removeItem('sacco_user');
-        navigate('/login');
-    };
+        fetchVotingAgenda(); // ✅ Check for active votes on load
+    }, []);
 
-    const renderContent = () => {
-        if (!user) return <div className="p-8 text-center">Loading Profile...</div>;
-
-        // Pass user/memberId to children so they can fetch their own data
-        switch (activeTab) {
-            case 'overview': return <MemberOverview user={user} />;
-            case 'savings': return <MemberSavings user={user} />;
-            case 'loans': return <MemberLoans user={user} />;
-            case 'profile': return <MemberProfile user={user} />;
-            default: return <MemberOverview user={user} />;
+    const fetchVotingAgenda = async () => {
+        try {
+            const res = await api.get('/api/loans/agenda/active');
+            if (res.data.success) {
+                setVotingAgenda(res.data.data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch voting agenda", error);
         }
     };
 
-    const NavItem = ({ id, label, icon: Icon }) => (
-        <button
-            onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
-            className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${
-                activeTab === id
-                ? 'bg-indigo-900 text-white shadow-md'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
-            }`}
-        >
-            <Icon size={18} />
-            {label}
-        </button>
-    );
+    const handleVote = async (loanId, voteYes) => {
+        try {
+            await api.post(`/api/loans/${loanId}/vote`, null, {
+                params: { voteYes }
+            });
+            alert(`Vote cast successfully!`);
+            // Refresh to remove the item or update state if needed
+            fetchVotingAgenda();
+        } catch (error) {
+            alert(error.response?.data?.message || "Voting failed");
+        }
+    };
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
-            {/* Header */}
+        <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-12">
             <DashboardHeader user={user} title="Member Portal" />
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-                <div className="flex flex-col md:flex-row gap-6">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8 animate-in fade-in">
 
-                    {/* Sidebar Navigation */}
-                    <aside className={`md:w-64 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col gap-2 h-fit ${isMobileMenuOpen ? 'block' : 'hidden md:flex'}`}>
-                        <div className="md:hidden flex justify-end mb-2">
-                            <button onClick={() => setIsMobileMenuOpen(false)}><X /></button>
+                {/* ✅ NEW: DEMOCRATIC VOTING SECTION */}
+                {votingAgenda.length > 0 && (
+                    <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl shadow-xl p-6 text-white mb-8 border border-white/10">
+                        <div className="flex items-center gap-3 mb-4 border-b border-white/20 pb-4">
+                            <div className="p-2 bg-white/20 rounded-full animate-pulse">
+                                <Megaphone className="text-white" size={24} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold">General Assembly in Session</h2>
+                                <p className="text-indigo-100 text-sm">Please cast your vote on the following agenda items.</p>
+                            </div>
                         </div>
 
-                        <NavItem id="overview" label="Overview" icon={LayoutDashboard} />
-                        <NavItem id="savings" label="My Savings" icon={PiggyBank} />
-                        <NavItem id="loans" label="My Loans" icon={CreditCard} />
-                        <NavItem id="profile" label="My Profile" icon={User} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {votingAgenda.map(loan => (
+                                <div key={loan.id} className="bg-white/10 backdrop-blur-sm p-5 rounded-xl border border-white/20 flex flex-col justify-between hover:bg-white/15 transition">
+                                    <div className="mb-4">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="bg-white/20 px-2 py-1 rounded text-xs font-mono">{loan.loanNumber}</span>
+                                            <span className="font-bold text-emerald-300">KES {Number(loan.principalAmount).toLocaleString()}</span>
+                                        </div>
+                                        <h3 className="font-bold text-lg">{loan.memberName}</h3>
+                                        <p className="text-sm text-indigo-200">{loan.productName}</p>
+                                    </div>
 
-                        <div className="border-t border-slate-100 my-2 pt-2">
-                            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-all">
-                                <LogOut size={18} /> Logout
-                            </button>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => handleVote(loan.id, true)}
+                                            className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-900/20"
+                                        >
+                                            <ThumbsUp size={16}/> Yes
+                                        </button>
+                                        <button
+                                            onClick={() => handleVote(loan.id, false)}
+                                            className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-rose-900/20"
+                                        >
+                                            <ThumbsDown size={16}/> No
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    </aside>
-
-                    {/* Mobile Toggle */}
-                    <div className="md:hidden mb-4">
-                        <button onClick={() => setIsMobileMenuOpen(true)} className="flex items-center gap-2 bg-white p-3 rounded-lg shadow-sm border text-sm font-bold">
-                            <Menu size={20} /> Menu
-                        </button>
                     </div>
+                )}
 
-                    {/* Main Content Area */}
-                    <main className="flex-1 min-h-[500px]">
-                        {renderContent()}
-                    </main>
+                {/* Standard Dashboard Tabs */}
+                <div className="flex gap-4 overflow-x-auto pb-2 border-b border-slate-200">
+                    <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<CreditCard size={18}/>} label="Overview" />
+                    <TabButton active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon={<PiggyBank size={18}/>} label="My Savings" />
+                    <TabButton active={activeTab === 'loans'} onClick={() => setActiveTab('loans')} icon={<HandCoins size={18}/>} label="My Loans" />
                 </div>
-            </div>
+
+                <div className="min-h-[400px] mt-6">
+                    {activeTab === 'overview' && <MemberOverview />}
+                    {activeTab === 'savings' && <MemberSavings />}
+                    {activeTab === 'loans' && <MemberLoans />}
+                </div>
+            </main>
         </div>
+    );
+}
+
+// Helper for Tabs
+function TabButton({ active, onClick, icon, label }) {
+    return (
+        <button
+            onClick={onClick}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap
+                ${active ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20" : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-200"}`}
+        >
+            {icon} {label}
+        </button>
     );
 }
