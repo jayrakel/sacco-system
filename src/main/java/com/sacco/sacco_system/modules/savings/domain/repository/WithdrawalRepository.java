@@ -5,9 +5,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Repository
-public interface WithdrawalRepository extends JpaRepository<Withdrawal, Long> {
-    List<Withdrawal> findByWithdrawalDateBetween(LocalDate startDate, LocalDate endDate);
+public interface WithdrawalRepository extends JpaRepository<Withdrawal, UUID> {
+    // Find withdrawals by request date range (matches Withdrawal.requestDate)
+    List<Withdrawal> findByRequestDateBetween(LocalDateTime start, LocalDateTime end);
 }

@@ -12,8 +12,8 @@ import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepo
 
 @Repository
 public interface ShareCapitalRepository extends JpaRepository<ShareCapital, UUID> {
-    Optional<ShareCapital> findByMemberId(Long memberId);
-    
+    Optional<ShareCapital> findByMemberId(UUID memberId);
+
     @Query("SELECT SUM(sc.paidAmount) FROM ShareCapital sc")
     BigDecimal getTotalShareCapital();
     
