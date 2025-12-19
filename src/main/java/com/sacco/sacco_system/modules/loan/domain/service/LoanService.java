@@ -18,15 +18,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
+import com.sacco.sacco_system.modules.notification.domain.entity.Notification;
 
 @Service
 @RequiredArgsConstructor
@@ -515,7 +518,7 @@ public class LoanService {
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        BigDecimal currentLiquidity = accountingService.getAccountBalance("1001");
+        BigDecimal currentLiquidity = accountingService.getAccountBalance("1001", LocalDate.now());
         if (currentLiquidity.compareTo(loan.getPrincipalAmount()) < 0) {
             throw new RuntimeException("Disbursement Failed: Insufficient Sacco liquidity. Available: KES " + currentLiquidity);
         }

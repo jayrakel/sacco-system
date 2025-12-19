@@ -36,8 +36,21 @@ public class Notification {
     private NotificationType type;
 
     private String status;
+    private boolean isRead;
     private LocalDateTime createdAt;
     private LocalDateTime sentAt;
     private String failureReason;
     private Integer retryCount = 0;
+
+    // Inner enum for notification type
+    public enum NotificationType {
+        EMAIL,
+        SMS,
+        IN_APP,
+        PUSH,
+        INFO,
+        ACTION_REQUIRED,
+        WARNING,
+        ERROR
+    }
 }

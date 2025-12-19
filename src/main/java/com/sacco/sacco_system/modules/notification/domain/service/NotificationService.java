@@ -1,7 +1,6 @@
 package com.sacco.sacco_system.modules.notification.domain.service;
 
 import com.sacco.sacco_system.modules.notification.domain.entity.Notification;
-import com.sacco.sacco_system.modules.notification.domain.entity.NotificationType;
 import com.sacco.sacco_system.modules.notification.domain.repository.NotificationRepository;
 import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.auth.repository.UserRepository;
@@ -39,13 +38,13 @@ public class NotificationService {
 
         // 2. Email
         if (sendEmail) {
-            log.info(">> ðŸ“§ Email queued for: {}", user.getEmail());
+            log.info(">> Email queued for: {}", user.getEmail());
             // emailService.sendGenericEmail(user.getEmail(), title, message);
         }
 
         // 3. SMS
         if (sendSms) {
-            log.info(">> ðŸ“± SMS queued for user ID: {}", userId);
+            log.info(">> SMS queued for user ID: {}", userId);
         }
     }
 
@@ -53,13 +52,12 @@ public class NotificationService {
      * Core method to save notification to DB.
      * Used by LoanService and other internal services.
      */
-    public void createNotification(User user, String title, String message, NotificationType type) {
-        // TODO: NotificationType parameter type doesn't match - accepting but using INFO type
+    public void createNotification(User user, String title, String message, Notification.NotificationType type) {
         Notification notification = Notification.builder()
                 .user(user)
                 .title(title)
                 .message(message)
-                .type(Notification.NotificationType.INFO)
+                .type(type)
                 .isRead(false)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -69,13 +67,12 @@ public class NotificationService {
 
     public List<Notification> getUserNotifications(UUID userId) {
         // TODO: Repository method doesn't exist - returning empty list for now
-        return new java.util.ArrayList(); // notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return new java.util.ArrayList<>(); // notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     public void markAsRead(UUID id) {
         notificationRepository.findById(id).ifPresent(n -> {
-            // TODO: setRead method doesn't exist - using isRead instead
-            n.setIsRead(true);
+            n.setRead(true);
             notificationRepository.save(n);
         });
     }
@@ -85,4 +82,3 @@ public class NotificationService {
         return 0; // notificationRepository.countByUserIdAndIsReadFalse(userId);
     }
 }
-

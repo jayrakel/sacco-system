@@ -20,4 +20,12 @@ public class MemberStatementDTO {
     private BigDecimal totalLoans;
     private BigDecimal netPosition;
     private String accountStatus;
+
+    // Fields for transaction list
+    private LocalDate date;
+    private String reference;
+    private String description;
+    private String type;
+    private BigDecimal amount;
+    private BigDecimal runningBalance;
 }

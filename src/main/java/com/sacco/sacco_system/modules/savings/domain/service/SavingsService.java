@@ -2,6 +2,7 @@ package com.sacco.sacco_system.modules.savings.domain.service;
 
 import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
 import com.sacco.sacco_system.modules.savings.api.dto.SavingsAccountDTO;
+import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -160,16 +161,16 @@ public class SavingsService {
         member.setTotalSavings(member.getTotalSavings().subtract(amount));
         memberRepository.save(member);
 
-        // TODO: Transaction class not properly imported - commenting out transaction creation
-        // Transaction tx = Transaction.builder()
-        //         .savingsAccount(account)
-        //         .member(member)
-        //         .type(Transaction.TransactionType.WITHDRAWAL)
-        //         .amount(amount)
-        //         .description(description != null ? description : "Withdrawal")
-        //         .balanceAfter(savedAccount.getBalance())
-        //         .build();
-        // transactionRepository.save(tx);
+        // Create transaction record
+        Transaction tx = Transaction.builder()
+                .savingsAccount(account)
+                .member(member)
+                .type(Transaction.TransactionType.WITHDRAWAL)
+                .amount(amount)
+                .description(description != null ? description : "Withdrawal")
+                .balanceAfter(savedAccount.getBalance())
+                .build();
+        transactionRepository.save(tx);
 
         accountingService.postDoubleEntry("Withdrawal " + accountNumber, tx.getTransactionId(), "2001", "1001", amount);
         return convertToDTO(savedAccount);

@@ -190,7 +190,7 @@ public class MemberService {
             }
             member.setEmail(updateDTO.getEmail());
             user.setEmail(updateDTO.getEmail());
-            user.setUsername(updateDTO.getEmail());
+            // Username is derived from email via getUsername()
             userRepository.save(user);
         }
 

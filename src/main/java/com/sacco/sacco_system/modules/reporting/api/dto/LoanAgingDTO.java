@@ -14,9 +14,13 @@ import java.time.LocalDate;
 @Builder
 public class LoanAgingDTO {
     private String loanId;
+    private String loanNumber;
     private String memberId;
+    private String memberName;
     private BigDecimal outstandingBalance;
+    private BigDecimal amountOutstanding;
     private Integer daysOverdue;
     private LocalDate dueDate;
     private String status;
+    private String category;
 }
