@@ -1,4 +1,4 @@
-package com.sacco.sacco_system.modules.auth.repository; // ✅ New Package
+package com.sacco.sacco_system.modules.auth.repository; // âœ… New Package
 
 import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
@@ -12,3 +12,4 @@ public interface VerificationTokenRepository extends JpaRepository<VerificationT
     VerificationToken findByToken(String token);
     void deleteByUser(User user);
 }
+

@@ -1,9 +1,10 @@
-package com.sacco.sacco_system.modules.auth.repository; // ✅ New Package
+package com.sacco.sacco_system.modules.auth.repository; // âœ… New Package
 
-import com.sacco.sacco_system.modules.auth.model.User; // ✅ Import new User location
+import com.sacco.sacco_system.modules.auth.model.User; // âœ… Import new User location
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,4 +12,7 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
     boolean existsByRole(User.Role role);
+
+    List<User> findByRole(User.Role role);
 }
+

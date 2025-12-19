@@ -1,4 +1,4 @@
-package com.sacco.sacco_system.modules.auth.model; // ✅ New Package
+package com.sacco.sacco_system.modules.auth.model; // âœ… New Package
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
 @Table(name = "users")
@@ -85,3 +86,4 @@ public class User implements UserDetails {
         MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER
     }
 }
+

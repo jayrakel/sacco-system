@@ -14,10 +14,11 @@ public class AuthResponse {
     private String token;
     private UUID userId;
     private String username; // This is the email
-    private String firstName; // ✅ NEW
-    private String lastName;  // ✅ NEW
-    private String memberNumber; // ✅ NEW
+    private String firstName; // âœ… NEW
+    private String lastName;  // âœ… NEW
+    private String memberNumber; // âœ… NEW
     private String role;
     private boolean mustChangePassword;
     private boolean systemSetupRequired;
 }
+

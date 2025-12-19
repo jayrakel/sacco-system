@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.modules.auth.service;
 
+
 import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
 import com.sacco.sacco_system.modules.auth.dto.AuthResponse;
 import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
@@ -7,8 +8,9 @@ import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
 import com.sacco.sacco_system.modules.auth.repository.UserRepository;
 import com.sacco.sacco_system.modules.auth.repository.VerificationTokenRepository;
-import com.sacco.sacco_system.security.JwtService;
-import com.sacco.sacco_system.service.EmailService;
+import com.sacco.sacco_system.modules.auth.service.JwtService;
+// Custom JWT service - create if missing
+import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -33,6 +35,7 @@ public class AuthService {
     private final EmailService emailService;
 
     @Transactional
+    // @Loggable removed - create separate audit service
     public Map<String, Object> register(User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
 
@@ -42,7 +45,7 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         // Generate Token
-        String token = jwtService.generateToken(savedUser);
+        String token = jwtService.generateToken(savedUser.getEmail()); // TODO: Fixed type - was passing User instead of String
 
         // Send Verification Email
         String verificationToken = UUID.randomUUID().toString();
@@ -56,7 +59,6 @@ public class AuthService {
                 "token", token
         );
     }
-
     public AuthResponse login(AuthRequest request) {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
@@ -69,7 +71,7 @@ public class AuthService {
             throw new RuntimeException("Access Denied: Please verify your email first.");
         }
 
-        String token = jwtService.generateToken(user);
+        String token = jwtService.generateToken(user.getEmail()); // TODO: Fixed type - was passing User instead of String
 
         boolean setupRequired = false;
         if (user.getRole() == User.Role.ADMIN) {
@@ -104,3 +106,4 @@ public class AuthService {
         userRepository.save(currentUser);
     }
 }
+

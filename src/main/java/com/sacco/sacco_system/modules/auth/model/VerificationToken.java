@@ -1,4 +1,4 @@
-package com.sacco.sacco_system.modules.auth.model; // ✅ New Package
+package com.sacco.sacco_system.modules.auth.model; // âœ… New Package
 
 import jakarta.persistence.*;
 import lombok.Data;
@@ -34,3 +34,4 @@ public class VerificationToken {
         return LocalDateTime.now().plusMinutes(expiryTimeInMinutes);
     }
 }
+
