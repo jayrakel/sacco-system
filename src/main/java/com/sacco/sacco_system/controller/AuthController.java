@@ -1,8 +1,8 @@
 package com.sacco.sacco_system.controller;
 
-import com.sacco.sacco_system.dto.AuthRequest;
-import com.sacco.sacco_system.dto.AuthResponse;
-import com.sacco.sacco_system.dto.ChangePasswordRequest;
+import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
+import com.sacco.sacco_system.modules.auth.dto.AuthResponse;
+import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
 import com.sacco.sacco_system.entity.User;
 import com.sacco.sacco_system.entity.VerificationToken;
 import com.sacco.sacco_system.repository.UserRepository;

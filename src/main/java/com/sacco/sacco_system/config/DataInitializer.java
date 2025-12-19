@@ -1,7 +1,7 @@
 package com.sacco.sacco_system.config;
 
-import com.sacco.sacco_system.entity.User;
-import com.sacco.sacco_system.repository.UserRepository;
+import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.auth.repository.UserRepository;
 import com.sacco.sacco_system.service.AccountingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-package com.sacco.sacco_system.dto;
+package com.sacco.sacco_system.modules.auth.dto;
 
 import lombok.Data;
 
