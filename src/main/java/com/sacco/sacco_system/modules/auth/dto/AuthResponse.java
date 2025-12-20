@@ -14,11 +14,15 @@ public class AuthResponse {
     private String token;
     private UUID userId;
     private String username; // This is the email
-    private String firstName; // âœ… NEW
-    private String lastName;  // âœ… NEW
-    private String memberNumber; // âœ… NEW
+    private String firstName;
+    private String lastName;
+    private String memberNumber;
     private String role;
     private boolean mustChangePassword;
     private boolean systemSetupRequired;
+
+    // NEW: Dual login indicators
+    private boolean isOfficialLogin; // True if logged in with official SACCO email
+    private boolean isMemberLogin;   // True if logged in with personal email
 }
 

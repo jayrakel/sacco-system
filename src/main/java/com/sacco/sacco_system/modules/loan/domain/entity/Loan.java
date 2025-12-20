@@ -87,7 +87,7 @@ public class Loan {
         DRAFT,                  // 1. Member editing
         GUARANTORS_PENDING,     // 2. Sent to guarantors (Waiting for them to accept)
         GUARANTORS_APPROVED,    // 3. All guarantors accepted
-        APPLICATION_FEE_PENDING,// 4. Waiting for fee payment
+        APPLICATION_FEE_PENDING,// 4. Waiting for fee payment (after guarantor approval)
         SUBMITTED,              // 5. Sent to Loan Officer
         LOAN_OFFICER_REVIEW,    // 6. Officer reviewing
         SECRETARY_TABLED,       // 7. Tabled for meeting

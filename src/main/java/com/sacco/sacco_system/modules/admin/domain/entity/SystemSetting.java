@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.admin.domain.entity;
-import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

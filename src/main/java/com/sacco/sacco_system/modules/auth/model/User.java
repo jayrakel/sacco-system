@@ -27,6 +27,9 @@ public class User implements UserDetails {
     @Column(unique = true, nullable = false)
     private String email;
 
+    @Column(unique = true)
+    private String officialEmail; // SACCO email for administrative access (e.g., chairperson@sacco.com)
+
     private String password;
     private String firstName;
     private String lastName;

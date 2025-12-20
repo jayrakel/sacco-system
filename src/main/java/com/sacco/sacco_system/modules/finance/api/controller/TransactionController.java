@@ -85,6 +85,25 @@ public class TransactionController {
                 .body(file);
     }
 
+    @PostMapping("/record-payment")
+    public ResponseEntity<Map<String, Object>> recordProcessingFeePayment(
+            @RequestParam BigDecimal amount,
+            @RequestParam String referenceCode,
+            @RequestParam String type) {
+        try {
+            transactionService.recordProcessingFee(amount, referenceCode, type);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Processing fee payment recorded successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
+    }
+
     // âœ… Simple Inner DTO Class
     @Data
     @Builder

@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.admin.domain.service;
-import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 
 import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
@@ -28,13 +27,23 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // âœ… FIXED: Used Map.ofEntries to support > 10 items
+    // ✅ FIXED: Used Map.ofEntries to support > 10 items
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
             entry("LOAN_INTEREST_RATE", "12"),
             entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             entry("LOAN_LIMIT_MULTIPLIER", "3"),
+            entry("LOAN_APPLICATION_FEE", "500"),
+            // Loan Eligibility Thresholds
+            entry("MIN_SAVINGS_FOR_LOAN", "5000"),
+            entry("MIN_MONTHS_MEMBERSHIP", "3"),
+            entry("MIN_SHARE_CAPITAL", "1000"),
+            // Guarantor Eligibility Thresholds
+            entry("MIN_SAVINGS_TO_GUARANTEE", "10000"),
+            entry("MIN_MONTHS_TO_GUARANTEE", "6"),
+            entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
+            // Branding
             entry("SACCO_NAME", "Sacco System"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
             entry("SACCO_LOGO", ""),

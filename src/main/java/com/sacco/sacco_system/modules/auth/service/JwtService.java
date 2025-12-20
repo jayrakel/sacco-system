@@ -31,6 +31,16 @@ public class JwtService {
         return createToken(claims, username);
     }
 
+    /**
+     * Generate token with view mode (MEMBER or ADMIN)
+     * Used when officials switch between member and admin views
+     */
+    public String generateTokenWithView(String username, String viewMode) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("viewMode", viewMode);
+        return createToken(claims, username);
+    }
+
     private String createToken(Map<String, Object> claims, String subject) {
         Date now = new Date();
         Date expirationDate = new Date(now.getTime() + jwtExpiration);

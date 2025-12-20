@@ -124,9 +124,51 @@ public class TransactionService {
         }
         return escapedData;
     }
+
+    /**
+     * Record processing fee payment for new loan applications
+     */
+    @Transactional
+    public void recordProcessingFee(BigDecimal amount, String referenceCode, String type) {
+        // Get current authenticated member from security context
+        Member member = getCurrentMember();
+
+        // Create transaction record for the processing fee
+        Transaction transaction = Transaction.builder()
+                .member(member)
+                .amount(amount)
+                .type(Transaction.TransactionType.PROCESSING_FEE)
+                .paymentMethod(Transaction.PaymentMethod.MPESA)
+                .referenceCode(referenceCode)
+                .description("Loan application processing fee")
+                .build();
+
+        transactionRepository.save(transaction);
+
+        // Post to accounting
+        accountingService.postEvent("PROCESSING_FEE",
+                "Loan Application Fee - " + member.getMemberNumber(),
+                referenceCode,
+                amount);
+    }
+
+    private Member getCurrentMember() {
+        // Get the authenticated user from Spring Security context
+        org.springframework.security.core.Authentication auth =
+            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth != null && auth.getPrincipal() instanceof com.sacco.sacco_system.modules.auth.model.User) {
+            com.sacco.sacco_system.modules.auth.model.User user =
+                (com.sacco.sacco_system.modules.auth.model.User) auth.getPrincipal();
+            // Fetch member by member number from user
+            if (user.getMemberNumber() != null) {
+                return savingsAccountRepository.findAll().stream()
+                    .map(SavingsAccount::getMember)
+                    .filter(m -> m.getMemberNumber().equals(user.getMemberNumber()))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+            }
+        }
+        throw new RuntimeException("Unable to identify current member");
+    }
 }
-
-
-
-
-

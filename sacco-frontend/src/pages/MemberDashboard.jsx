@@ -101,7 +101,7 @@ export default function MemberDashboard() {
                 </div>
 
                 <div className="min-h-[400px] mt-6">
-                    {activeTab === 'overview' && <MemberOverview />}
+                    {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
                     {activeTab === 'loans' && <MemberLoans />}
                 </div>

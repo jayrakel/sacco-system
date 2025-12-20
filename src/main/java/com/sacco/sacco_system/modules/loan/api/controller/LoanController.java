@@ -10,6 +10,8 @@ import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.admin.domain.service.AuditService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanCalculatorService;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanAutomationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,12 +32,13 @@ public class LoanController {
 
     private final LoanService loanService;
     private final LoanLimitService loanLimitService;
+    private final LoanCalculatorService loanCalculatorService;
+    private final LoanAutomationService loanAutomationService;
     private final LoanProductRepository loanProductRepository;
     private final MemberRepository memberRepository;
     private final AuditService auditService;
-
-    // âœ… FIX: Inject UserRepository to resolve the error
     private final UserRepository userRepository;
+    private final com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService systemSettingService;
 
     // ========================================================================
     // 1. LOAN PRODUCTS
@@ -74,6 +77,96 @@ public class LoanController {
                 "limit", limit,
                 "savings", member.getTotalSavings()
         ));
+    }
+
+    @GetMapping("/eligibility/check")
+    public ResponseEntity<Map<String, Object>> checkLoanEligibility() {
+        try {
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            Member member = memberRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            Map<String, Object> eligibilityResult = loanService.checkLoanEligibility(member);
+            return ResponseEntity.ok(eligibilityResult);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/check-fee-status")
+    public ResponseEntity<Map<String, Object>> checkFeeStatus() {
+        try {
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            Member member = memberRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            Map<String, Object> feeStatus = loanService.checkApplicationFeeStatus(member);
+            return ResponseEntity.ok(feeStatus);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/application-fee")
+    public ResponseEntity<Map<String, Object>> getApplicationFee() {
+        try {
+            BigDecimal fee = BigDecimal.valueOf(systemSettingService.getDouble("LOAN_APPLICATION_FEE"));
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "amount", fee,
+                "message", "Loan application fee amount"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/pay-application-fee")
+    public ResponseEntity<Map<String, Object>> payApplicationFee(@RequestParam String referenceCode) {
+        try {
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
+            Member member = memberRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            LoanDTO draftLoan = loanService.payApplicationFeeAndCreateDraft(member, referenceCode);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Fee paid successfully. Draft application created.",
+                "data", draftLoan
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/guarantor/check-eligibility")
+    public ResponseEntity<Map<String, Object>> checkGuarantorEligibility(
+            @RequestParam UUID memberId,
+            @RequestParam BigDecimal guaranteeAmount) {
+        try {
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            Map<String, Object> eligibilityResult = loanService.checkGuarantorEligibility(member, guaranteeAmount);
+            return ResponseEntity.ok(eligibilityResult);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", e.getMessage()
+            ));
+        }
     }
 
     @PostMapping("/apply")
@@ -183,6 +276,156 @@ public class LoanController {
                     "message", "Review Started",
                     "data", loanService.officerReview(id)
             ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // LOAN OFFICER: DETAILED REVIEW
+    // ========================================================================
+
+    /**
+     * Get comprehensive loan review details for loan officer
+     * Shows all factors that should be considered before approval
+     */
+    @GetMapping("/{id}/review-details")
+    public ResponseEntity<Map<String, Object>> getLoanReviewDetails(@PathVariable UUID id) {
+        try {
+            // Get loan details
+            LoanDTO loan = loanService.getLoanById(id);
+            Member member = memberRepository.findById(UUID.fromString(loan.getMemberId().toString()))
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            Map<String, Object> review = new HashMap<>();
+
+            // 1. Basic Loan Information
+            review.put("loan", loan);
+
+            // 2. Member Information
+            Map<String, Object> memberInfo = new HashMap<>();
+            memberInfo.put("memberNumber", member.getMemberNumber());
+            memberInfo.put("fullName", member.getFirstName() + " " + member.getLastName());
+            memberInfo.put("status", member.getStatus());
+            memberInfo.put("totalSavings", member.getTotalSavings());
+            memberInfo.put("totalShares", member.getTotalShares());
+            memberInfo.put("memberSince", member.getCreatedAt());
+            review.put("memberInfo", memberInfo);
+
+            // 3. STRICT Loan Limit Calculation with Breakdown
+            Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
+            review.put("loanLimitAnalysis", limitDetails);
+
+            // 4. Guarantor Analysis
+            List<GuarantorDTO> guarantors = loanService.getLoanGuarantors(id);
+            review.put("guarantors", guarantors);
+            review.put("guarantorCount", guarantors.size());
+
+            long acceptedCount = guarantors.stream()
+                    .filter(g -> "ACCEPTED".equals(g.getStatus()))
+                    .count();
+            long pendingCount = guarantors.stream()
+                    .filter(g -> "PENDING".equals(g.getStatus()))
+                    .count();
+            long declinedCount = guarantors.stream()
+                    .filter(g -> "DECLINED".equals(g.getStatus()))
+                    .count();
+
+            review.put("guarantorsAccepted", acceptedCount);
+            review.put("guarantorsPending", pendingCount);
+            review.put("guarantorsDeclined", declinedCount);
+
+            // 5. All Member Loans (History Check)
+            List<LoanDTO> memberLoans = loanService.getLoansByMemberId(member.getId());
+            review.put("totalLoansApplied", memberLoans.size());
+
+            // Break down by status
+            long activeLoans = memberLoans.stream()
+                    .filter(l -> "ACTIVE".equals(l.getStatus()) || "DISBURSED".equals(l.getStatus()))
+                    .count();
+            long completedLoans = memberLoans.stream()
+                    .filter(l -> "COMPLETED".equals(l.getStatus()))
+                    .count();
+            long defaultedLoans = memberLoans.stream()
+                    .filter(l -> "DEFAULTED".equals(l.getStatus()) || "WRITTEN_OFF".equals(l.getStatus()))
+                    .count();
+            long pendingApprovalLoans = memberLoans.stream()
+                    .filter(l -> l.getStatus().contains("PENDING") ||
+                                l.getStatus().contains("REVIEW") ||
+                                l.getStatus().contains("TABLED") ||
+                                l.getStatus().contains("VOTING") ||
+                                l.getStatus().contains("APPROVED") ||
+                                l.getStatus().contains("DISBURSEMENT"))
+                    .count();
+
+            review.put("activeLoans", activeLoans);
+            review.put("completedLoans", completedLoans);
+            review.put("defaultedLoans", defaultedLoans);
+            review.put("pendingApprovalLoans", pendingApprovalLoans - 1); // Exclude current loan
+
+            // 6. Risk Assessment Flags
+            List<String> riskFlags = new java.util.ArrayList<>();
+            List<String> approvalChecks = new java.util.ArrayList<>();
+
+            // Check 1: Has defaults
+            if ((boolean) limitDetails.get("hasDefaults")) {
+                riskFlags.add("⛔ Member has defaulted loans - HIGH RISK");
+            } else {
+                approvalChecks.add("✅ No loan defaults");
+            }
+
+            // Check 2: Exceeds limit
+            BigDecimal availableLimit = (BigDecimal) limitDetails.get("availableLimit");
+            BigDecimal requestedAmount = loan.getPrincipalAmount();
+            if (requestedAmount.compareTo(availableLimit) > 0) {
+                riskFlags.add("⚠️ Requested amount (KES " + requestedAmount + ") exceeds available limit (KES " + availableLimit + ")");
+            } else {
+                approvalChecks.add("✅ Amount within available limit");
+            }
+
+            // Check 3: Has other pending loans
+            if (pendingApprovalLoans > 1) {
+                riskFlags.add("⚠️ Member has " + (pendingApprovalLoans - 1) + " other loan(s) pending approval/disbursement");
+            } else {
+                approvalChecks.add("✅ No other pending loan applications");
+            }
+
+            // Check 4: Application fee paid
+            if (loan.getProcessingFee() != null && loan.getProcessingFee().compareTo(BigDecimal.ZERO) > 0) {
+                approvalChecks.add("✅ Application fee paid");
+            }
+
+            // Check 5: All guarantors accepted
+            if (declinedCount > 0) {
+                riskFlags.add("⚠️ " + declinedCount + " guarantor(s) declined");
+            } else if (pendingCount > 0) {
+                riskFlags.add("⏳ " + pendingCount + " guarantor(s) still pending");
+            } else if (acceptedCount == guarantors.size() && acceptedCount > 0) {
+                approvalChecks.add("✅ All guarantors accepted");
+            }
+
+            // Check 6: Member account status
+            if (member.getStatus() == Member.MemberStatus.ACTIVE) {
+                approvalChecks.add("✅ Member account is active");
+            } else {
+                riskFlags.add("⛔ Member account is " + member.getStatus());
+            }
+
+            review.put("riskFlags", riskFlags);
+            review.put("approvalChecks", approvalChecks);
+
+            // 7. Final Recommendation
+            boolean recommended = riskFlags.isEmpty() &&
+                                 availableLimit.compareTo(requestedAmount) >= 0 &&
+                                 !(boolean) limitDetails.get("hasDefaults");
+
+            review.put("recommendedForApproval", recommended);
+            review.put("recommendation", recommended ?
+                "✅ This loan meets all criteria and can be approved" :
+                "⚠️ Please review risk flags before approving");
+
+            return ResponseEntity.ok(Map.of("success", true, "data", review));
+
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -398,7 +641,7 @@ public class LoanController {
         }
     }
 
-    // âœ… ADMIN: Final System Approval
+    // ✅ ADMIN: Final System Approval
     @PostMapping("/{id}/admin-approve")
     public ResponseEntity<Map<String, Object>> adminApprove(@PathVariable UUID id) {
         try {
@@ -408,7 +651,142 @@ public class LoanController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
+
+    // ========================================================================
+    // 🚀 POWER FEATURES: Advanced Loan Calculations
+    // ========================================================================
+
+    /**
+     * Calculate loan payment schedule (amortization)
+     */
+    @GetMapping("/calculator/schedule")
+    public ResponseEntity<Map<String, Object>> calculateSchedule(
+            @RequestParam BigDecimal principal,
+            @RequestParam BigDecimal interestRate,
+            @RequestParam Integer months) {
+        try {
+            List<LoanCalculatorService.PaymentScheduleItem> schedule =
+                    loanCalculatorService.generateAmortizationSchedule(
+                            principal, interestRate, months, LocalDate.now());
+
+            BigDecimal totalInterest = loanCalculatorService.calculateTotalInterest(principal, interestRate, months);
+            BigDecimal monthlyPayment = loanCalculatorService.calculateMonthlyPayment(principal, interestRate, months);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", Map.of(
+                            "schedule", schedule,
+                            "monthlyPayment", monthlyPayment,
+                            "totalInterest", totalInterest,
+                            "totalPayment", monthlyPayment.multiply(BigDecimal.valueOf(months))
+                    )
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Compare different loan term options
+     */
+    @GetMapping("/calculator/compare")
+    public ResponseEntity<Map<String, Object>> compareLoanOptions(
+            @RequestParam BigDecimal principal,
+            @RequestParam BigDecimal interestRate,
+            @RequestParam List<Integer> terms) {
+        try {
+            List<Map<String, Object>> comparisons =
+                    loanCalculatorService.compareLoanOptions(principal, interestRate, terms);
+
+            return ResponseEntity.ok(Map.of("success", true, "data", comparisons));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Calculate affordability (what member can borrow)
+     */
+    @GetMapping("/calculator/affordability")
+    public ResponseEntity<Map<String, Object>> calculateAffordability(
+            @RequestParam BigDecimal monthlyIncome,
+            @RequestParam BigDecimal existingObligations,
+            @RequestParam(defaultValue = "40") BigDecimal maxDebtRatio,
+            @RequestParam BigDecimal interestRate,
+            @RequestParam Integer months) {
+        try {
+            Map<String, Object> affordability = loanCalculatorService.calculateAffordability(
+                    monthlyIncome, existingObligations, maxDebtRatio, interestRate, months);
+
+            return ResponseEntity.ok(Map.of("success", true, "data", affordability));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Calculate early repayment amount
+     */
+    @GetMapping("/{id}/early-repayment")
+    public ResponseEntity<Map<String, Object>> calculateEarlyRepayment(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "2") BigDecimal penaltyRate) {
+        try {
+            // Get loan from repository directly
+            com.sacco.sacco_system.modules.loan.domain.entity.Loan loan =
+                    loanService.getLoanRepository().findById(id)
+                            .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+            Map<String, BigDecimal> calculation = loanCalculatorService.calculateEarlyRepayment(
+                    loan, LocalDate.now(), penaltyRate);
+
+            return ResponseEntity.ok(Map.of("success", true, "data", calculation));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ========================================================================
+    // 🤖 POWER FEATURES: Automation & Scheduled Tasks
+    // ========================================================================
+
+    /**
+     * Manually trigger interest calculation (ADMIN only)
+     */
+    @PostMapping("/automation/calculate-interest")
+    public ResponseEntity<Map<String, Object>> manualInterestCalculation() {
+        try {
+            Map<String, Object> result = loanAutomationService.manualInterestCalculation(LocalDate.now());
+            return ResponseEntity.ok(Map.of("success", true, "data", result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Get automation status
+     */
+    @GetMapping("/automation/status")
+    public ResponseEntity<Map<String, Object>> getAutomationStatus() {
+        try {
+            Map<String, Object> status = new HashMap<>();
+            status.put("dailyInterestCalculation", "Scheduled at 2:00 AM daily");
+            status.put("overdueCheck", "Scheduled at 3:00 AM daily");
+            status.put("monthlyStatements", "Scheduled at 4:00 AM on 1st of month");
+            status.put("paymentReminders", "Scheduled at 8:00 AM daily");
+            status.put("status", "ACTIVE");
+
+            return ResponseEntity.ok(Map.of("success", true, "data", status));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
 }
+
+
+
+
+
 
 
 

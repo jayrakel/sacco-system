@@ -13,7 +13,10 @@ public interface GuarantorRepository extends JpaRepository<Guarantor, UUID> {
     List<Guarantor> findByLoan(Loan loan);
     long countByLoanAndStatus(Loan loan, Guarantor.GuarantorStatus status);
 
-    // âœ… NEW: Find requests sent TO this member
+    // Find all guarantor requests for a member (all statuses)
+    List<Guarantor> findByMemberId(UUID memberId);
+
+    // Find guarantor requests for a member by status
     List<Guarantor> findByMemberIdAndStatus(UUID memberId, Guarantor.GuarantorStatus status);
 }
 

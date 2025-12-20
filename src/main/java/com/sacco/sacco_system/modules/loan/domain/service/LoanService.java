@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,21 +48,244 @@ public class LoanService {
     private final NotificationService notificationService;
     private final LoanLimitService loanLimitService;
     private final UserRepository userRepository;
+    private final RepaymentScheduleService repaymentScheduleService;
 
     // ========================================================================
     // 1. MEMBER: APPLICATION PHASE
     // ========================================================================
+
+    /**
+     * Check if a member is eligible to apply for a loan based on system thresholds
+     */
+    public Map<String, Object> checkLoanEligibility(Member member) {
+        Map<String, Object> result = new HashMap<>();
+        List<String> failureReasons = new ArrayList<>();
+        boolean eligible = true;
+
+        // Get system threshold settings
+        BigDecimal minSavings = BigDecimal.valueOf(systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN"));
+        int minMonths = (int) systemSettingService.getDouble("MIN_MONTHS_MEMBERSHIP");
+        BigDecimal minShareCapital = BigDecimal.valueOf(systemSettingService.getDouble("MIN_SHARE_CAPITAL"));
+
+        // Check 1: Minimum Savings
+        BigDecimal currentSavings = member.getTotalSavings() != null ? member.getTotalSavings() : BigDecimal.ZERO;
+        if (currentSavings.compareTo(minSavings) < 0) {
+            eligible = false;
+            failureReasons.add("Insufficient savings. Required: KES " + minSavings.toPlainString() +
+                ", Current: KES " + currentSavings.toPlainString());
+        }
+
+        // Check 2: Membership Duration
+        if (member.getCreatedAt() != null) {
+            long monthsMember = java.time.temporal.ChronoUnit.MONTHS.between(
+                member.getCreatedAt().toLocalDate(),
+                LocalDate.now()
+            );
+            if (monthsMember < minMonths) {
+                eligible = false;
+                failureReasons.add("Membership too recent. Required: " + minMonths +
+                    " months, Current: " + monthsMember + " months");
+            }
+        }
+
+        // Check 3: Share Capital (if applicable)
+        BigDecimal currentShareCapital = member.getTotalShares() != null ? member.getTotalShares() : BigDecimal.ZERO;
+        if (minShareCapital.compareTo(BigDecimal.ZERO) > 0 && currentShareCapital.compareTo(minShareCapital) < 0) {
+            eligible = false;
+            failureReasons.add("Insufficient share capital. Required: KES " + minShareCapital.toPlainString() +
+                ", Current: KES " + currentShareCapital.toPlainString());
+        }
+
+        // Check 4: Member must be active
+        if (member.getStatus() != Member.MemberStatus.ACTIVE) {
+            eligible = false;
+            failureReasons.add("Member account is not active. Current status: " + member.getStatus());
+        }
+
+        // Build response
+        result.put("success", true);
+        result.put("eligible", eligible);
+        result.put("memberName", member.getFirstName() + " " + member.getLastName());
+        result.put("memberNumber", member.getMemberNumber());
+        result.put("currentSavings", currentSavings);
+        result.put("currentShareCapital", currentShareCapital);
+        result.put("requiredSavings", minSavings);
+        result.put("requiredMonths", minMonths);
+        result.put("requiredShareCapital", minShareCapital);
+
+        if (!eligible) {
+            result.put("reasons", failureReasons);
+            result.put("message", "You do not meet the loan eligibility requirements");
+        } else {
+            result.put("message", "You are eligible to apply for a loan");
+            result.put("maxLoanAmount", loanLimitService.calculateMemberLoanLimit(member));
+        }
+
+        return result;
+    }
+
+    /**
+     * DEPRECATED: No longer used - fee payment moved to after guarantor approval
+     * Check if member has already paid application fee but hasn't completed application
+     */
+    @Deprecated
+    public Map<String, Object> checkApplicationFeeStatus(Member member) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("feePaid", false);
+        result.put("hasDraft", false);
+        result.put("message", "Fee payment is now done after guarantor approval");
+        return result;
+    }
+
+    /**
+     * DEPRECATED: No longer used - fee payment moved to after guarantor approval
+     * Pay application fee and create a draft loan marked as FEE_PAID
+     */
+    @Deprecated
+    @Transactional
+    public LoanDTO payApplicationFeeAndCreateDraft(Member member, String referenceCode) {
+        throw new RuntimeException("This method is deprecated. Fee payment is now done after guarantor approval.");
+    }
+
+    /**
+     * Check if a member is eligible to be a guarantor
+     */
+    public Map<String, Object> checkGuarantorEligibility(Member member, BigDecimal guaranteeAmount) {
+        Map<String, Object> result = new HashMap<>();
+        List<String> failureReasons = new ArrayList<>();
+        boolean eligible = true;
+
+        // Get system threshold settings
+        BigDecimal minSavings = BigDecimal.valueOf(systemSettingService.getDouble("MIN_SAVINGS_TO_GUARANTEE"));
+        int minMonths = (int) systemSettingService.getDouble("MIN_MONTHS_TO_GUARANTEE");
+        double maxGuarantorRatio = systemSettingService.getDouble("MAX_GUARANTOR_LIMIT_RATIO");
+
+        // Check 1: Minimum Savings to Guarantee
+        BigDecimal currentSavings = member.getTotalSavings() != null ? member.getTotalSavings() : BigDecimal.ZERO;
+        if (currentSavings.compareTo(minSavings) < 0) {
+            eligible = false;
+            failureReasons.add("Insufficient savings to guarantee. Required: KES " + minSavings.toPlainString() +
+                ", Current: KES " + currentSavings.toPlainString());
+        }
+
+        // Check 2: Membership Duration
+        if (member.getCreatedAt() != null) {
+            long monthsMember = java.time.temporal.ChronoUnit.MONTHS.between(
+                member.getCreatedAt().toLocalDate(),
+                LocalDate.now()
+            );
+            if (monthsMember < minMonths) {
+                eligible = false;
+                failureReasons.add("Membership too recent to guarantee. Required: " + minMonths +
+                    " months, Current: " + monthsMember + " months");
+            }
+        }
+
+        // Check 3: Guarantee Amount vs Savings
+        if (guaranteeAmount != null && currentSavings.compareTo(guaranteeAmount) < 0) {
+            eligible = false;
+            failureReasons.add("Cannot guarantee KES " + guaranteeAmount.toPlainString() +
+                " with only KES " + currentSavings.toPlainString() + " in savings");
+        }
+
+        // Check 4: Total Outstanding Guarantees
+        // Calculate current exposure from existing guarantor commitments
+        // Include BOTH ACCEPTED and PENDING (since pending are still commitments)
+        BigDecimal currentGuarantorExposure = guarantorRepository.findByMemberId(member.getId()).stream()
+            .filter(g -> g.getStatus() == Guarantor.GuarantorStatus.ACCEPTED ||
+                        g.getStatus() == Guarantor.GuarantorStatus.PENDING)
+            .map(Guarantor::getGuaranteeAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal maxGuarantorLimit = currentSavings.multiply(BigDecimal.valueOf(maxGuarantorRatio));
+        BigDecimal availableToGuarantee = maxGuarantorLimit.subtract(currentGuarantorExposure);
+
+        if (guaranteeAmount != null && guaranteeAmount.compareTo(availableToGuarantee) > 0) {
+            eligible = false;
+            failureReasons.add("Exceeds guarantor limit. Available to guarantee: KES " +
+                availableToGuarantee.toPlainString() + ", Requested: KES " + guaranteeAmount.toPlainString());
+        }
+
+        // Check 5: Member must be active
+        if (member.getStatus() != Member.MemberStatus.ACTIVE) {
+            eligible = false;
+            failureReasons.add("Member account is not active. Current status: " + member.getStatus());
+        }
+
+        // Check 6: Cannot have active loan default
+        List<Loan> memberLoans = loanRepository.findByMemberId(member.getId());
+        boolean hasDefault = memberLoans.stream()
+            .anyMatch(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED);
+
+        if (hasDefault) {
+            eligible = false;
+            failureReasons.add("Cannot guarantee while having defaulted loans");
+        }
+
+        // Build response
+        result.put("success", true);
+        result.put("eligible", eligible);
+        result.put("memberName", member.getFirstName() + " " + member.getLastName());
+        result.put("memberNumber", member.getMemberNumber());
+        result.put("currentSavings", currentSavings);
+        result.put("currentGuarantorExposure", currentGuarantorExposure);
+        result.put("availableToGuarantee", availableToGuarantee);
+        result.put("requiredSavings", minSavings);
+        result.put("requiredMonths", minMonths);
+
+        if (!eligible) {
+            result.put("reasons", failureReasons);
+            result.put("message", "This member cannot be a guarantor");
+        } else {
+            result.put("message", "This member is eligible to be a guarantor");
+        }
+
+        return result;
+    }
+
     public LoanDTO initiateApplication(UUID memberId, UUID productId, BigDecimal amount, Integer duration, String unit) {
         Member member = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
 
+        // Check 1: Product limit
         if (amount.compareTo(product.getMaxLimit()) > 0)
             throw new RuntimeException("Amount exceeds product limit of " + product.getMaxLimit());
 
-        BigDecimal memberLimit = loanLimitService.calculateMemberLoanLimit(member);
-        if (amount.compareTo(memberLimit) > 0) {
-            throw new RuntimeException("Amount exceeds your qualifying limit of KES " + memberLimit);
+        // Check 2: STRICT member limit (includes pending disbursements)
+        Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
+        BigDecimal availableLimit = (BigDecimal) limitDetails.get("availableLimit");
+
+        if (amount.compareTo(availableLimit) > 0) {
+            // Build detailed error message
+            StringBuilder errorMsg = new StringBuilder("Amount exceeds your available limit. ");
+            errorMsg.append("Available: KES ").append(availableLimit).append(". ");
+
+            BigDecimal pendingDisbursement = (BigDecimal) limitDetails.get("pendingDisbursement");
+            BigDecimal underReview = (BigDecimal) limitDetails.get("underReview");
+
+            if (pendingDisbursement.compareTo(BigDecimal.ZERO) > 0) {
+                errorMsg.append("You have KES ").append(pendingDisbursement)
+                       .append(" in loans pending disbursement. ");
+            }
+            if (underReview.compareTo(BigDecimal.ZERO) > 0) {
+                errorMsg.append("You have KES ").append(underReview)
+                       .append(" in loans under review. ");
+            }
+
+            throw new RuntimeException(errorMsg.toString());
         }
+
+        // Check 3: Has defaults
+        if ((boolean) limitDetails.get("hasDefaults")) {
+            throw new RuntimeException("Cannot apply for loan while having defaulted or written-off loans. Please clear your defaults first.");
+        }
+        // Calculate weekly repayment amount
+        BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
+                amount,
+                product.getInterestRate(),
+                duration,
+                Loan.DurationUnit.valueOf(unit)
+        );
 
         Loan loan = Loan.builder()
                 .loanNumber("LN" + System.currentTimeMillis())
@@ -70,6 +294,7 @@ public class LoanService {
                 .principalAmount(amount)
                 .duration(duration)
                 .durationUnit(Loan.DurationUnit.valueOf(unit))
+                .monthlyRepayment(weeklyRepayment) // Store weekly repayment amount
                 .status(Loan.LoanStatus.DRAFT)
                 .applicationDate(LocalDate.now())
                 .votesYes(0).votesNo(0)
@@ -93,6 +318,15 @@ public class LoanService {
         loan.setPrincipalAmount(amount);
         loan.setDuration(duration);
         loan.setDurationUnit(Loan.DurationUnit.valueOf(unit));
+
+        // Recalculate weekly repayment
+        BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
+                amount,
+                loan.getProduct().getInterestRate(),
+                duration,
+                Loan.DurationUnit.valueOf(unit)
+        );
+        loan.setMonthlyRepayment(weeklyRepayment);
 
         return convertToDTO(loanRepository.save(loan));
     }
@@ -169,13 +403,19 @@ public class LoanService {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
 
+        // Check 1: Cannot guarantee self
         if(guarantor.getId().equals(loan.getMember().getId()))
             throw new RuntimeException("Cannot guarantee self.");
 
-        if(guarantor.getTotalSavings().compareTo(amount) < 0){
-            throw new RuntimeException("Guarantor " + guarantor.getFirstName() + " does not have enough savings (KES " + guarantor.getTotalSavings() + ") to cover KES " + amount);
+        // Check 2: Run full eligibility check
+        Map<String, Object> eligibility = checkGuarantorEligibility(guarantor, amount);
+        if (!(boolean) eligibility.get("eligible")) {
+            @SuppressWarnings("unchecked")
+            List<String> reasons = (List<String>) eligibility.get("reasons");
+            throw new RuntimeException("Guarantor not eligible: " + String.join("; ", reasons));
         }
 
+        // All checks passed - create guarantor request
         Guarantor g = Guarantor.builder()
                 .loan(loan)
                 .member(guarantor)
@@ -234,9 +474,12 @@ public class LoanService {
 
         if (pending == 0) {
             if (declined == 0) {
-                loan.setStatus(Loan.LoanStatus.GUARANTORS_APPROVED);
-                // notificationService.createNotification(loan.getMember().getUser(), "Guarantors Approved", "All guarantors have accepted! You can now pay the application fee.", Notification.NotificationType.SUCCESS);
+                // All guarantors accepted - move to fee payment stage
+                loan.setStatus(Loan.LoanStatus.APPLICATION_FEE_PENDING);
+                // Notify member to pay processing fee
+                // notificationService.createNotification(loan.getMember().getUser(), "Guarantors Approved", "All guarantors have accepted! Please pay the processing fee to submit your application.", Notification.NotificationType.SUCCESS);
             } else {
+                // Some declined - notify member
                 // notificationService.createNotification(loan.getMember().getUser(), "Guarantor Update", "All guarantors responded, but some declined. Please review.", Notification.NotificationType.WARNING);
             }
             loanRepository.save(loan);
@@ -244,15 +487,26 @@ public class LoanService {
     }
     public void payApplicationFee(UUID loanId, String refCode) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
-        if(loan.getStatus() != Loan.LoanStatus.GUARANTORS_APPROVED)
-            throw new RuntimeException("Guarantors must approve before fee payment");
+
+        // Check if loan is in the correct status for fee payment
+        if(loan.getStatus() != Loan.LoanStatus.APPLICATION_FEE_PENDING)
+            throw new RuntimeException("Loan must be in APPLICATION_FEE_PENDING status. Current status: " + loan.getStatus());
 
         BigDecimal fee = loan.getProduct().getProcessingFee();
         if (fee == null) fee = BigDecimal.ZERO;
 
-        // TODO: Transaction class not properly imported - commenting out transaction creation
-        // Transaction tx = Transaction.builder().member(loan.getMember()).amount(fee).type(Transaction.TransactionType.PROCESSING_FEE).referenceCode(refCode).build();
-        // transactionRepository.save(tx);
+        // Record transaction
+        Transaction tx = Transaction.builder()
+                .member(loan.getMember())
+                .amount(fee)
+                .type(Transaction.TransactionType.PROCESSING_FEE)
+                .paymentMethod(Transaction.PaymentMethod.MPESA)
+                .referenceCode(refCode)
+                .description("Loan processing fee - " + loan.getLoanNumber())
+                .build();
+        transactionRepository.save(tx);
+
+        // Post to accounting
         accountingService.postEvent("PROCESSING_FEE", "Loan Fee " + loan.getLoanNumber(), refCode, fee);
 
         loan.setApplicationFeePaid(true);
@@ -357,13 +611,24 @@ public class LoanService {
             throw new RuntimeException("Voting is closed for this loan.");
         }
 
-        // âœ… RULE 1: Prevent Double Voting
+        // Get the voter's user record
+        User voter = userRepository.findById(voterId)
+                .orElseThrow(() -> new RuntimeException("Voter not found"));
+
+        // Get voter's member record if they have one
+        Member voterMember = null;
+        if (voter.getMemberNumber() != null) {
+            voterMember = memberRepository.findByMemberNumber(voter.getMemberNumber()).orElse(null);
+        }
+
+        // ✅ RULE 1: Prevent Double Voting
         if (loan.getVotedUserIds() != null && loan.getVotedUserIds().contains(voterId)) {
             throw new RuntimeException("You have already voted on this loan.");
         }
 
-        // âœ… RULE 2: Conflict of Interest (Self-Voting Blocked)
-        if (loan.getMember().getUser() != null && loan.getMember().getUser().getId().equals(voterId)) {
+        // ✅ RULE 2: Conflict of Interest (Self-Voting Blocked)
+        // Check if voter's member ID matches loan applicant's member ID
+        if (voterMember != null && loan.getMember().getId().equals(voterMember.getId())) {
             throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
         }
 
@@ -380,10 +645,19 @@ public class LoanService {
 
     // 3. GET AGENDA (Filter out voted loans so card disappears)
     public List<LoanDTO> getVotingAgendaForUser(UUID userId) {
+        // Get user's member record
+        User user = userRepository.findById(userId).orElse(null);
+        Member userMember = null;
+        if (user != null && user.getMemberNumber() != null) {
+            userMember = memberRepository.findByMemberNumber(user.getMemberNumber()).orElse(null);
+        }
+
+        final Member finalUserMember = userMember;
+
         return loanRepository.findAll().stream()
                 .filter(l -> l.getStatus() == Loan.LoanStatus.VOTING_OPEN) // Must be open
                 .filter(l -> l.getVotedUserIds() == null || !l.getVotedUserIds().contains(userId)) // Must NOT have voted
-                .filter(l -> l.getMember().getUser() == null || !l.getMember().getUser().getId().equals(userId)) // Optional: Hide own loan from list entirely
+                .filter(l -> finalUserMember == null || !l.getMember().getId().equals(finalUserMember.getId())) // Hide own loan from list
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -552,7 +826,7 @@ public class LoanService {
 
     public LoanDTO approveLoan(UUID id) { officerApprove(id); return getLoanById(id); }
 
-    // âœ… FIX: Updated to use 'finalizeVote' instead of 'secretaryFinalize'
+    //  FIX: Updated to use 'finalizeVote' instead of 'secretaryFinalize'
     public LoanDTO rejectLoan(UUID id) { finalizeVote(id, false, "Rejected"); return getLoanById(id); }
 
     public LoanDTO disburseLoan(UUID id) { treasurerDisburse(id, "CASH-" + System.currentTimeMillis()); return getLoanById(id); }
@@ -599,7 +873,7 @@ public class LoanService {
         return BigDecimal.ZERO;
     }
 
-    // âœ… CORRECTED DTO CONVERSION (MOVED TO BOTTOM, DUPLICATE REMOVED)
+    // CORRECTED DTO CONVERSION (MOVED TO BOTTOM, DUPLICATE REMOVED)
     private LoanDTO convertToDTO(Loan loan) {
         return LoanDTO.builder()
                 .id(loan.getId())
@@ -614,12 +888,28 @@ public class LoanService {
                 .productName(loan.getProduct().getName())
                 .processingFee(loan.getProduct().getProcessingFee())
                 .memberSavings(loan.getMember().getTotalSavings())
-                // âœ… MAP VOTES
+                // ✅ MAP VOTES
                 .votesYes(loan.getVotesYes())
                 .votesNo(loan.getVotesNo())
                 .build();
     }
+
+    /**
+     * Get loan repository (for calculator/automation services)
+     */
+    public LoanRepository getLoanRepository() {
+        return loanRepository;
+    }
+
+    /**
+     * Get loan entity by ID
+     */
+    public Loan getLoanEntity(UUID id) {
+        return loanRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Loan not found with ID: " + id));
+    }
 }
+
 
 
 

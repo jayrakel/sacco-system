@@ -64,14 +64,37 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
         );
 
-        User user = userRepository.findByEmail(request.getUsername())
+        // Find user by either personal or official email
+        User user = userRepository.findByEmailOrOfficialEmail(request.getUsername())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!user.isEmailVerified() && user.getRole() != User.Role.ADMIN) {
             throw new RuntimeException("Access Denied: Please verify your email first.");
         }
 
-        String token = jwtService.generateToken(user.getEmail()); // TODO: Fixed type - was passing User instead of String
+        // Determine portal access based on which email was used
+        String loginEmail = request.getUsername();
+        boolean isOfficialLogin = loginEmail.equals(user.getOfficialEmail());
+        boolean isMemberLogin = loginEmail.equals(user.getEmail());
+
+        // FLEXIBLE LOGIN: If official email not set, allow admin access with personal email
+        if (user.getOfficialEmail() == null && user.getRole() != User.Role.MEMBER) {
+            // No official email set - allow admin access with personal email (for testing/setup)
+            isOfficialLogin = true;
+            isMemberLogin = false;
+        }
+
+        // Validate access
+        if (isOfficialLogin && user.getRole() == User.Role.MEMBER) {
+            throw new RuntimeException("This email is not authorized for administrative access");
+        }
+
+        // Only enforce official email requirement if one is set
+        if (isMemberLogin && user.getRole() != User.Role.MEMBER && user.getMemberNumber() == null && user.getOfficialEmail() != null) {
+            throw new RuntimeException("This email is for member access only. Use your official SACCO email for administrative access");
+        }
+
+        String token = jwtService.generateToken(user.getEmail());
 
         boolean setupRequired = false;
         if (user.getRole() == User.Role.ADMIN) {
@@ -90,6 +113,8 @@ public class AuthService {
                 .role(user.getRole().toString())
                 .mustChangePassword(user.isMustChangePassword())
                 .systemSetupRequired(setupRequired)
+                .isOfficialLogin(isOfficialLogin) // NEW: Tells frontend which dashboard to show
+                .isMemberLogin(isMemberLogin)
                 .build();
     }
 
@@ -106,4 +131,6 @@ public class AuthService {
         userRepository.save(currentUser);
     }
 }
+
+
 

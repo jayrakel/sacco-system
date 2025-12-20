@@ -12,11 +12,19 @@ import VerifyEmail from './pages/VerifyEmail';
 import AddMember from './pages/members/AddMember';
 import SystemSettings from './pages/admin/SystemSettings';
 
-// ✅ NEW: Import Separate Dashboards
+// Role Dashboards
 import LoansDashboard from './pages/LoansDashboard';
 import FinanceDashboard from './pages/FinanceDashboard';
 import ChairpersonDashboard from './pages/ChairpersonDashboard';
 import SecretaryDashboard from './pages/SecretaryDashboard';
+
+// Error Pages
+import NotFound from './pages/errors/NotFound';
+import Unauthorized from './pages/errors/Unauthorized';
+import ServerError from './pages/errors/ServerError';
+import NetworkError from './pages/errors/NetworkError';
+import SessionExpired from './pages/errors/SessionExpired';
+import BadRequest from './pages/errors/BadRequest';
 
 function App() {
   const { loading, settings, getImageUrl } = useSettings();
@@ -60,7 +68,16 @@ function App() {
           <Route path="/add-member" element={<AddMember />} />
           <Route path="/admin/settings" element={<SystemSettings />} />
 
-          <Route path="*" element={<Navigate to="/" />} />
+          {/* Error Pages */}
+          <Route path="/bad-request" element={<BadRequest />} />
+          <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/server-error" element={<ServerError />} />
+          <Route path="/network-error" element={<NetworkError />} />
+          <Route path="/session-expired" element={<SessionExpired />} />
+          <Route path="/404" element={<NotFound />} />
+
+          {/* 404 Catch-All - Must be last */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     </>

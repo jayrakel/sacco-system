@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import {
     Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon,
-    Banknote, Package, Link, FileText, PiggyBank, Calendar
+    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders
 } from 'lucide-react';
 
 // Import Sub-Components (Ensure these files exist in your project structure)
@@ -21,8 +21,8 @@ export default function SystemSettings() {
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
 
-    // Base URL for image display
-    const BASE_URL = import.meta.env.VITE_API_URL + "/uploads/settings/";
+    // Base URL for image display - matches the API base URL
+    const BASE_URL = "http://localhost:8081/uploads/settings/";
 
     useEffect(() => {
         fetchSettings();
@@ -88,6 +88,24 @@ export default function SystemSettings() {
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
 
+    // Categorize Settings for System Parameters Tab
+    const operationalSettings = settings.filter(s =>
+        s.key.includes('FEE') ||
+        s.key.includes('RATE') ||
+        s.key.includes('CONTRIBUTION') ||
+        s.key.includes('INTEREST') ||
+        s.key.includes('GRACE') ||
+        s.key.includes('MULTIPLIER') ||
+        s.key.includes('VOTING') ||
+        s.key.includes('LOAN_APPLICATION_FEE') ||
+        s.key.includes('MIN_SAVINGS_FOR_LOAN') ||
+        s.key.includes('MIN_MONTHS_MEMBERSHIP') ||
+        s.key.includes('MIN_SHARE_CAPITAL') ||
+        s.key.includes('MIN_SAVINGS_TO_GUARANTEE') ||
+        s.key.includes('MIN_MONTHS_TO_GUARANTEE') ||
+        s.key.includes('MAX_GUARANTOR_LIMIT_RATIO')
+    );
+
     // --- RENDER ---
     return (
         <div className="min-h-screen bg-slate-50 p-4 sm:p-8 font-sans flex justify-center">
@@ -117,6 +135,12 @@ export default function SystemSettings() {
                         className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         <Settings size={16}/> General & Branding
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('parameters')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'parameters' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Sliders size={16}/> System Parameters
                     </button>
                     <button
                         onClick={() => setActiveTab('products')}
@@ -224,7 +248,97 @@ export default function SystemSettings() {
                         </div>
                     )}
 
-                    {/* VIEW 2: PRODUCTS */}
+                    {/* VIEW 2: SYSTEM PARAMETERS */}
+                    {activeTab === 'parameters' && (
+                        <div className="space-y-8 animate-in fade-in">
+                            {message && (
+                                <div className={`p-4 rounded-lg flex items-center gap-3 border ${message.includes('Error') || message.includes('Failed') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                                    <AlertCircle size={20} />
+                                    <span>{message}</span>
+                                </div>
+                            )}
+
+                            {/* Operational Parameters */}
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                                    <Sliders size={20} className="text-purple-600"/> Operational Parameters
+                                </h3>
+                                <p className="text-sm text-slate-500 mb-6">Configure fees, interest rates, and operational rules for your SACCO.</p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {operationalSettings.map((setting) => (
+                                        <div key={setting.key} className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+                                            <label className="block text-xs font-bold text-purple-800 mb-2 uppercase tracking-wide">
+                                                {setting.key.replace(/_/g, ' ')}
+                                            </label>
+
+                                            {setting.key === 'LOAN_VOTING_METHOD' ? (
+                                                <select
+                                                    value={setting.value}
+                                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                    className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                                                >
+                                                    <option value="MANUAL">Manual Approval</option>
+                                                    <option value="DEMOCRATIC">Democratic Voting</option>
+                                                    <option value="AUTO">Automatic Approval</option>
+                                                </select>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        value={setting.value}
+                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                        className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                                                        step={setting.key.includes('RATE') ? '0.1' : '1'}
+                                                        min="0"
+                                                    />
+                                                    <span className="text-sm font-bold text-purple-600 whitespace-nowrap">
+                                                        {setting.key.includes('RATE') ? '%' :
+                                                         setting.key.includes('WEEKS') ? 'weeks' :
+                                                         setting.key.includes('MULTIPLIER') ? 'x' : 'KES'}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <p className="text-xs text-purple-500 mt-2">
+                                                {setting.key === 'REGISTRATION_FEE' && 'One-time fee paid when joining the SACCO'}
+                                                {setting.key === 'MIN_MONTHLY_CONTRIBUTION' && 'Minimum monthly savings contribution required'}
+                                                {setting.key === 'LOAN_APPLICATION_FEE' && 'Fee paid to start a loan application (non-refundable)'}
+                                                {setting.key === 'LOAN_INTEREST_RATE' && 'Annual interest rate applied to loans'}
+                                                {setting.key === 'LOAN_GRACE_PERIOD_WEEKS' && 'Grace period before first repayment is due'}
+                                                {setting.key === 'LOAN_LIMIT_MULTIPLIER' && 'Maximum loan = savings × this multiplier'}
+                                                {setting.key === 'LOAN_VOTING_METHOD' && 'How loan applications are approved'}
+                                                {setting.key === 'MIN_SAVINGS_FOR_LOAN' && 'Minimum savings balance required to apply for a loan'}
+                                                {setting.key === 'MIN_MONTHS_MEMBERSHIP' && 'Minimum membership duration (in months) to apply for a loan'}
+                                                {setting.key === 'MIN_SHARE_CAPITAL' && 'Minimum share capital required to apply for a loan'}
+                                                {setting.key === 'MIN_SAVINGS_TO_GUARANTEE' && 'Minimum savings required to be a guarantor'}
+                                                {setting.key === 'MIN_MONTHS_TO_GUARANTEE' && 'Minimum membership duration to be a guarantor'}
+                                                {setting.key === 'MAX_GUARANTOR_LIMIT_RATIO' && 'Maximum guarantee exposure = savings × this ratio'}
+                                            </p>
+                                        </div>
+                                    ))}
+                                    {operationalSettings.length === 0 && (
+                                        <div className="col-span-2 p-6 text-center text-slate-400 italic text-sm bg-slate-50 rounded-lg border border-slate-200">
+                                            No operational parameters configured. Restart backend to initialize default values.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Save Button */}
+                            <div className="flex justify-end pt-4 border-t border-slate-200">
+                                <button
+                                    onClick={saveSettings}
+                                    disabled={saving}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
+                                >
+                                    {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VIEW 3: PRODUCTS */}
                     {activeTab === 'products' && (
                         <div className="space-y-12 animate-in fade-in">
                             <div>
@@ -233,6 +347,7 @@ export default function SystemSettings() {
                                 </h3>
                                 <LoanProducts />
                             </div>
+
 
                             <div className="border-t pt-8">
                                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -243,7 +358,7 @@ export default function SystemSettings() {
                         </div>
                     )}
 
-                    {/* VIEW 3: ACCOUNTING */}
+                    {/* VIEW 4: ACCOUNTING */}
                     {activeTab === 'accounting' && (
                         <AccountingConfig />
                     )}

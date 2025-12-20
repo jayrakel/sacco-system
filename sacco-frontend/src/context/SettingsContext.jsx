@@ -20,7 +20,7 @@ export const SettingsProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const getImageUrl = (filename) => {
-    return filename ? `http://localhost:8080/uploads/settings/${filename}` : null;
+    return filename ? `http://localhost:8081/uploads/settings/${filename}` : null;
   };
 
   useEffect(() => {
