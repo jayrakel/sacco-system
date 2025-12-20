@@ -9,6 +9,7 @@ import com.sacco.sacco_system.modules.finance.domain.repository.GLAccountReposit
 import com.sacco.sacco_system.modules.finance.domain.repository.GlMappingRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.JournalEntryRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ChartOfAccountsSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
@@ -28,10 +29,70 @@ public class AccountingController {
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
     private final AccountingService accountingService;
+    private final ChartOfAccountsSetupService setupService;
 
     // âœ… NEW REPOSITORIES
     private final GlMappingRepository glMappingRepository;
     private final FiscalPeriodRepository fiscalPeriodRepository;
+
+    // --- 0. SETUP & INITIALIZATION ---
+
+    @PostMapping("/setup/initialize")
+    public ResponseEntity<Map<String, Object>> initializeAccounting() {
+        try {
+            if (setupService.isInitialized()) {
+                return ResponseEntity.ok(Map.of(
+                        "success", false,
+                        "message", "Chart of Accounts already initialized. Use /reset endpoint to reinitialize."
+                ));
+            }
+
+            setupService.initializeChartOfAccounts();
+            setupService.initializeGLMappings();
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Chart of Accounts and GL Mappings initialized successfully",
+                    "accountsCreated", accountRepository.count(),
+                    "mappingsCreated", glMappingRepository.count()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Error initializing accounting: " + e.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/setup/reset")
+    public ResponseEntity<Map<String, Object>> resetAccounting() {
+        try {
+            setupService.resetChartOfAccounts();
+            setupService.initializeChartOfAccounts();
+            setupService.initializeGLMappings();
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Chart of Accounts reset and reinitialized successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Error resetting accounting: " + e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/setup/status")
+    public ResponseEntity<Map<String, Object>> getSetupStatus() {
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "initialized", setupService.isInitialized(),
+                "accountsCount", accountRepository.count(),
+                "mappingsCount", glMappingRepository.count(),
+                "journalEntriesCount", journalRepository.count()
+        ));
+    }
 
     // --- 1. CORE ACCOUNTING ---
 
