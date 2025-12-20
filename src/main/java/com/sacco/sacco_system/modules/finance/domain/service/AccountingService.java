@@ -152,6 +152,14 @@ public class AccountingService {
         // - Debit: Dividends Payable (2030) or Retained Earnings (3010)
         // - Credit: Cash (1020)
     }
+
+    public void postFinePayment(Member member, BigDecimal amount) {
+        log.debug("Stub: Post fine payment for member {} amount: {}", member.getId(), amount);
+        // TODO: Implement GL posting logic
+        // Should create journal entries for fine payment:
+        // - Debit: Cash (1020)
+        // - Credit: Other Income (4040)
+    }
 }
 
 

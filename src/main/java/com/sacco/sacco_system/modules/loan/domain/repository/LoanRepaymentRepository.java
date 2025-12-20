@@ -6,10 +6,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 
 @Repository
 public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, UUID> {
@@ -23,12 +23,17 @@ public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, UU
 
     Optional<LoanRepayment> findFirstByLoanIdAndStatusOrderByDueDateAsc(UUID loanId, LoanRepayment.RepaymentStatus status);
 
+    // For fine calculation - find overdue payments
+    List<LoanRepayment> findByStatusAndDueDateBefore(LoanRepayment.RepaymentStatus status, LocalDate date);
+
     @Query("SELECT SUM(lr.totalPaid) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
     BigDecimal getTotalRepaidAmount();
 
     @Query("SELECT COUNT(lr) FROM LoanRepayment lr WHERE lr.status = 'OVERDUE'")
     long countOverdueRepayments();
 }
+
+
 
 
 
