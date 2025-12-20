@@ -66,8 +66,7 @@ public class NotificationService {
     }
 
     public List<Notification> getUserNotifications(UUID userId) {
-        // TODO: Repository method doesn't exist - returning empty list for now
-        return new java.util.ArrayList<>(); // notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     public void markAsRead(UUID id) {
@@ -78,7 +77,20 @@ public class NotificationService {
     }
 
     public long getUnreadCount(UUID userId) {
-        // TODO: Repository method doesn't exist - returning 0 for now
-        return 0; // notificationRepository.countByUserIdAndIsReadFalse(userId);
+        return notificationRepository.countByUserIdAndIsReadFalse(userId);
+    }
+
+    /**
+     * Mark all notifications as read for a user
+     */
+    public void markAllAsRead(UUID userId) {
+        List<Notification> notifications = notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        notifications.forEach(n -> {
+            if (!n.isRead()) {
+                n.setRead(true);
+                notificationRepository.save(n);
+            }
+        });
+        log.info("Marked {} notifications as read for user {}", notifications.size(), userId);
     }
 }
