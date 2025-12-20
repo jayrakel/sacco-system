@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -117,18 +118,20 @@ public class SavingsService {
         member.setTotalSavings(member.getTotalSavings().add(amount));
         memberRepository.save(member);
 
-        // TODO: Transaction class not properly imported - commenting out transaction creation
-        // Transaction tx = Transaction.builder()
-        //         .savingsAccount(account)
-        //         .member(member)
-        //         .type(Transaction.TransactionType.DEPOSIT)
-        //         .amount(amount)
-        //         .description(description != null ? description : "Deposit")
-        //         .balanceAfter(savedAccount.getBalance())
-        //         .build();
-        // transactionRepository.save(tx);
+        // Create transaction record
+        Transaction tx = Transaction.builder()
+                .savingsAccount(account)
+                .member(member)
+                .type(Transaction.TransactionType.DEPOSIT)
+                .amount(amount)
+                .description(description != null ? description : "Deposit")
+                .balanceAfter(savedAccount.getBalance())
+                .build();
+        transactionRepository.save(tx);
 
-        accountingService.postDoubleEntry("Deposit " + accountNumber, null, "1001", "2001", amount);
+        // ✅ POST TO ACCOUNTING - Creates: DEBIT Cash (1020), CREDIT Member Savings (2010)
+        accountingService.postSavingsDeposit(member, amount);
+
         return convertToDTO(savedAccount);
     }
 
@@ -172,7 +175,19 @@ public class SavingsService {
                 .build();
         transactionRepository.save(tx);
 
-        accountingService.postDoubleEntry("Withdrawal " + accountNumber, tx.getTransactionId(), "2001", "1001", amount);
+        // Create Withdrawal entity for accounting
+        Withdrawal withdrawal = Withdrawal.builder()
+                .member(member)
+                .savingsAccount(account)
+                .amount(amount)
+                .status(Withdrawal.WithdrawalStatus.APPROVED)
+                .requestDate(LocalDateTime.now())
+                .processingDate(LocalDateTime.now())
+                .build();
+
+        // ✅ POST TO ACCOUNTING - Creates: DEBIT Member Savings (2010), CREDIT Cash (1020)
+        accountingService.postSavingsWithdrawal(withdrawal);
+
         return convertToDTO(savedAccount);
     }
 
