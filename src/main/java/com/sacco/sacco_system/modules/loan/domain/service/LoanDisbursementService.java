@@ -2,6 +2,7 @@ package com.sacco.sacco_system.modules.loan.domain.service;
 
 import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanDisbursement;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanDisbursementRepository;
@@ -29,6 +30,7 @@ public class LoanDisbursementService {
     private final LoanDisbursementRepository disbursementRepository;
     private final LoanRepository loanRepository;
     private final UserRepository userRepository;
+    private final AccountingService accountingService;
 
     /**
      * TREASURER: Prepare disbursement (write cheque, prepare transfer, etc.)
@@ -175,7 +177,10 @@ public class LoanDisbursementService {
         loan.setLoanBalance(loan.getPrincipalAmount()); // Set initial balance
         loanRepository.save(loan);
 
-        log.info("Disbursement completed for loan {}. Method: {}",
+        // ✅ POST TO ACCOUNTING - Creates: DEBIT Loans Receivable (1100), CREDIT Cash (1020)
+        accountingService.postLoanDisbursement(loan);
+
+        log.info("Disbursement completed for loan {}. Method: {}. Accounting entry created.",
                 loan.getLoanNumber(), disbursement.getMethod());
 
         return saved;

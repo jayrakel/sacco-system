@@ -506,8 +506,8 @@ public class LoanService {
                 .build();
         transactionRepository.save(tx);
 
-        // Post to accounting
-        accountingService.postEvent("PROCESSING_FEE", "Loan Fee " + loan.getLoanNumber(), refCode, fee);
+        // ✅ POST TO ACCOUNTING - Creates: DEBIT Cash (1020), CREDIT Fee Income (4030)
+        accountingService.postMemberFee(loan.getMember(), fee, "PROCESSING_FEE");
 
         loan.setApplicationFeePaid(true);
         loan.setStatus(Loan.LoanStatus.SUBMITTED);
