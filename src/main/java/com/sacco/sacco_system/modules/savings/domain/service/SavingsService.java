@@ -214,7 +214,6 @@ public class SavingsService {
 
     // âœ… REMOVED: Transfer Funds Method (not needed for savings-only SACCO)
     // Members cannot transfer between accounts
-    }
 
     // ========================================================================
     // 3. INTEREST CALCULATION
