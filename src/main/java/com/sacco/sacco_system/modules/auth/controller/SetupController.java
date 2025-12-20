@@ -48,6 +48,7 @@ public class SetupController {
      * Generates temporary passwords and sends them via email
      */
     @PostMapping("/critical-admins")
+    @Transactional
     public ResponseEntity<Map<String, Object>> createCriticalAdmins(@RequestBody CriticalAdminsPayload payload) {
         try {
             if (payload.getAdmins() == null || payload.getAdmins().isEmpty()) {
@@ -98,9 +99,7 @@ public class SetupController {
 
     /**
      * Create individual critical admin user with temporary password and email verification
-     * MUST be public for @Transactional to work (Spring AOP limitation)
      */
-    @Transactional
     public Map<String, Object> createCriticalAdmin(CriticalAdminRequest request) {
         try {
             log.info("Starting creation of admin: {}", request.getEmail());
