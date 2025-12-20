@@ -39,16 +39,31 @@ public class FinancialReportController {
     @GetMapping("/today")
     public ResponseEntity<Map<String, Object>> getTodayReport() {
         try {
+            System.out.println("📊 [FinancialReportController] Fetching today's report...");
             FinancialReport report = financialReportService.getTodayReport();
+
+            System.out.println("✅ [FinancialReportController] Report generated successfully");
+            System.out.println("   - Report Date: " + report.getReportDate());
+            System.out.println("   - Total Members: " + report.getTotalMembers());
+            System.out.println("   - Total Savings: " + report.getTotalSavings());
+            System.out.println("   - Total Loans: " + report.getTotalLoansIssued());
+            System.out.println("   - Net Income: " + report.getNetIncome());
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", report);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            System.err.println("❌ [FinancialReportController] Error getting today's report:");
+            System.err.println("   Error Type: " + e.getClass().getName());
+            System.err.println("   Error Message: " + e.getMessage());
+            e.printStackTrace();
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            response.put("message", "Error generating report: " + e.getMessage());
+            response.put("error", e.getClass().getSimpleName());
+            return ResponseEntity.status(500).body(response);
         }
     }
 

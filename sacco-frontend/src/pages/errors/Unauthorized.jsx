@@ -5,10 +5,13 @@ import { Home, ArrowLeft, Lock, Shield, LogOut } from 'lucide-react';
 export default function Unauthorized() {
     const navigate = useNavigate();
 
+    // Check if user is logged in
+    const isLoggedIn = !!localStorage.getItem('sacco_token');
+
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        navigate('/login');
+        localStorage.removeItem('sacco_token');
+        localStorage.removeItem('sacco_user');
+        navigate('/');
     };
 
     return (
@@ -69,21 +72,33 @@ export default function Unauthorized() {
                         Go Back
                     </button>
 
-                    <button
-                        onClick={() => navigate('/dashboard')}
-                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
-                    >
-                        <Home size={18} />
-                        Dashboard
-                    </button>
+                    {isLoggedIn ? (
+                        <button
+                            onClick={() => navigate('/dashboard')}
+                            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                        >
+                            <Home size={18} />
+                            Dashboard
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => navigate('/')}
+                            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                        >
+                            <Home size={18} />
+                            Login
+                        </button>
+                    )}
 
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                    >
-                        <LogOut size={18} />
-                        Logout
-                    </button>
+                    {isLoggedIn && (
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                        >
+                            <LogOut size={18} />
+                            Logout
+                        </button>
+                    )}
                 </div>
 
                 {/* Contact Admin */}

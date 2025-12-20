@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create the Axios instance
 const api = axios.create({
-  baseURL: 'http://localhost:8081',  // Updated to match SERVER_PORT in .env
+  baseURL: 'http://localhost:8082',  // Updated to match SERVER_PORT in .env
   // ❌ REMOVED: headers: { 'Content-Type': 'application/json' }
   // Axios will now auto-detect content type (JSON or File) correctly.
 });
@@ -59,7 +59,9 @@ api.interceptors.response.use(
 
       case 403:
         // Forbidden - User doesn't have permission
-        if (currentPath !== '/unauthorized') {
+        // Don't redirect if it's an auth endpoint - let the login page handle it
+        const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
+        if (!isAuthEndpoint && currentPath !== '/unauthorized') {
           console.warn("Access forbidden. Redirecting to unauthorized page...");
           window.location.href = '/unauthorized';
         }

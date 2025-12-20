@@ -5,6 +5,10 @@ import { Home, ArrowLeft, Search, HelpCircle } from 'lucide-react';
 export default function NotFound() {
     const navigate = useNavigate();
 
+    // Check if user is logged in
+    const isLoggedIn = !!localStorage.getItem('sacco_token');
+    const homePath = isLoggedIn ? '/dashboard' : '/';
+
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
             <div className="max-w-2xl w-full text-center">
@@ -39,7 +43,7 @@ export default function NotFound() {
                     </button>
 
                     <button
-                        onClick={() => navigate('/dashboard')}
+                        onClick={() => navigate(homePath)}
                         className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
                     >
                         <Home size={18} />
@@ -62,35 +66,37 @@ export default function NotFound() {
                 </div>
 
                 {/* Quick Links */}
-                <div className="mt-8">
-                    <p className="text-sm text-gray-500 mb-3">Quick Links:</p>
-                    <div className="flex flex-wrap gap-3 justify-center">
-                        <button
-                            onClick={() => navigate('/dashboard')}
-                            className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                        >
-                            Dashboard
-                        </button>
-                        <button
-                            onClick={() => navigate('/members')}
-                            className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                        >
-                            Members
-                        </button>
-                        <button
-                            onClick={() => navigate('/loans')}
-                            className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                        >
-                            Loans
-                        </button>
-                        <button
-                            onClick={() => navigate('/savings')}
-                            className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                        >
-                            Savings
-                        </button>
+                {isLoggedIn && (
+                    <div className="mt-8">
+                        <p className="text-sm text-gray-500 mb-3">Quick Links:</p>
+                        <div className="flex flex-wrap gap-3 justify-center">
+                            <button
+                                onClick={() => navigate('/dashboard')}
+                                className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                            >
+                                Dashboard
+                            </button>
+                            <button
+                                onClick={() => navigate('/members')}
+                                className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                            >
+                                Members
+                            </button>
+                            <button
+                                onClick={() => navigate('/loans')}
+                                className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                            >
+                                Loans
+                            </button>
+                            <button
+                                onClick={() => navigate('/savings')}
+                                className="text-sm px-4 py-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                            >
+                                Savings
+                            </button>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

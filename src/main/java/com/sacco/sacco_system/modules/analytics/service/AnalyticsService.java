@@ -198,19 +198,21 @@ public class AnalyticsService {
      * Get top performers (members with highest savings)
      */
     public Map<String, Object> getTopPerformers(int limit) {
-        List<Member> topSavers = memberRepository.findAll().stream()
+        List<Map<String, Object>> topSavers = memberRepository.findAll().stream()
                 .sorted((m1, m2) -> {
                     BigDecimal s1 = m1.getTotalSavings() != null ? m1.getTotalSavings() : BigDecimal.ZERO;
                     BigDecimal s2 = m2.getTotalSavings() != null ? m2.getTotalSavings() : BigDecimal.ZERO;
                     return s2.compareTo(s1);
                 })
                 .limit(limit)
-                .map(m -> Map.of(
-                        "memberNumber", m.getMemberNumber(),
-                        "name", m.getFirstName() + " " + m.getLastName(),
-                        "totalSavings", m.getTotalSavings() != null ? m.getTotalSavings() : BigDecimal.ZERO,
-                        "totalShares", m.getTotalShares() != null ? m.getTotalShares() : BigDecimal.ZERO
-                ))
+                .map(m -> {
+                    Map<String, Object> memberData = new HashMap<>();
+                    memberData.put("memberNumber", m.getMemberNumber());
+                    memberData.put("name", m.getFirstName() + " " + m.getLastName());
+                    memberData.put("totalSavings", m.getTotalSavings() != null ? m.getTotalSavings() : BigDecimal.ZERO);
+                    memberData.put("totalShares", m.getTotalShares() != null ? m.getTotalShares() : BigDecimal.ZERO);
+                    return memberData;
+                })
                 .collect(Collectors.toList());
 
         return Map.of(

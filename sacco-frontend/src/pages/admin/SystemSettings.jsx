@@ -22,7 +22,7 @@ export default function SystemSettings() {
     const [message, setMessage] = useState('');
 
     // Base URL for image display - matches the API base URL
-    const BASE_URL = "http://localhost:8081/uploads/settings/";
+    const BASE_URL = "http://localhost:8082/uploads/settings/";
 
     useEffect(() => {
         fetchSettings();

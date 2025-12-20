@@ -400,8 +400,14 @@ public class LoanService {
         }
     }
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
+        System.out.println("🔔 [LoanService] Adding guarantor request...");
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
+        Member applicant = loan.getMember();
+
+        System.out.println("   Applicant: " + applicant.getFirstName() + " " + applicant.getLastName());
+        System.out.println("   Guarantor: " + guarantor.getFirstName() + " " + guarantor.getLastName());
+        System.out.println("   Amount: KES " + amount);
 
         // Check 1: Cannot guarantee self
         if(guarantor.getId().equals(loan.getMember().getId()))
@@ -425,6 +431,31 @@ public class LoanService {
                 .build();
 
         Guarantor saved = guarantorRepository.save(g);
+        System.out.println("✅ [LoanService] Guarantor request saved to database");
+
+        // 🔔 SEND NOTIFICATION TO GUARANTOR
+        try {
+            String title = "Guarantor Request";
+            String message = String.format("%s %s has requested you to guarantee their loan of KES %s with a guarantee amount of KES %s",
+                    applicant.getFirstName(),
+                    applicant.getLastName(),
+                    loan.getPrincipalAmount(),
+                    amount);
+
+            System.out.println("📧 [LoanService] Sending notification to guarantor...");
+            notificationService.notifyUser(
+                    guarantor.getUser().getId(),
+                    title,
+                    message,
+                    true,  // Send email
+                    false  // Don't send SMS
+            );
+            System.out.println("✅ [LoanService] Notification sent successfully!");
+        } catch (Exception e) {
+            System.err.println("❌ [LoanService] Failed to send notification: " + e.getMessage());
+            e.printStackTrace();
+            // Don't throw - guarantor request is already saved
+        }
 
         return GuarantorDTO.builder()
                 .id(saved.getId())
@@ -451,23 +482,43 @@ public class LoanService {
                 .collect(Collectors.toList());
     }
     public void respondToGuarantorship(UUID guarantorId, boolean accepted) {
+        System.out.println("🔔 [LoanService] Processing guarantor response...");
         Guarantor g = guarantorRepository.findById(guarantorId).orElseThrow(() -> new RuntimeException("Request not found"));
+
+        Member applicant = g.getLoan().getMember();
+        Member guarantor = g.getMember();
 
         g.setStatus(accepted ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
         g.setDateResponded(LocalDate.now());
         guarantorRepository.save(g);
 
-        // TODO: Notification class not properly imported - commenting out notification creation
-        // Notification.NotificationType type = accepted ? Notification.NotificationType.SUCCESS : Notification.NotificationType.WARNING;
-        String statusText = accepted ? "Accepted" : "Declined";
+        System.out.println("✅ [LoanService] Guarantor status updated: " + (accepted ? "ACCEPTED" : "DECLINED"));
 
-        // notificationService.createNotification(
-        //         g.getLoan().getMember().getUser(),
-        //         "Guarantor Responded",
-        //         String.format("%s %s has %s your guarantorship request.", g.getMember().getFirstName(), g.getMember().getLastName(), statusText),
-        //         type
-        // );
+        // 🔔 NOTIFY APPLICANT OF GUARANTOR RESPONSE
+        try {
+            String statusText = accepted ? "accepted" : "declined";
+            String title = "Guarantor " + (accepted ? "Approved" : "Declined");
+            String message = String.format("%s %s has %s your guarantorship request for KES %s",
+                    guarantor.getFirstName(),
+                    guarantor.getLastName(),
+                    statusText,
+                    g.getGuaranteeAmount());
 
+            System.out.println("📧 [LoanService] Notifying applicant of response...");
+            notificationService.notifyUser(
+                    applicant.getUser().getId(),
+                    title,
+                    message,
+                    true,  // Send email
+                    false  // Don't send SMS
+            );
+            System.out.println("✅ [LoanService] Notification sent to applicant!");
+        } catch (Exception e) {
+            System.err.println("❌ [LoanService] Failed to send notification: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        // Check if all guarantors have responded
         Loan loan = g.getLoan();
         long pending = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.PENDING);
         long declined = guarantorRepository.countByLoanAndStatus(loan, Guarantor.GuarantorStatus.DECLINED);

@@ -1,9 +1,11 @@
 package com.sacco.sacco_system.modules.notification.api.controller;
 
+import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.notification.domain.entity.Notification;
 import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +23,40 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+
+    /**
+     * Get notifications for the currently logged-in user
+     */
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getMyNotifications(@AuthenticationPrincipal User user) {
+        try {
+            System.out.println("📬 [NotificationController] Fetching notifications for user: " + user.getEmail());
+
+            List<Notification> notifications = notificationService.getUserNotifications(user.getId());
+            long unreadCount = notificationService.getUnreadCount(user.getId());
+
+            System.out.println("✅ [NotificationController] Found " + notifications.size() + " notifications, " + unreadCount + " unread");
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", Map.of(
+                            "notifications", notifications,
+                            "unreadCount", unreadCount
+                    )
+            ));
+        } catch (Exception e) {
+            System.err.println("❌ [NotificationController] Error fetching notifications: " + e.getMessage());
+            e.printStackTrace();
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", Map.of(
+                            "notifications", List.of(),
+                            "unreadCount", 0
+                    )
+            ));
+        }
+    }
 
     /**
      * Get user's notifications

@@ -138,16 +138,34 @@ function OverviewTab({ setActiveTab }) {
 
     const loadDashboard = async () => {
         try {
+            console.log('📊 Loading Admin Dashboard...');
+
             // 1. Fetch Summary Stats (Always Today)
+            console.log('🔄 Fetching /api/reports/today...');
             const todayRes = await api.get('/api/reports/today');
-            if (todayRes.data.success) setStats(todayRes.data.data);
+            console.log('✅ Today report response:', todayRes.data);
+
+            if (todayRes.data.success) {
+                console.log('📈 Stats loaded:', todayRes.data.data);
+                setStats(todayRes.data.data);
+            } else {
+                console.warn('⚠️ Today report unsuccessful:', todayRes.data);
+            }
 
             // 2. Fetch Chart Data
+            console.log('📊 Fetching chart data...');
             fetchChartData();
 
             setLoading(false);
+            console.log('✅ Dashboard loaded successfully');
         } catch (e) {
-            console.error("Dashboard Load Failed", e);
+            console.error("❌ Dashboard Load Failed:");
+            console.error('Error name:', e.name);
+            console.error('Error message:', e.message);
+            console.error('Error response:', e.response?.data);
+            console.error('Error status:', e.response?.status);
+            console.error('Request URL:', e.config?.url);
+            console.error('Full error:', e);
             setLoading(false);
         }
     };
@@ -155,14 +173,21 @@ function OverviewTab({ setActiveTab }) {
     // ✅ NEW: Fetch Chart Data with Custom Dates
     const fetchChartData = async () => {
         try {
+            console.log(`🔄 Fetching chart data from ${dateRange.start} to ${dateRange.end}...`);
             const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
+            console.log('✅ Chart data response:', chartRes.data);
+
             if (chartRes.data.success && chartRes.data.data.length > 0) {
+                console.log('📊 Chart data points:', chartRes.data.data.length);
                 setChartData(chartRes.data.data);
             } else {
+                console.warn('⚠️ No chart data available');
                 setChartData([]); // Empty state if no data
             }
         } catch (e) {
-            console.error("Chart Data Failed", e);
+            console.error("❌ Chart Data Failed:");
+            console.error('Error details:', e.response?.data || e.message);
+            console.error('Full error:', e);
         }
     };
 

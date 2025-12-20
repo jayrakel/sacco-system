@@ -53,14 +53,6 @@ public class TransactionController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/transfer")
-    public ResponseEntity<?> transferFunds(@RequestParam String fromAccount,
-                                           @RequestParam String toAccount,
-                                           @RequestParam BigDecimal amount,
-                                           @RequestParam String description) {
-        savingsService.transferFunds(fromAccount, toAccount, amount, description);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Transfer successful"));
-    }
 
     @PostMapping("/{id}/reverse")
     public ResponseEntity<?> reverseTransaction(@PathVariable String id, @RequestParam String reason) {

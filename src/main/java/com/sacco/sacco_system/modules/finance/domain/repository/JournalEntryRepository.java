@@ -11,4 +11,7 @@ import java.util.List;
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
     // Find all entries by their transaction date (matches JournalEntry.transactionDate)
     List<JournalEntry> findByTransactionDate(LocalDateTime transactionDate);
+
+    // Find entries within a date range
+    List<JournalEntry> findByTransactionDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 }
