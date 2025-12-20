@@ -136,6 +136,14 @@ public class AccountingService {
         // TODO: Implement fiscal period closing logic
         // Should verify trial balance and archive journal entries
     }
+
+    public void postShareCapitalPurchase(Member member, BigDecimal amount) {
+        log.debug("Stub: Post share capital purchase for member {} amount: {}", member.getId(), amount);
+        // TODO: Implement GL posting logic
+        // Should create journal entries for share capital purchase:
+        // - Debit: Cash (1020)
+        // - Credit: Share Capital (2020)
+    }
 }
 
 
