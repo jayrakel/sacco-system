@@ -135,52 +135,63 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
-    public SavingsAccountDTO withdraw(String accountNumber, BigDecimal amount, String description) {
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Amount must be positive");
+    /**
+     * MEMBER EXIT WITHDRAWAL - Only allowed when member exits the SACCO
+     * Regular withdrawals are NOT permitted in this savings-only SACCO
+     * Members benefit through: Loans, Dividends, Share appreciation
+     */
+    public SavingsAccountDTO processMemberExit(UUID memberId, String reason) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        SavingsAccount account = savingsAccountRepository.findByAccountNumber(accountNumber)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+        // Check if member has active loans
+        // TODO: Add check for active loans once loan module is integrated
+        // if (hasActiveLoan(memberId)) {
+        //     throw new RuntimeException("Cannot exit SACCO with active loans. Please clear all loans first.");
+        // }
 
-        if (account.getProduct() != null && !account.getProduct().isAllowWithdrawal()) {
-            if (account.getMaturityDate() != null && LocalDate.now().isBefore(account.getMaturityDate())) {
-                throw new RuntimeException("Account locked until: " + account.getMaturityDate());
-            }
+        // Get all member's savings accounts
+        List<SavingsAccount> accounts = savingsAccountRepository.findByMemberId(memberId);
+
+        if (accounts.isEmpty()) {
+            throw new RuntimeException("No savings accounts found for member");
         }
 
-        BigDecimal minBalance = (account.getProduct() != null && account.getProduct().getMinBalance() != null)
-                ? account.getProduct().getMinBalance() : BigDecimal.ZERO;
+        BigDecimal totalWithdrawal = BigDecimal.ZERO;
 
-        if (account.getBalance().subtract(amount).compareTo(minBalance) < 0) {
-            throw new RuntimeException("Min balance of " + minBalance + " required.");
+        // Close all accounts and calculate total
+        for (SavingsAccount account : accounts) {
+            totalWithdrawal = totalWithdrawal.add(account.getBalance());
+            account.setStatus(SavingsAccount.AccountStatus.CLOSED);
+            account.setBalance(BigDecimal.ZERO);
+            savingsAccountRepository.save(account);
         }
 
-        if (account.getBalance().compareTo(amount) < 0) throw new RuntimeException("Insufficient funds");
+        if (totalWithdrawal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("No funds available to withdraw");
+        }
 
-        account.setBalance(account.getBalance().subtract(amount));
-        account.setTotalWithdrawals(account.getTotalWithdrawals().add(amount));
-        SavingsAccount savedAccount = savingsAccountRepository.save(account);
-
-        Member member = account.getMember();
-        member.setTotalSavings(member.getTotalSavings().subtract(amount));
+        // Update member status
+        member.setTotalSavings(BigDecimal.ZERO);
+        member.setStatus(Member.MemberStatus.INACTIVE); // Mark as exited
         memberRepository.save(member);
 
         // Create transaction record
         Transaction tx = Transaction.builder()
-                .savingsAccount(account)
                 .member(member)
                 .type(Transaction.TransactionType.WITHDRAWAL)
-                .amount(amount)
-                .description(description != null ? description : "Withdrawal")
-                .balanceAfter(savedAccount.getBalance())
+                .amount(totalWithdrawal)
+                .description("Member Exit: " + (reason != null ? reason : "Voluntary exit"))
+                .balanceAfter(BigDecimal.ZERO)
                 .build();
         transactionRepository.save(tx);
 
         // Create Withdrawal entity for accounting
         Withdrawal withdrawal = Withdrawal.builder()
                 .member(member)
-                .savingsAccount(account)
-                .amount(amount)
+                .amount(totalWithdrawal)
                 .status(Withdrawal.WithdrawalStatus.APPROVED)
+                .reason("Member Exit: " + (reason != null ? reason : "Voluntary exit"))
                 .requestDate(LocalDateTime.now())
                 .processingDate(LocalDateTime.now())
                 .build();
@@ -188,17 +199,21 @@ public class SavingsService {
         // ✅ POST TO ACCOUNTING - Creates: DEBIT Member Savings (2010), CREDIT Cash (1020)
         accountingService.postSavingsWithdrawal(withdrawal);
 
-        return convertToDTO(savedAccount);
+        // Return last account (for confirmation)
+        return accounts.isEmpty() ? null : convertToDTO(accounts.get(0));
     }
 
-    // âœ… RESTORED: Transfer Funds Method
-    public void transferFunds(String fromAccountNum, String toAccountNum, BigDecimal amount, String description) {
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Amount must be positive");
-        if (fromAccountNum.equals(toAccountNum)) throw new RuntimeException("Cannot transfer to self");
+    /**
+     * DEPRECATED: Regular withdrawals are NOT allowed in this SACCO
+     * Use processMemberExit() instead when member leaves the SACCO
+     */
+    @Deprecated
+    public SavingsAccountDTO withdraw(String accountNumber, BigDecimal amount, String description) {
+        throw new RuntimeException("Regular withdrawals are not allowed. Members can only withdraw when exiting the SACCO. Benefits include loans, dividends, and share appreciation.");
+    }
 
-        // Atomic transfer: Withdraw from source, Deposit to destination
-        withdraw(fromAccountNum, amount, "Transfer to " + toAccountNum + (description != null ? ": " + description : ""));
-        deposit(toAccountNum, amount, "Transfer from " + fromAccountNum + (description != null ? ": " + description : ""));
+    // âœ… REMOVED: Transfer Funds Method (not needed for savings-only SACCO)
+    // Members cannot transfer between accounts
     }
 
     // ========================================================================
