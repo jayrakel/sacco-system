@@ -144,6 +144,14 @@ public class AccountingService {
         // - Debit: Cash (1020)
         // - Credit: Share Capital (2020)
     }
+
+    public void postDividendPayment(Member member, BigDecimal amount) {
+        log.debug("Stub: Post dividend payment for member {} amount: {}", member.getId(), amount);
+        // TODO: Implement GL posting logic
+        // Should create journal entries for dividend payment:
+        // - Debit: Dividends Payable (2030) or Retained Earnings (3010)
+        // - Credit: Cash (1020)
+    }
 }
 
 
