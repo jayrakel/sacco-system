@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.finance.domain.entity.accounting;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.FiscalPeriod;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

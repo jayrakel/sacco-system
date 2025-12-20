@@ -151,7 +151,10 @@ public class EmailService {
             log.info("âœ… Email sent successfully to {}", to);
         } catch (MessagingException e) {
             log.error("âŒ Failed to send email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send email");
+            // Don't throw exception - just log it so transaction doesn't roll back
+        } catch (Exception e) {
+            log.error("❌ Unexpected error sending email to {}: {}", to, e.getMessage());
+            // Don't throw exception - just log it so transaction doesn't roll back
         }
     }
 }

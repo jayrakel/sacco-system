@@ -60,12 +60,14 @@ public class AuthService {
         );
     }
     public AuthResponse login(AuthRequest request) {
+        String emailOrUsername = request.getEmailOrUsername();
+        
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(emailOrUsername, request.getPassword())
         );
 
         // Find user by either personal or official email
-        User user = userRepository.findByEmailOrOfficialEmail(request.getUsername())
+        User user = userRepository.findByEmailOrOfficialEmail(emailOrUsername)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!user.isEmailVerified() && user.getRole() != User.Role.ADMIN) {
@@ -73,7 +75,7 @@ public class AuthService {
         }
 
         // Determine portal access based on which email was used
-        String loginEmail = request.getUsername();
+        String loginEmail = emailOrUsername;
         boolean isOfficialLogin = loginEmail.equals(user.getOfficialEmail());
         boolean isMemberLogin = loginEmail.equals(user.getEmail());
 

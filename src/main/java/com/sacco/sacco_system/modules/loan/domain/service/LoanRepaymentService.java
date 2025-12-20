@@ -150,8 +150,10 @@ public class LoanRepaymentService {
         loanRepository.save(loan);
 
         // ✅ POST TO ACCOUNTING - Creates journal entry for repayment
-        // AccountingService will handle splitting into principal/interest internally
-        accountingService.postLoanRepayment(loan, amountPaid);
+        // Calculate principal vs interest portion of the payment
+        BigDecimal principal = amountPaid.min(loan.getLoanBalance());
+        BigDecimal interest = amountPaid.subtract(principal);
+        accountingService.postLoanRepayment(loan, principal, interest);
         // Creates:
         //   DEBIT Cash (1020)
         //   CREDIT Loans Receivable (1100) - principal portion

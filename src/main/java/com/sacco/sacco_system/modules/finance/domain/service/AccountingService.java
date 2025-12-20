@@ -361,7 +361,7 @@ public class AccountingService {
             ClassPathResource resource = new ClassPathResource("accounts.json");
             InputStream inputStream = resource.getInputStream();
 
-            ObjectMapper objectMapper = new ObjectMapper();
+            // Use the injected ObjectMapper instead of creating a new one
             List<Map<String, String>> accountsData = objectMapper.readValue(
                 inputStream,
                 new TypeReference<List<Map<String, String>>>() {}

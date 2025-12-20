@@ -114,8 +114,8 @@ public class AccountingController {
             @RequestParam(required = false) LocalDate endDate
     ) {
         if (endDate == null) endDate = LocalDate.now();
-        // TODO: Service returns List<Map<String,Object>> not List<GLAccount> - return empty list for now
-        List<Map<String, Object>> reportData = accountingService.getAccountsWithBalancesAsOf(startDate, endDate);
+        // Service returns List<GLAccount> with balances
+        List<GLAccount> reportData = accountingService.getAccountsWithBalancesAsOf(startDate, endDate);
         return ResponseEntity.ok(Map.of("success", true, "data", reportData != null ? reportData : List.of()));
     }
 
@@ -128,9 +128,20 @@ public class AccountingController {
 
     @PostMapping("/accounts")
     public ResponseEntity<Map<String, Object>> createAccount(@RequestBody GLAccount account) {
-        // TODO: Service method returns void, stubbing with success response
-        accountingService.createManualAccount(account);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Account created successfully"));
+        try {
+            GLAccount created = accountingService.createManualAccount(account);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Account created successfully",
+                    "data", created
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "Failed to create account: " + e.getMessage(),
+                    "error", e.getClass().getSimpleName()
+            ));
+        }
     }
 
     @PostMapping("/journal")
@@ -161,8 +172,32 @@ public class AccountingController {
 
     @PostMapping("/config/periods")
     public ResponseEntity<Map<String, Object>> createFiscalPeriod(@RequestBody FiscalPeriod period) {
-        FiscalPeriod saved = fiscalPeriodRepository.save(period);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Period Created", "data", saved));
+        try {
+            if (period.getStartDate() == null || period.getEndDate() == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "Start date and end date are required"
+                ));
+            }
+            if (period.getStartDate().isAfter(period.getEndDate())) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "Start date must be before end date"
+                ));
+            }
+            FiscalPeriod saved = fiscalPeriodRepository.save(period);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Period Created",
+                    "data", saved
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "Failed to create fiscal period: " + e.getMessage(),
+                    "error", e.getClass().getSimpleName()
+            ));
+        }
     }
 
     @PutMapping("/config/periods/{id}/toggle")

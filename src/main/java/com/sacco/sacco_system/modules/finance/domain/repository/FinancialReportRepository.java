@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import com.sacco.sacco_system.modules.finance.domain.repository.FinancialReportRepository;
 
 @Repository
 public interface FinancialReportRepository extends JpaRepository<FinancialReport, java.util.UUID> {

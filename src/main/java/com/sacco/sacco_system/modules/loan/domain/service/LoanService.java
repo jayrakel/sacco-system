@@ -843,7 +843,7 @@ public class LoanService {
     public void treasurerDisburse(UUID loanId, String checkNumber) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        BigDecimal currentLiquidity = accountingService.getAccountBalance("1001", LocalDate.now());
+        BigDecimal currentLiquidity = accountingService.getAccountBalance("1001");
         if (currentLiquidity.compareTo(loan.getPrincipalAmount()) < 0) {
             throw new RuntimeException("Disbursement Failed: Insufficient Sacco liquidity. Available: KES " + currentLiquidity);
         }

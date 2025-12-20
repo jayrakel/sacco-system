@@ -24,10 +24,10 @@ public class User implements UserDetails {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String email;
 
-    @Column(unique = true)
+    @Column
     private String officialEmail; // SACCO email for administrative access (e.g., chairperson@sacco.com)
 
     private String password;
@@ -86,7 +86,7 @@ public class User implements UserDetails {
     public boolean isEnabled() { return enabled; }
 
     public enum Role {
-        MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER
+        MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER, ASSISTANT, ASSISTANT_LOAN_OFFICER
     }
 }
 
