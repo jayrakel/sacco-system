@@ -120,6 +120,21 @@ public class SystemSettingService {
                 .map(SystemSetting::getValue)
                 .orElse("0"));
     }
+
+    /**
+     * Get setting as double with default value
+     */
+    public double getDouble(String key, double defaultValue) {
+        return repository.findByKey(key)
+                .map(s -> {
+                    try {
+                        return Double.parseDouble(s.getValue());
+                    } catch (NumberFormatException e) {
+                        return defaultValue;
+                    }
+                })
+                .orElse(defaultValue);
+    }
 }
 
 
