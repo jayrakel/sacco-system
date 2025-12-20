@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ public class LoanRepaymentService {
 
     private final LoanRepaymentRepository repaymentRepository;
     private final LoanRepository loanRepository;
+    private final AccountingService accountingService;
 
     /**
      * âœ… Generates the repayment schedule based on Weeks/Months and Grace Period.
@@ -146,6 +148,14 @@ public class LoanRepaymentService {
         }
 
         loanRepository.save(loan);
+
+        // ✅ POST TO ACCOUNTING - Creates journal entry for repayment
+        // AccountingService will handle splitting into principal/interest internally
+        accountingService.postLoanRepayment(loan, amountPaid);
+        // Creates:
+        //   DEBIT Cash (1020)
+        //   CREDIT Loans Receivable (1100) - principal portion
+        //   CREDIT Interest Income (4010) - interest portion
     }
 }
 
