@@ -3,7 +3,7 @@ import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
 
 import com.sacco.sacco_system.modules.savings.api.dto.SavingsAccountDTO;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;

@@ -75,7 +75,7 @@ public class Transaction {
         LOAN_DISBURSEMENT,      // Money out to member
         LOAN_REPAYMENT,         // Money in from member
         LATE_PAYMENT_PENALTY,   // Penalty charge
-
+        FINE_PAYMENT,           // Fine payment
         REVERSAL                // Correction
     }
 

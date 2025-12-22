@@ -5,8 +5,8 @@ import com.sacco.sacco_system.modules.notification.domain.service.NotificationSe
 
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
-import com.sacco.sacco_system.modules.auth.model.User;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
+import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -384,7 +384,7 @@ public class LoanService {
         // );
 
         for (Guarantor g : loan.getGuarantors()) {
-            if (g.getMember().getUser() != null) {
+            if (g.getMember().getEmail() != null) {
                 String msg = String.format("Request from %s %s: Please guarantee loan %s for KES %s. Your liability: KES %s",
                         loan.getMember().getFirstName(), loan.getMember().getLastName(),
                         loan.getLoanNumber(), loan.getPrincipalAmount(), g.getGuaranteeAmount());
@@ -442,14 +442,17 @@ public class LoanService {
                     loan.getPrincipalAmount(),
                     amount);
 
-            System.out.println("📧 [LoanService] Sending notification to guarantor...");
-            notificationService.notifyUser(
-                    guarantor.getUser().getId(),
-                    title,
-                    message,
-                    true,  // Send email
-                    false  // Don't send SMS
-            );
+            System.out.println("📧 [LoanService] Sending notification to guarantor via email...");
+            // Send notification by finding user via email
+            userRepository.findByEmail(guarantor.getEmail()).ifPresent(user -> {
+                notificationService.notifyUser(
+                        user.getId(),
+                        title,
+                        message,
+                        true,  // Send email
+                        false  // Don't send SMS
+                );
+            });
             System.out.println("✅ [LoanService] Notification sent successfully!");
         } catch (Exception e) {
             System.err.println("❌ [LoanService] Failed to send notification: " + e.getMessage());
@@ -504,14 +507,17 @@ public class LoanService {
                     statusText,
                     g.getGuaranteeAmount());
 
-            System.out.println("📧 [LoanService] Notifying applicant of response...");
-            notificationService.notifyUser(
-                    applicant.getUser().getId(),
-                    title,
-                    message,
-                    true,  // Send email
-                    false  // Don't send SMS
-            );
+            System.out.println("📧 [LoanService] Notifying applicant of response via email...");
+            // Send notification by finding user via email
+            userRepository.findByEmail(applicant.getEmail()).ifPresent(user -> {
+                notificationService.notifyUser(
+                        user.getId(),
+                        title,
+                        message,
+                        true,  // Send email
+                        false  // Don't send SMS
+                );
+            });
             System.out.println("✅ [LoanService] Notification sent to applicant!");
         } catch (Exception e) {
             System.err.println("❌ [LoanService] Failed to send notification: " + e.getMessage());
@@ -609,15 +615,15 @@ public class LoanService {
         loan.setStatus(Loan.LoanStatus.ON_AGENDA);
         loanRepository.save(loan);
 
-        // 1. Notify Applicant
-        if (loan.getMember().getUser() != null) {
+        // 1. Notify Applicant via email
+        userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
             notificationService.createNotification(
-                    loan.getMember().getUser(),
+                    user,
                     "Application Tabled",
                     "Your loan application has been added to the agenda for the committee meeting on " + meetingDate,
                     Notification.NotificationType.INFO
             );
-        }
+        });
 
         // 2. Notify Chairperson & Treasurer
         List<User.Role> committeeRoles = List.of(User.Role.CHAIRPERSON, User.Role.TREASURER);
@@ -666,10 +672,10 @@ public class LoanService {
         User voter = userRepository.findById(voterId)
                 .orElseThrow(() -> new RuntimeException("Voter not found"));
 
-        // Get voter's member record if they have one
+        // Get voter's member record by email if they have one
         Member voterMember = null;
-        if (voter.getMemberNumber() != null) {
-            voterMember = memberRepository.findByMemberNumber(voter.getMemberNumber()).orElse(null);
+        if (voter.getEmail() != null) {
+            voterMember = memberRepository.findByEmail(voter.getEmail()).orElse(null);
         }
 
         // ✅ RULE 1: Prevent Double Voting
@@ -696,11 +702,11 @@ public class LoanService {
 
     // 3. GET AGENDA (Filter out voted loans so card disappears)
     public List<LoanDTO> getVotingAgendaForUser(UUID userId) {
-        // Get user's member record
+        // Get user's member record by email
         User user = userRepository.findById(userId).orElse(null);
         Member userMember = null;
-        if (user != null && user.getMemberNumber() != null) {
-            userMember = memberRepository.findByMemberNumber(user.getMemberNumber()).orElse(null);
+        if (user != null && user.getEmail() != null) {
+            userMember = memberRepository.findByEmail(user.getEmail()).orElse(null);
         }
 
         final Member finalUserMember = userMember;

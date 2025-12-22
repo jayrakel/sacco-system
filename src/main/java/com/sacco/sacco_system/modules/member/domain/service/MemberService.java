@@ -2,17 +2,11 @@ package com.sacco.sacco_system.modules.member.domain.service;
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.member.api.dto.MemberResponse;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
-import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
-import com.sacco.sacco_system.modules.auth.model.User;
-import com.sacco.sacco_system.modules.auth.model.VerificationToken;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
-import com.sacco.sacco_system.modules.auth.repository.VerificationTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,12 +38,8 @@ public class MemberService {
     private final MemberRepository memberRepository;
     private final TransactionRepository transactionRepository;
     private final SystemSettingService systemSettingService;
-    private final UserRepository userRepository;
-    private final VerificationTokenRepository tokenRepository;
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
-    private final PasswordEncoder passwordEncoder;
-    private final EmailService emailService;
 
     @Value("${app.upload.dir:uploads/profiles/}")
     private String uploadDir;
@@ -57,8 +47,19 @@ public class MemberService {
     // âœ… ADDED AUDIT LOGGING
     public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode) throws IOException {
 
-        if (userRepository.findByEmail(memberDTO.getEmail()).isPresent()) {
-            throw new RuntimeException("A user with this email address already exists.");
+        // ✅ Check for duplicate email
+        if (memberRepository.findByEmail(memberDTO.getEmail()).isPresent()) {
+            throw new RuntimeException("Email " + memberDTO.getEmail() + " is already registered");
+        }
+
+        // ✅ Check for duplicate phone number
+        if (memberRepository.findByPhoneNumber(memberDTO.getPhoneNumber()).isPresent()) {
+            throw new RuntimeException("Phone number " + memberDTO.getPhoneNumber() + " is already registered");
+        }
+
+        // ✅ Check for duplicate ID number
+        if (memberRepository.findByIdNumber(memberDTO.getIdNumber()).isPresent()) {
+            throw new RuntimeException("ID number " + memberDTO.getIdNumber() + " is already registered");
         }
 
         String imagePath = null;
@@ -70,7 +71,11 @@ public class MemberService {
             imagePath = "profiles/" + filename;
         }
 
+        String memberNumber = generateMemberNumber();
+
+        // Create Member entity
         Member member = Member.builder()
+                .memberNumber(memberNumber)
                 .firstName(memberDTO.getFirstName())
                 .lastName(memberDTO.getLastName())
                 .email(memberDTO.getEmail())
@@ -84,40 +89,11 @@ public class MemberService {
                 .dateOfBirth(memberDTO.getDateOfBirth())
                 .profileImageUrl(imagePath)
                 .status(Member.MemberStatus.ACTIVE)
-                .memberNumber(generateMemberNumber())
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
                 .build();
 
         Member savedMember = memberRepository.save(member);
-
-        String tempPassword = UUID.randomUUID().toString().substring(0, 8);
-
-        User newUser = User.builder()
-                .firstName(member.getFirstName())
-                .lastName(member.getLastName())
-                .email(member.getEmail())
-                .email(member.getEmail()) // TODO: username() method doesn't exist on UserBuilder - using email instead
-                .memberNumber(savedMember.getMemberNumber())
-                .phoneNumber(member.getPhoneNumber())
-                .role(User.Role.MEMBER)
-                .password(passwordEncoder.encode(tempPassword))
-                .mustChangePassword(true)
-                .emailVerified(false)
-                .enabled(true)
-                .build();
-
-        User savedUser = userRepository.save(newUser);
-
-        String token = UUID.randomUUID().toString();
-        VerificationToken verificationToken = new VerificationToken(savedUser, token);
-        tokenRepository.save(verificationToken);
-
-        try {
-            emailService.sendMemberWelcomeEmail(savedUser.getEmail(), savedUser.getFirstName(), tempPassword, token);
-        } catch (Exception e) {
-            log.error("Failed to send welcome email: {}", e.getMessage());
-        }
 
         double feeAmount = 0.0;
         try {
@@ -169,12 +145,9 @@ public class MemberService {
         return convertToDTO(savedMember);
     }
 
-    // âœ… ADDED AUDIT LOGGING
-    public MemberDTO updateProfile(String email, MemberDTO updateDTO, MultipartFile file) throws IOException {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        Member member = memberRepository.findByMemberNumber(user.getMemberNumber())
+    // Update member profile by member ID (no User dependency)
+    public MemberDTO updateProfile(UUID memberId, MemberDTO updateDTO, MultipartFile file) throws IOException {
+        Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member profile not found"));
 
         member.setPhoneNumber(updateDTO.getPhoneNumber());
@@ -188,13 +161,10 @@ public class MemberService {
         }
 
         if (updateDTO.getEmail() != null && !updateDTO.getEmail().equals(member.getEmail())) {
-            if(userRepository.findByEmail(updateDTO.getEmail()).isPresent()) {
+            if (memberRepository.findByEmail(updateDTO.getEmail()).isPresent()) {
                 throw new RuntimeException("Email " + updateDTO.getEmail() + " is already in use.");
             }
             member.setEmail(updateDTO.getEmail());
-            user.setEmail(updateDTO.getEmail());
-            // Username is derived from email via getUsername()
-            userRepository.save(user);
         }
 
         member.setNextOfKinName(updateDTO.getNextOfKinName());

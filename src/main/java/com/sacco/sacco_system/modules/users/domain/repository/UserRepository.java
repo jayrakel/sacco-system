@@ -1,6 +1,6 @@
-package com.sacco.sacco_system.modules.auth.repository; // âœ… New Package
+package com.sacco.sacco_system.modules.users.domain.repository;
 
-import com.sacco.sacco_system.modules.auth.model.User; // âœ… Import new User location
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -26,4 +26,3 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByRole(User.Role role);
 }
-

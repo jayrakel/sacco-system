@@ -2,11 +2,12 @@ package com.sacco.sacco_system.modules.auth.controller;
 
 import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import com.sacco.sacco_system.modules.auth.repository.VerificationTokenRepository;
 import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class SetupController {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final SystemSettingRepository systemSettingRepository;
+    private final AccountingService accountingService;
 
     @Value("${app.official-email-domain}")
     private String officialEmailDomain;
@@ -87,7 +89,21 @@ public class SetupController {
             results.add(result);
         }
 
-        // 3. Mark Setup as Complete (So you don't get redirected back here)
+        // 3. Initialize Chart of Accounts from accounts.json
+        try {
+            log.info("📊 Initializing Chart of Accounts...");
+            accountingService.initChartOfAccounts();
+            log.info("✅ Chart of Accounts initialized successfully");
+        } catch (Exception e) {
+            log.error("❌ Failed to initialize Chart of Accounts: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                "success", false,
+                "message", "Failed to initialize Chart of Accounts: " + e.getMessage(),
+                "results", results
+            ));
+        }
+
+        // 4. Mark Setup as Complete (So you don't get redirected back here)
         try {
             SystemSetting setupComplete = SystemSetting.builder()
                     .key("SETUP_COMPLETE")
@@ -103,7 +119,7 @@ public class SetupController {
 
         return ResponseEntity.ok(Map.of(
             "success", true, 
-            "message", "Setup process finished.", 
+            "message", "Setup process finished. Chart of Accounts initialized.", 
             "results", results
         ));
     }

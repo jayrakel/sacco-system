@@ -2,7 +2,7 @@ package com.sacco.sacco_system.modules.deposit.api.controller;
 
 import com.sacco.sacco_system.modules.audit.domain.entity.AuditLog;
 import com.sacco.sacco_system.modules.audit.domain.service.AuditService;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.deposit.api.dto.CreateDepositRequest;
 import com.sacco.sacco_system.modules.deposit.api.dto.DepositDTO;
 import com.sacco.sacco_system.modules.deposit.api.dto.DepositProductDTO;

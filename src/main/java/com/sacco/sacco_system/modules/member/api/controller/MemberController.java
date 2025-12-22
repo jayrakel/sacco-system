@@ -1,18 +1,19 @@
 package com.sacco.sacco_system.modules.member.api.controller;
 import com.sacco.sacco_system.modules.member.api.dto.MemberResponse;
 
-import com.fasterxml.jackson.databind.ObjectMapper; // âœ… Import
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
+import com.sacco.sacco_system.modules.registration.domain.service.RegistrationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType; // âœ… Import
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile; // âœ… Import
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class MemberController {
 
     private final MemberService memberService;
+    private final RegistrationService registrationService;
     private final MemberRepository memberRepository;
 
     // âœ… NEW: Get Logged-in Member Profile
@@ -51,8 +53,8 @@ public class MemberController {
             mapper.findAndRegisterModules(); // Handle Dates
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
 
-            // Call service with all 4 arguments
-            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode);
+            // Use RegistrationService to coordinate User + Member creation
+            MemberDTO created = registrationService.registerMember(memberDTO, file, paymentMethod, referenceCode);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -160,7 +162,13 @@ public class MemberController {
             mapper.findAndRegisterModules();
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
 
-            MemberDTO updated = memberService.updateProfile(email, memberDTO, file);
+            // Get member by email first
+            MemberDTO currentMember = memberService.getAllMembers().stream()
+                    .filter(m -> m.getEmail().equals(email))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Member not found"));
+
+            MemberDTO updated = memberService.updateProfile(currentMember.getId(), memberDTO, file);
 
             return ResponseEntity.ok(Map.of("success", true, "message", "Profile updated successfully", "data", updated));
         } catch (Exception e) {

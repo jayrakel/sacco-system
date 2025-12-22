@@ -1,7 +1,7 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
-import com.sacco.sacco_system.modules.auth.model.User;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
+import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanDisbursement;

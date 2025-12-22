@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.finance.api.controller;
 
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.finance.domain.entity.Fine;
 import com.sacco.sacco_system.modules.finance.domain.service.FineService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;

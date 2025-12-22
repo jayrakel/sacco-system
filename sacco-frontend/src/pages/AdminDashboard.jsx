@@ -96,7 +96,7 @@ export default function AdminDashboard() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
                 <div className="mb-8 overflow-x-auto pb-2 scrollbar-hide">
-                    <div className="flex gap-2 w-max">
+                    <div className="flex gap-1 w-max">
                         <TabButton id="overview" label="Dashboard" icon={LayoutDashboard} />
                         <TabButton id="finance" label="Finance" icon={Wallet} />
                         <TabButton id="savings" label="Savings" icon={PiggyBank} />

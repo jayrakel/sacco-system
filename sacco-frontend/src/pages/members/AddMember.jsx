@@ -104,7 +104,7 @@ export default function AddMember() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-8 font-sans flex justify-center items-start">
-      <div className="max-w-4xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+      <div className="max-w-6xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
 
         <div className="bg-slate-900 text-white p-6 flex justify-between items-center">
           <div className="flex items-center gap-3">
