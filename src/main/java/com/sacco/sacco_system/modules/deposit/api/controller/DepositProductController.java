@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.deposit.api.controller;
 
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.deposit.api.dto.DepositProductDTO;
 import com.sacco.sacco_system.modules.deposit.domain.service.DepositProductService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;

@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.audit.domain.entity;
 
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

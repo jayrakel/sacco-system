@@ -18,6 +18,7 @@ import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanRepaymentService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 import com.sacco.sacco_system.modules.savings.domain.service.SavingsService;
@@ -47,8 +48,7 @@ public class DepositService {
 
     private final DepositRepository depositRepository;
     private final DepositAllocationRepository allocationRepository;
-    private final DepositProductRepository depositProductRepository;
-    private final SavingsAccountRepository savingsAccountRepository;
+    private final DepositProductRepository depositProductRepository;    private final MemberRepository memberRepository;    private final SavingsAccountRepository savingsAccountRepository;
     private final LoanRepository loanRepository;
     private final FineRepository fineRepository;
     private final ShareCapitalRepository shareCapitalRepository;

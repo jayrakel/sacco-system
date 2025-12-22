@@ -2,7 +2,7 @@ package com.sacco.sacco_system.modules.member.domain.entity;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
 
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
@@ -76,12 +76,7 @@ public class Member {
 
     private BigDecimal totalSavings = BigDecimal.ZERO;
 
-    // âœ… ADDED: Link to User Login Account (Required by MemberService)
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "user_id", referencedColumnName = "id")
-    private User user;
-
-    // âœ… Relationships
+    // Relationships
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnoreProperties("member")

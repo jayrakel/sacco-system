@@ -2,7 +2,7 @@ package com.sacco.sacco_system.modules.audit.domain.service;
 
 import com.sacco.sacco_system.modules.audit.domain.entity.AuditLog;
 import com.sacco.sacco_system.modules.audit.domain.repository.AuditLogRepository;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

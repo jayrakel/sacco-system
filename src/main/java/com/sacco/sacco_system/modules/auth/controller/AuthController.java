@@ -2,7 +2,7 @@ package com.sacco.sacco_system.modules.auth.controller;
 
 import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
 import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.auth.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -54,8 +54,7 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> logout(@AuthenticationPrincipal User user) {
         try {
             authService.logout(user);
-            // Log successful logout
-            auditService.logSuccess(user, AuditLog.Actions.LOGOUT, "Auth", user.getId().toString(), "User logged out");
+            // Log successful logout (audit logging happens in AuthService)
             return ResponseEntity.ok(Map.of("success", true, "message", "Logged out successfully"));
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of("success", true, "message", "Logged out")); // Always return success for logout

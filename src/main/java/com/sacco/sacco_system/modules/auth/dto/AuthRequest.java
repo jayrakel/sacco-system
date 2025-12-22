@@ -1,5 +1,7 @@
 package com.sacco.sacco_system.modules.auth.dto;
 
+import org.apache.commons.lang3.builder.ToStringExclude;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,6 +19,7 @@ public class AuthRequest {
     @JsonProperty(value = "username")
     private String username;
     
+    @ToStringExclude
     private String password;
     
     // Getter that returns email or username, whichever is provided

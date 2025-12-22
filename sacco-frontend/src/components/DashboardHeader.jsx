@@ -51,7 +51,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
             try {
                 // 1. Notifications
                 const notifRes = await api.get('/api/notifications').catch(() => ({ data: { data: [] } }));
-                const rawNotifs = notifRes.data.data || [];
+                const rawNotifs = Array.isArray(notifRes.data.data) ? notifRes.data.data : [];
                 const unread = rawNotifs.filter(n => !n.read);
                 const history = rawNotifs.filter(n => n.read);
                 setNotifications({ unread, history, archive: [] });

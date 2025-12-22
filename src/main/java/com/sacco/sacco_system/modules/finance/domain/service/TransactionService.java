@@ -157,14 +157,14 @@ public class TransactionService {
         org.springframework.security.core.Authentication auth =
             org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
 
-        if (auth != null && auth.getPrincipal() instanceof com.sacco.sacco_system.modules.auth.model.User) {
-            com.sacco.sacco_system.modules.auth.model.User user =
-                (com.sacco.sacco_system.modules.auth.model.User) auth.getPrincipal();
-            // Fetch member by member number from user
-            if (user.getMemberNumber() != null) {
+        if (auth != null && auth.getPrincipal() instanceof com.sacco.sacco_system.modules.users.domain.entity.User) {
+            com.sacco.sacco_system.modules.users.domain.entity.User user =
+                (com.sacco.sacco_system.modules.users.domain.entity.User) auth.getPrincipal();
+            // Fetch member by email (User and Member are independent but share email)
+            if (user.getEmail() != null) {
                 return savingsAccountRepository.findAll().stream()
                     .map(SavingsAccount::getMember)
-                    .filter(m -> m.getMemberNumber().equals(user.getMemberNumber()))
+                    .filter(m -> m.getEmail().equals(user.getEmail()))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Member not found"));
             }

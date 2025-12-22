@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.notification.api.controller;
 
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.notification.domain.entity.Notification;
 import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;

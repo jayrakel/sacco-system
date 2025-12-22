@@ -1,7 +1,7 @@
 package com.sacco.sacco_system.modules.admin.api.controller;
 
-import com.sacco.sacco_system.modules.auth.model.User;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
+import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -81,10 +81,8 @@ public class OfficialEmailController {
             response.put("lastName", user.getLastName());
             response.put("personalEmail", user.getEmail());
             response.put("officialEmail", user.getOfficialEmail());
-            response.put("memberNumber", user.getMemberNumber());
             response.put("role", user.getRole());
             response.put("hasOfficialEmail", user.getOfficialEmail() != null);
-            response.put("hasMemberAccess", user.getMemberNumber() != null);
 
             return ResponseEntity.ok(response);
 

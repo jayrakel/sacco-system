@@ -4,9 +4,9 @@ package com.sacco.sacco_system.modules.auth.service;
 import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
 import com.sacco.sacco_system.modules.auth.dto.AuthResponse;
 import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
-import com.sacco.sacco_system.modules.auth.model.User;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
-import com.sacco.sacco_system.modules.auth.repository.UserRepository;
+import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import com.sacco.sacco_system.modules.auth.repository.VerificationTokenRepository;
 import com.sacco.sacco_system.modules.auth.service.JwtService;
 // Custom JWT service - create if missing
@@ -116,7 +116,6 @@ public class AuthService {
                 .username(user.getUsername())
                 .firstName(user.getFirstName())
                 .lastName(user.getLastName())
-                .memberNumber(user.getMemberNumber())
                 .role(user.getRole().toString())
                 .mustChangePassword(user.isMustChangePassword())
                 .systemSetupRequired(setupRequired)
