@@ -37,13 +37,16 @@ public class TransactionController {
         // Convert to simplified DTO
         List<TransactionDTO> dtos = transactions.stream().map(t -> TransactionDTO.builder()
                 .id(t.getId())
+                .transactionId(t.getTransactionId())
                 .amount(t.getAmount())
                 .type(t.getType().toString())
                 .transactionDate(t.getTransactionDate())
                 .referenceCode(t.getReferenceCode())
                 .description(t.getDescription())
-                // Safely get member name
-                .memberName(t.getMember() != null ? t.getMember().getFirstName() + " " + t.getMember().getLastName() : "System")
+                .member(t.getMember() != null ? MemberDTO.builder()
+                        .firstName(t.getMember().getFirstName())
+                        .lastName(t.getMember().getLastName())
+                        .build() : null)
                 .build()
         ).collect(Collectors.toList());
 
@@ -96,17 +99,25 @@ public class TransactionController {
         }
     }
 
-    // âœ… Simple Inner DTO Class
+    // ✅ Simple Inner DTO Classes
     @Data
     @Builder
     public static class TransactionDTO {
         private UUID id;
+        private String transactionId;
         private BigDecimal amount;
         private String type;
         private LocalDateTime transactionDate;
         private String referenceCode;
         private String description;
-        private String memberName;
+        private MemberDTO member;
+    }
+
+    @Data
+    @Builder
+    public static class MemberDTO {
+        private String firstName;
+        private String lastName;
     }
 }
 

@@ -1,12 +1,18 @@
 package com.sacco.sacco_system.modules.finance.api.controller;
 
+import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.finance.domain.entity.Fine;
 import com.sacco.sacco_system.modules.finance.domain.service.FineService;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +28,7 @@ import java.util.UUID;
 public class FineController {
 
     private final FineService fineService;
+    private final MemberRepository memberRepository;
 
     /**
      * Impose a fine on a member
@@ -116,6 +123,37 @@ public class FineController {
                         "pendingTotal", pendingTotal
                 )
         ));
+    }
+
+    /**
+     * Get current user's fines (optionally filtered by status)
+     */
+    @GetMapping("/my-fines")
+    public ResponseEntity<Map<String, Object>> getMyFines(
+            @RequestParam(required = false) String status,
+            @AuthenticationPrincipal User user) {
+        try {
+            Member member = memberRepository.findByEmail(user.getEmail())
+                    .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
+
+            List<Fine> fines;
+            if ("PENDING".equalsIgnoreCase(status)) {
+                fines = fineService.getMemberPendingFines(member.getId());
+            } else {
+                fines = fineService.getMemberFines(member.getId());
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("fines", fines);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
 
     /**
