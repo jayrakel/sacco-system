@@ -26,8 +26,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -125,22 +127,23 @@ public class MemberService {
         }
 
         if (feeAmount > 0) {
-            // TODO: Transaction class not properly imported - commenting out transaction creation
-            // Transaction registrationTx = Transaction.builder()
-            //         .member(savedMember)
-            //         .type(Transaction.TransactionType.REGISTRATION_FEE)
-            //         .amount(BigDecimal.valueOf(feeAmount))
-            //         .paymentMethod(Transaction.PaymentMethod.valueOf(paymentMethod))
-            //         .referenceCode(referenceCode)
-            //         .description("Registration Fee - " + referenceCode)
-            //         .balanceAfter(BigDecimal.ZERO)
-            //         .build();
-
-            // transactionRepository.save(registrationTx);
-
             BigDecimal amount = BigDecimal.valueOf(feeAmount);
+            
+            // Create transaction record for registration fee
+            Transaction registrationTx = Transaction.builder()
+                    .member(savedMember)
+                    .type(Transaction.TransactionType.REGISTRATION_FEE)
+                    .amount(amount)
+                    .paymentMethod(Transaction.PaymentMethod.valueOf(paymentMethod))
+                    .referenceCode(referenceCode)
+                    .description("Registration Fee - " + savedMember.getMemberNumber())
+                    .balanceAfter(BigDecimal.ZERO)
+                    .build();
+
+            Transaction saved = transactionRepository.save(registrationTx);
+
             String narrative = "Registration Fee - " + savedMember.getMemberNumber();
-            String ref = referenceCode; // registrationTx.getTransactionId();
+            String ref = saved.getTransactionId(); // Use transaction ID as reference
 
             try {
                 if ("CASH".equalsIgnoreCase(paymentMethod)) {

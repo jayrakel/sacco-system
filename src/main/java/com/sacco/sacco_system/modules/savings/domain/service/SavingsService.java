@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -33,6 +34,7 @@ public class SavingsService {
     private final MemberRepository memberRepository;
     private final SavingsProductRepository savingsProductRepository;
     private final AccountingService accountingService;
+    private final ReferenceCodeService referenceCodeService;
 
     // ========================================================================
     // 1. ACCOUNT MANAGEMENT
@@ -234,16 +236,17 @@ public class SavingsService {
                     if(acc.getAccruedInterest() != null) acc.setAccruedInterest(acc.getAccruedInterest().add(interest));
                     savingsAccountRepository.save(acc);
 
-                    // TODO: Transaction class not properly imported - commenting out transaction creation
-                    // Transaction tx = Transaction.builder()
-                    //         .savingsAccount(acc)
-                    //         .member(acc.getMember())
-                    //         .type(Transaction.TransactionType.INTEREST_EARNED)
-                    //         .amount(interest)
-                    //         .description("Monthly Interest")
-                    //         .balanceAfter(acc.getBalance())
-                    //         .build();
-                    // transactionRepository.save(tx);
+                    // Create transaction record for interest earned
+                    Transaction tx = Transaction.builder()
+                            .member(acc.getMember())
+                            .type(Transaction.TransactionType.INTEREST_EARNED)
+                            .amount(interest)
+                            .paymentMethod(Transaction.PaymentMethod.SYSTEM)
+                            .referenceCode(referenceCodeService.generateReferenceCode())
+                            .description("Monthly Interest - " + acc.getAccountNumber())
+                            .balanceAfter(acc.getBalance())
+                            .build();
+                    transactionRepository.save(tx);
 
                     try {
                         accountingService.postDoubleEntry("Interest " + acc.getAccountNumber(), null, "5006", "2001", interest);
@@ -273,6 +276,7 @@ public class SavingsService {
                 .productName(productName)
                 .interestRate(rate)
                 .maturityDate(account.getMaturityDate())
+                .accruedInterest(account.getAccruedInterest())
                 .build();
     }
 }

@@ -1,7 +1,10 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 
+import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
+import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +27,8 @@ public class LoanRepaymentService {
     private final LoanRepaymentRepository repaymentRepository;
     private final LoanRepository loanRepository;
     private final AccountingService accountingService;
+    private final TransactionRepository transactionRepository;
+    private final ReferenceCodeService referenceCodeService;
 
     /**
      * âœ… Generates the repayment schedule based on Weeks/Months and Grace Period.
@@ -148,6 +153,18 @@ public class LoanRepaymentService {
         }
 
         loanRepository.save(loan);
+
+        // Create transaction record
+        Transaction transaction = Transaction.builder()
+                .member(loan.getMember())
+                .type(Transaction.TransactionType.LOAN_REPAYMENT)
+                .amount(amountPaid)
+                .paymentMethod(Transaction.PaymentMethod.CASH)
+                .referenceCode(referenceCodeService.generateReferenceCode())
+                .description("Loan repayment - " + loan.getLoanNumber())
+                .balanceAfter(loan.getLoanBalance())
+                .build();
+        transactionRepository.save(transaction);
 
         // ✅ POST TO ACCOUNTING - Creates journal entry for repayment
         // Calculate principal vs interest portion of the payment
