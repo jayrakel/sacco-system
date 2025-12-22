@@ -27,8 +27,7 @@ public class SavingsAccountDTO {
     // âœ… NEW FIELDS FOR UI
     private String productName;
     private BigDecimal interestRate;
-    private LocalDate maturityDate;
-}
+    private LocalDate maturityDate;    private BigDecimal accruedInterest;}
 
 
 

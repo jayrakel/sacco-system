@@ -1,6 +1,8 @@
 package com.sacco.sacco_system.modules.auth.model; // âœ… New Package
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -10,6 +12,8 @@ import java.util.UUID;
 @Entity
 @Data
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class VerificationToken {
 
     @Id

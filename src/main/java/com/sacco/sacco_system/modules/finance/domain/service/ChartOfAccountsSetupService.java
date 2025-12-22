@@ -80,6 +80,12 @@ public class ChartOfAccountsSetupService {
     public void initializeGLMappings() {
         log.info("Initializing GL Mappings...");
 
+        // Check existing mappings count
+        long existingCount = mappingRepository.count();
+        if (existingCount > 0) {
+            log.info("GL Mappings already exist ({} mappings). Adding any missing mappings...", existingCount);
+        }
+
         List<GlMapping> mappings = new ArrayList<>();
 
         // LOAN DISBURSEMENT
@@ -125,6 +131,16 @@ public class ChartOfAccountsSetupService {
         mappings.add(createMapping("FINE_PAYMENT", "1020", "4040",
                 "Fine payment from member"));
 
+        // CONTRIBUTION TO CUSTOM PRODUCTS (meat contribution, harambee, etc.)
+        // DEBIT Bank, CREDIT Member Deposits (Non-Withdrawable)
+        mappings.add(createMapping("CONTRIBUTION_RECEIVED", "1020", "2001",
+                "Contribution to custom product"));
+
+        // SHARE CAPITAL CONTRIBUTION
+        // DEBIT Bank, CREDIT Share Capital
+        mappings.add(createMapping("SHARE_CAPITAL_CONTRIBUTION", "1020", "2020",
+                "Share capital contribution"));
+
         // OPERATING EXPENSE
         mappings.add(createMapping("OPERATING_EXPENSE", "5010", "1020",
                 "Operating expense payment"));
@@ -137,10 +153,17 @@ public class ChartOfAccountsSetupService {
         mappings.add(createMapping("BANK_CHARGE", "5030", "1020",
                 "Bank charges and fees"));
 
-        // Save all mappings
-        mappingRepository.saveAll(mappings);
+        // Save only new mappings (check if each mapping exists by event name)
+        int addedCount = 0;
+        for (GlMapping mapping : mappings) {
+            if (mappingRepository.findByEventName(mapping.getEventName()).isEmpty()) {
+                mappingRepository.save(mapping);
+                addedCount++;
+            }
+        }
 
-        log.info("GL Mappings initialized with {} mappings", mappings.size());
+        long totalCount = mappingRepository.count();
+        log.info("GL Mappings initialized. Added {} new mappings. Total: {}", addedCount, totalCount);
     }
 
     /**

@@ -7,7 +7,9 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.auth.repository.UserRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
-import com.sacco.sacco_system.modules.admin.domain.service.AuditService;
+import com.sacco.sacco_system.modules.audit.domain.service.AuditService;
+import com.sacco.sacco_system.modules.audit.domain.entity.AuditLog;
+import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanCalculatorService;
@@ -53,7 +55,8 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> createProduct(@RequestBody LoanProduct product) {
         try {
             LoanProduct saved = loanProductRepository.save(product);
-            auditService.logAction("CREATE_PRODUCT", "LoanProduct", saved.getId().toString(), "Created: " + saved.getName());
+            User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            auditService.logSuccess(user, AuditLog.Actions.CREATE, "LoanProduct", saved.getId().toString(), "Created: " + saved.getName());
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("success", true, "message", "Product Created", "data", saved));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -473,7 +476,8 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> restructureLoan(@PathVariable UUID id, @RequestParam Integer newDuration) {
         try {
             LoanDTO loan = loanService.restructureLoan(id, newDuration);
-            auditService.logAction("RESTRUCTURE_LOAN", "Loan", id.toString(), "New Duration: " + newDuration);
+            User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            auditService.logSuccess(user, "RESTRUCTURE_LOAN", "Loan", id.toString(), "New Duration: " + newDuration);
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan Restructured", "data", loan));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -543,7 +547,8 @@ public class LoanController {
     public ResponseEntity<Map<String, Object>> deleteLoan(@PathVariable UUID id) {
         try {
             loanService.deleteApplication(id);
-            auditService.logAction("DELETE_LOAN", "Loan", id.toString(), "Application Deleted");
+            User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            auditService.logSuccess(user, AuditLog.Actions.DELETE, "Loan", id.toString(), "Application Deleted");
             return ResponseEntity.ok(Map.of("success", true, "message", "Application deleted successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));

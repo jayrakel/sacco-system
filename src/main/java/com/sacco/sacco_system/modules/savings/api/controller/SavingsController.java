@@ -12,6 +12,7 @@ import com.sacco.sacco_system.modules.savings.domain.service.SavingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -144,6 +145,27 @@ public class SavingsController {
     // 4. MEMBER DASHBOARD (Self-Service)
     // ========================================================================
 
+    @GetMapping("/my-accounts")
+    public ResponseEntity<Map<String, Object>> getMyAccounts(@AuthenticationPrincipal User user) {
+        try {
+            Member member = memberRepository.findByEmail(user.getEmail())
+                    .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
+
+            List<SavingsAccountDTO> accounts = savingsService.getMemberAccounts(member.getId());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("accounts", accounts);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
     @GetMapping("/my-balance")
     public ResponseEntity<Map<String, Object>> getMyBalance() {
         try {
@@ -161,14 +183,19 @@ public class SavingsController {
             // 3. Get Accounts
             List<SavingsAccountDTO> accounts = savingsService.getMemberAccounts(member.getId());
 
-            // 4. Calculate Total
+            // 4. Calculate Total Balance and Interest
             BigDecimal totalBalance = accounts.stream()
                     .map(SavingsAccountDTO::getBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            
+            BigDecimal totalInterestEarned = savingsService.getMemberAccounts(member.getId()).stream()
+                    .map(SavingsAccountDTO::getAccruedInterest)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("balance", totalBalance);
+            response.put("interestEarned", totalInterestEarned);
             response.put("accounts", accounts);
 
             return ResponseEntity.ok(response);

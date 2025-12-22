@@ -41,6 +41,9 @@ public class DataInitializer {
     @Value("${app.default-admin.phone}")
     private String adminPhone;
 
+    @Value("${app.official-email-domain}")
+    private String officialEmailDomain;
+
     @Bean
     @Transactional
     public CommandLineRunner initializeData() {
@@ -99,22 +102,36 @@ public class DataInitializer {
     private void initializeAdminUser() {
         if (userRepository.findByEmail(adminEmail).isEmpty()) {
             log.info("👤 Creating default admin user...");
+            log.info("📧 Admin Email: {}", adminEmail);
+            log.info("🔑 Admin Password (raw): {}", adminPassword);
+            log.info("📞 Admin Phone: {}", adminPhone);
+
+            String encodedPassword = passwordEncoder.encode(adminPassword);
+            log.info("🔐 Encoded Password: {}", encodedPassword);
+            log.info("✅ Password matches test: {}", passwordEncoder.matches(adminPassword, encodedPassword));
 
             User admin = User.builder()
                     .email(adminEmail)
-                    .password(passwordEncoder.encode(adminPassword))
+                    .officialEmail(generateOfficialEmail(User.Role.ADMIN))
+                    .password(encodedPassword)
                     .firstName("System")
                     .lastName("Administrator")
                     .phoneNumber(adminPhone)
                     .role(User.Role.ADMIN)
                     .enabled(true)
                     .emailVerified(true)
-                    .mustChangePassword(false)
+                    .mustChangePassword(true)
                     .build();
 
             userRepository.save(admin);
-            log.info("✅ Default admin user created: {}", adminEmail);
+            log.info("✅ Default admin user created: {} with official email: {}", adminEmail, admin.getOfficialEmail());
+        } else {
+            log.info("ℹ️ Admin user already exists: {}", adminEmail);
         }
+    }
+
+    private String generateOfficialEmail(User.Role role) {
+        return role.toString().toLowerCase().replace("_", "") + "@" + officialEmailDomain;
     }
 
     private void initializeSavingsProducts() {

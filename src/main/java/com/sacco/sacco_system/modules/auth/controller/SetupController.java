@@ -1,5 +1,7 @@
 package com.sacco.sacco_system.modules.auth.controller;
 
+import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
+import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
 import com.sacco.sacco_system.modules.auth.model.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
 import com.sacco.sacco_system.modules.auth.repository.UserRepository;
@@ -8,14 +10,17 @@ import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -28,6 +33,10 @@ public class SetupController {
     private final VerificationTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final SystemSettingRepository systemSettingRepository;
+
+    @Value("${app.official-email-domain}")
+    private String officialEmailDomain;
 
     @Data
     public static class CriticalAdminRequest {
@@ -45,184 +54,159 @@ public class SetupController {
 
     /**
      * Create critical admin users (Chairperson, Secretary, Treasurer, Loan Officer, etc.)
-     * Generates temporary passwords and sends them via email
+     * This iterates through the list and creates them safely.
      */
     @PostMapping("/critical-admins")
-    @Transactional
-    public ResponseEntity<Map<String, Object>> createCriticalAdmins(@RequestBody CriticalAdminsPayload payload) {
-        try {
-            if (payload.getAdmins() == null || payload.getAdmins().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "success", false,
-                        "message", "No admins provided"
-                ));
+    // ❌ Removed @Transactional from here. 
+    // We want to save each user individually. If one fails, the others should still exist.
+    public ResponseEntity<?> createCriticalAdmins(@RequestBody CriticalAdminsPayload payload) {
+        
+        // Validate for duplicate emails within the payload
+        Set<String> emailSet = new HashSet<>();
+        List<String> duplicates = new ArrayList<>();
+        for (CriticalAdminRequest admin : payload.getAdmins()) {
+            if (!emailSet.add(admin.getEmail())) {
+                duplicates.add(admin.getEmail() + " (" + admin.getRole() + ")");
             }
+        }
 
-            List<Map<String, Object>> createdAdmins = new ArrayList<>();
-            
-            for (CriticalAdminRequest request : payload.getAdmins()) {
-                try {
-                    Map<String, Object> result = createCriticalAdmin(request);
-                    if ((Boolean) result.get("success")) {
-                        createdAdmins.add(result);
-                    } else {
-                        createdAdmins.add(result);
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to create admin {}: {}", request.getEmail(), e.getMessage(), e);
-                    createdAdmins.add(Map.of(
-                            "success", false,
-                            "email", request.getEmail(),
-                            "error", e.getMessage()
-                    ));
-                }
-            }
-
-            long successCount = createdAdmins.stream().filter(a -> (Boolean) a.get("success")).count();
-            
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", successCount + " critical admin(s) created successfully. Check email for credentials.",
-                    "count", successCount,
-                    "total", createdAdmins.size(),
-                    "admins", createdAdmins
-            ));
-        } catch (Exception e) {
-            log.error("Failed to create critical admins: ", e);
-            return ResponseEntity.status(500).body(Map.of(
-                    "success", false,
-                    "message", "Failed to create critical admins: " + e.getMessage(),
-                    "error", e.getClass().getSimpleName()
+        if (!duplicates.isEmpty()) {
+            log.error("❌ Duplicate emails found in payload: {}", duplicates);
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "Duplicate emails found: " + String.join(", ", duplicates),
+                "duplicates", duplicates
             ));
         }
+        
+        List<Map<String, Object>> results = new ArrayList<>();
+
+        // Loop through every admin in the request and create them
+        for (CriticalAdminRequest adminRequest : payload.getAdmins()) {
+            Map<String, Object> result = createCriticalAdmin(adminRequest);
+            results.add(result);
+        }
+
+        // 3. Mark Setup as Complete (So you don't get redirected back here)
+        try {
+            SystemSetting setupComplete = SystemSetting.builder()
+                    .key("SETUP_COMPLETE")
+                    .value("true")
+                    .description("Flag to indicate system setup is done")
+                    .dataType("BOOLEAN")
+                    .build();
+            systemSettingRepository.save(setupComplete);
+            log.info("✅ System setup marked as complete");
+        } catch (Exception e) {
+            log.warn("⚠️ Setup flag might already exist or failed to save: {}", e.getMessage());
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "success", true, 
+            "message", "Setup process finished.", 
+            "results", results
+        ));
     }
 
     /**
      * Create individual critical admin user with temporary password and email verification
+     * Uses its own transaction so one failure doesn't rollback everyone.
      */
+    @Transactional 
     public Map<String, Object> createCriticalAdmin(CriticalAdminRequest request) {
         try {
-            log.info("Starting creation of admin: {}", request.getEmail());
+            log.info("Starting creation of admin: {} with role: {}", request.getEmail(), request.getRole());
             
             // Validate role
             User.Role role;
             try {
                 role = User.Role.valueOf(request.getRole());
+                log.info("✅ Role validated: {}", role);
             } catch (IllegalArgumentException e) {
-                throw new RuntimeException("Invalid role: " + request.getRole());
+                log.error("❌ Invalid role received: {}. Valid roles are: {}", request.getRole(), java.util.Arrays.toString(User.Role.values()));
+                return Map.of("success", false, "email", request.getEmail(), "error", "Invalid role: " + request.getRole());
             }
 
-            // Check if user already exists
-            if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-                throw new RuntimeException("User with email " + request.getEmail() + " already exists");
+            // Check if admin account already exists
+            if (userRepository.findByOfficialEmail(generateOfficialEmail(role)).isPresent()) {
+                return Map.of("success", false, "email", request.getEmail(), "error", "Admin role already assigned to another user");
             }
 
             // Generate temporary password
             String tempPassword = generateTemporaryPassword();
-            log.info("Generated temporary password for: {}", request.getEmail());
+            String encodedPassword = passwordEncoder.encode(tempPassword);
 
-            // Create user
-            User user = User.builder()
-                    .id(UUID.randomUUID())
+            // CREATE ADMIN ACCOUNT (with official email)
+            User adminUser = User.builder()
                     .firstName(request.getFirstName())
                     .lastName(request.getLastName())
-                    .email(request.getEmail())
+                    .email(generateOfficialEmail(role)) // Admin uses official email
                     .phoneNumber(request.getPhoneNumber())
                     .role(role)
                     .officialEmail(generateOfficialEmail(role))
-                    .password(passwordEncoder.encode(tempPassword))
+                    .password(encodedPassword)
                     .enabled(true)
-                    .emailVerified(false)
+                    .emailVerified(true)
                     .mustChangePassword(true)
                     .build();
 
-            log.info("User object created, attempting to save to database: {}", request.getEmail());
-            
-            // Save user to database
-            User savedUser = userRepository.save(user);
-            log.info("✅ User saved to database with ID: {} - {}", savedUser.getId(), request.getEmail());
+            User savedAdmin = userRepository.save(adminUser);
+            log.info("✅ Admin account created: {}", savedAdmin.getOfficialEmail());
 
-            // Generate and save email verification token
+            // Generate verification token
             String verificationToken = UUID.randomUUID().toString();
-            VerificationToken vToken = new VerificationToken(savedUser, verificationToken);
-            tokenRepository.save(vToken);
-            log.info("✅ Generated and saved verification token for: {}", request.getEmail());
+            tokenRepository.save(new VerificationToken(savedAdmin, verificationToken));
 
-            // Send verification email with temporary password (asynchronously)
+            // Send verification email to personal email
             try {
+                log.info("Sending verification email to: {}", request.getEmail());
                 emailService.sendVerificationEmail(
-                        savedUser.getEmail(),
-                        savedUser.getFirstName(),
+                        request.getEmail(),
+                        savedAdmin.getFirstName(),
                         tempPassword,
                         verificationToken
                 );
-                log.info("✅ Sent verification email to: {}", request.getEmail());
+                log.info("📧 Verification email sent successfully to: {}", request.getEmail());
             } catch (Exception e) {
-                log.warn("⚠️ Failed to send email to {}, but user was created successfully: {}", request.getEmail(), e.getMessage());
-                // Don't fail the whole operation if email fails
+                log.warn("⚠️ Email failed for {}, but account is SAVED.", request.getEmail());
             }
+
+            // 📝 CONSOLE FALLBACK - Log credentials for manual access
+            log.warn("╔════════════════════════════════════════════════════════════════╗");
+            log.warn("║ ADMIN ACCOUNT CREATED - SAVE THESE CREDENTIALS                ║");
+            log.warn("╠════════════════════════════════════════════════════════════════╣");
+            log.warn("║ Name:            {}", String.format("%-43s", savedAdmin.getFirstName() + " " + savedAdmin.getLastName()) + "║");
+            log.warn("║ Role:            {}", String.format("%-43s", role.toString()) + "║");
+            log.warn("║ Login Email:     {}", String.format("%-43s", savedAdmin.getOfficialEmail()) + "║");
+            log.warn("║ Password:        {}", String.format("%-43s", tempPassword) + "║");
+            log.warn("║ Phone:           {}", String.format("%-43s", savedAdmin.getPhoneNumber()) + "║");
+            log.warn("╚════════════════════════════════════════════════════════════════╝");
 
             return Map.of(
                     "success", true,
+                    "email", request.getEmail(),
                     "role", role.toString(),
-                    "email", request.getEmail(),
-                    "firstName", request.getFirstName(),
-                    "lastName", request.getLastName(),
-                    "message", "Account created and saved to database. Verification email sent with temporary credentials."
+                    "officialEmail", savedAdmin.getOfficialEmail(),
+                    "tempPassword", tempPassword
             );
+
         } catch (Exception e) {
-            log.error("❌ Failed to create admin {}: {}", request.getEmail(), e.getMessage(), e);
-            return Map.of(
-                    "success", false,
-                    "email", request.getEmail(),
-                    "error", e.getMessage()
-            );
+            log.error("❌ Critical error creating accounts for {}: {}", request.getEmail(), e.getMessage());
+            return Map.of("success", false, "email", request.getEmail(), "error", e.getMessage());
         }
     }
 
-    /**
-     * Generate a secure temporary password
-     */
     private String generateTemporaryPassword() {
-        // Generate a 12-character temporary password with mix of uppercase, lowercase, numbers, and special char
-        String upperCase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        String lowerCase = "abcdefghijklmnopqrstuvwxyz";
-        String numbers = "0123456789";
-        String specialChars = "!@#$%^&*";
-
-        String all = upperCase + lowerCase + numbers + specialChars;
-        StringBuilder password = new StringBuilder();
-        
-        // Ensure at least one of each type
-        password.append(upperCase.charAt((int) (Math.random() * upperCase.length())));
-        password.append(lowerCase.charAt((int) (Math.random() * lowerCase.length())));
-        password.append(numbers.charAt((int) (Math.random() * numbers.length())));
-        password.append(specialChars.charAt((int) (Math.random() * specialChars.length())));
-
-        // Fill rest randomly
-        for (int i = 4; i < 12; i++) {
-            password.append(all.charAt((int) (Math.random() * all.length())));
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 12; i++) {
+            int index = (int) (Math.random() * chars.length());
+            sb.append(chars.charAt(index));
         }
-
-        // Shuffle the password
-        String tempPass = password.toString();
-        char[] chars = tempPass.toCharArray();
-        for (int i = chars.length - 1; i > 0; i--) {
-            int j = (int) (Math.random() * (i + 1));
-            char temp = chars[i];
-            chars[i] = chars[j];
-            chars[j] = temp;
-        }
-
-        return new String(chars);
+        return sb.toString();
     }
 
-    /**
-     * Generate official email based on role
-     * The same email is used for all people in that position - only password changes when officials rotate
-     */
     private String generateOfficialEmail(User.Role role) {
-        String rolePrefix = role.toString().toLowerCase().replace("_", "");
-        return rolePrefix + "@sacco.local";
+        return role.toString().toLowerCase().replace("_", "") + "@" + officialEmailDomain;
     }
 }
