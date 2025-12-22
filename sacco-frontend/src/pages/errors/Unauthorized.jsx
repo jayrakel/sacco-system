@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, ArrowLeft, Lock, Shield, LogOut } from 'lucide-react';
+import api from '../../api';
 
 export default function Unauthorized() {
     const navigate = useNavigate();
@@ -8,10 +9,16 @@ export default function Unauthorized() {
     // Check if user is logged in
     const isLoggedIn = !!localStorage.getItem('sacco_token');
 
-    const handleLogout = () => {
-        localStorage.removeItem('sacco_token');
-        localStorage.removeItem('sacco_user');
-        navigate('/');
+    const handleLogout = async () => {
+        try {
+            await api.post('/api/auth/logout');
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            localStorage.removeItem('sacco_token');
+            localStorage.removeItem('sacco_user');
+            navigate('/');
+        }
     };
 
     return (

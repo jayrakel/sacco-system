@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Wallet, PiggyBank, HandCoins, ThumbsUp, ThumbsDown, Megaphone } from 'lucide-react';
+import { CreditCard, Wallet, PiggyBank, HandCoins, ThumbsUp, ThumbsDown, Megaphone, Activity } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import MemberOverview from '../features/member/components/MemberOverview';
 import MemberSavings from '../features/member/components/MemberSavings';
 import MemberLoans from '../features/member/components/MemberLoans';
+import MemberActivities from '../features/member/components/MemberActivities';
 import api from '../api';
 
 export default function MemberDashboard() {
@@ -98,12 +99,14 @@ export default function MemberDashboard() {
                     <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<CreditCard size={18}/>} label="Overview" />
                     <TabButton active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon={<PiggyBank size={18}/>} label="My Savings" />
                     <TabButton active={activeTab === 'loans'} onClick={() => setActiveTab('loans')} icon={<HandCoins size={18}/>} label="My Loans" />
+                    <TabButton active={activeTab === 'activities'} onClick={() => setActiveTab('activities')} icon={<Activity size={18}/>} label="Recent Activities" />
                 </div>
 
                 <div className="min-h-[400px] mt-6">
                     {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
                     {activeTab === 'loans' && <MemberLoans />}
+                    {activeTab === 'activities' && <MemberActivities />}
                 </div>
             </main>
         </div>

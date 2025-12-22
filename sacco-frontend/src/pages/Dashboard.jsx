@@ -41,10 +41,18 @@ export default function Dashboard() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('sacco_token');
-    localStorage.removeItem('sacco_user');
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      // Call backend logout endpoint to log the action
+      await api.post('/api/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Always clear local storage and redirect
+      localStorage.removeItem('sacco_token');
+      localStorage.removeItem('sacco_user');
+      navigate('/');
+    }
   };
 
   if (loading) return (

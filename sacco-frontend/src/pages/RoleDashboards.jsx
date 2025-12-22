@@ -1,13 +1,20 @@
 import { useNavigate } from 'react-router-dom';
 import { LogOut, PieChart, FileText, Briefcase, Users } from 'lucide-react';
+import api from '../api';
 
 // Shared Logout Helper
 const LogoutButton = () => {
     const navigate = useNavigate();
-    const handleLogout = () => {
-        localStorage.removeItem('sacco_token');
-        localStorage.removeItem('sacco_user');
-        navigate('/');
+    const handleLogout = async () => {
+        try {
+            await api.post('/api/auth/logout');
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            localStorage.removeItem('sacco_token');
+            localStorage.removeItem('sacco_user');
+            navigate('/');
+        }
     };
     return (
         <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition shadow-sm">

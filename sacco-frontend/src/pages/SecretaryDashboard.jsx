@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext'; // ✅ Import Settings
 import { FileText, Calendar, CheckSquare, Users, Clock, Gavel, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import BrandedSpinner from '../components/BrandedSpinner';
+import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function SecretaryDashboard() {
     const { settings } = useSettings(); // ✅ Access System Settings
@@ -143,6 +144,9 @@ export default function SecretaryDashboard() {
                             </h3>
                         </div>
                     </div>
+
+                    {/* Share Capital Card */}
+                    <ShareCapitalCard />
                 </div>
 
                 {/* AGENDA LIST */}

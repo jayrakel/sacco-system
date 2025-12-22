@@ -25,53 +25,57 @@ api.interceptors.response.use(
   (error) => {
     // Network Error (no response from server)
     if (!error.response) {
-      console.error("Network error - no response from server");
-      if (window.location.pathname !== '/network-error') {
-        window.location.href = '/network-error';
-      }
+      console.error("❌ Network error - no response from server");
+      // DEBUGGING: Disabled redirect - show error in console
+      // if (window.location.pathname !== '/network-error') {
+      //   window.location.href = '/network-error';
+      // }
       return Promise.reject(error);
     }
 
     const status = error.response.status;
     const currentPath = window.location.pathname;
 
+    // DEBUGGING MODE: All error redirects disabled - showing errors in console
+    console.error(`❌ HTTP ${status} Error:`, error.response.data);
+    console.error("Full error details:", error);
+    console.error("Request URL:", error.config?.url);
+    
     // Handle different HTTP status codes
     switch (status) {
       case 400:
         // Bad Request - Invalid data sent to server
-        // Only redirect for critical validation errors
         console.warn("Bad request - validation error:", error.response.data);
-        // Let component handle most 400s, but redirect for severe cases
-        if (error.response.data?.critical) {
-          window.location.href = '/bad-request';
-        }
+        // DEBUGGING: Redirect disabled
+        // if (error.response.data?.critical) {
+        //   window.location.href = '/bad-request';
+        // }
         break;
 
       case 401:
         // Unauthorized - Session expired or not logged in
-        if (currentPath !== '/' && currentPath !== '/login' && currentPath !== '/session-expired') {
-          console.warn("Session expired. Redirecting to session expired page...");
-          localStorage.removeItem('sacco_user');
-          localStorage.removeItem('sacco_token');
-          window.location.href = '/session-expired';
-        }
+        console.warn("Session expired or unauthorized:", error.response.data);
+        // DEBUGGING: Redirect disabled
+        // if (currentPath !== '/' && currentPath !== '/login' && currentPath !== '/session-expired') {
+        //   localStorage.removeItem('sacco_user');
+        //   localStorage.removeItem('sacco_token');
+        //   window.location.href = '/session-expired';
+        // }
         break;
 
       case 403:
         // Forbidden - User doesn't have permission
-        // Don't redirect if it's an auth endpoint - let the login page handle it
-        const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
-        if (!isAuthEndpoint && currentPath !== '/unauthorized') {
-          console.warn("Access forbidden. Redirecting to unauthorized page...");
-          window.location.href = '/unauthorized';
-        }
+        console.warn("Access forbidden:", error.response.data);
+        // DEBUGGING: Redirect disabled
+        // const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
+        // if (!isAuthEndpoint && currentPath !== '/unauthorized') {
+        //   window.location.href = '/unauthorized';
+        // }
         break;
 
       case 404:
         // Not Found - API endpoint doesn't exist
-        // Only redirect for critical endpoints, not all 404s
         console.warn("Resource not found:", error.config.url);
-        // Let component handle 404 errors individually
         break;
 
       case 500:
@@ -79,14 +83,15 @@ api.interceptors.response.use(
       case 503:
       case 504:
         // Server Error
-        if (currentPath !== '/server-error') {
-          console.error("Server error. Redirecting to error page...");
-          window.location.href = '/server-error';
-        }
+        console.error("Server error:", error.response.data);
+        // DEBUGGING: Redirect disabled
+        // if (currentPath !== '/server-error') {
+        //   window.location.href = '/server-error';
+        // }
         break;
 
       default:
-        // Other errors - let component handle them
+        // Other errors
         console.error(`HTTP Error ${status}:`, error.response.data);
     }
 

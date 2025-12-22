@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { ArrowUpRight, ArrowDownLeft, Wallet } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Wallet, DollarSign } from 'lucide-react';
+import MultiDepositForm from './MultiDepositForm';
 
 export default function MemberSavings({ user }) {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [action, setAction] = useState(null); // 'DEPOSIT' | 'WITHDRAW' | null
+    const [activeTab, setActiveTab] = useState('accounts'); // 'accounts' | 'multi-deposit'
 
     // Form State
     const [selectedAccount, setSelectedAccount] = useState('');
@@ -56,7 +58,36 @@ export default function MemberSavings({ user }) {
 
     return (
         <div className="space-y-6 animate-in fade-in">
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Wallet className="text-emerald-600"/> My Savings Accounts</h2>
+            {/* Tabs */}
+            <div className="flex gap-3 border-b border-slate-200 pb-2">
+                <button
+                    onClick={() => setActiveTab('accounts')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                        activeTab === 'accounts'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <Wallet size={18} /> My Accounts
+                </button>
+                <button
+                    onClick={() => setActiveTab('multi-deposit')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                        activeTab === 'multi-deposit'
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <DollarSign size={18} /> Make Deposit
+                </button>
+            </div>
+
+            {/* Tab Content */}
+            {activeTab === 'accounts' && (
+                <>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Wallet className="text-emerald-600"/> My Savings Accounts
+                    </h2>
 
             {/* Accounts List */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -129,6 +160,13 @@ export default function MemberSavings({ user }) {
                         </form>
                     </div>
                 </div>
+            )}
+            </>
+            )}
+
+            {/* Multi-Deposit Tab */}
+            {activeTab === 'multi-deposit' && (
+                <MultiDepositForm user={user} />
             )}
         </div>
     );

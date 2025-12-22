@@ -25,6 +25,7 @@ import SavingsProducts from '../features/savings/components/SavingsProducts';
 import ReportsDashboard from '../features/reports/ReportsDashboard';
 import AuditLogs from '../features/admin/components/AuditLogs';
 import AssetManager from '../features/admin/components/AssetManager';
+import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -232,11 +233,14 @@ function OverviewTab({ setActiveTab }) {
         <div className="space-y-6 animate-in fade-in">
 
             {/* STATS GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <StatCard label="Total Savings" value={stats.totalSavings} icon={Wallet} color="bg-emerald-600" subtext="Member Deposits" />
                 <StatCard label="Net Income" value={stats.netIncome} icon={TrendingUp} color="bg-indigo-600" subtext="Fees + Interest - Expenses" />
                 <StatCard label="Active Members" value={stats.totalMembers} icon={Users} color="bg-blue-600" subtext="Registered & Verified" />
                 <StatCard label="Loans Issued" value={stats.totalLoansIssued} icon={CreditCard} color="bg-purple-600" subtext="Total Disbursed" />
+                
+                {/* Share Capital Card */}
+                <ShareCapitalCard />
             </div>
 
             {/* CHART ROW */}
