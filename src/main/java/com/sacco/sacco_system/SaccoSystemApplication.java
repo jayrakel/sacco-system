@@ -1,14 +1,18 @@
 package com.sacco.sacco_system;
 
-import io.github.cdimascio.dotenv.Dotenv; // ✅ Import this
+import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableAspectJAutoProxy
+@EnableAsync
 @EnableScheduling
+@EnableJpaRepositories(basePackages = "com.sacco.sacco_system.modules")
 public class SaccoSystemApplication {
 
 	public static void main(String[] args) {

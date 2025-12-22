@@ -1,12 +1,17 @@
 package com.sacco.sacco_system.aspect;
 
 import com.sacco.sacco_system.annotation.Loggable;
-import com.sacco.sacco_system.service.AuditService;
+import com.sacco.sacco_system.modules.audit.domain.entity.AuditLog;
+import com.sacco.sacco_system.modules.audit.domain.service.AuditService;
+import com.sacco.sacco_system.modules.auth.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
+import org.aspectj.lang.annotation.AfterThrowing;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 @Aspect
@@ -17,47 +22,104 @@ public class AuditAspect {
 
     private final AuditService auditService;
 
+    /**
+     * Log successful method execution
+     */
     @AfterReturning(pointcut = "@annotation(loggable)", returning = "result")
     public void logActivity(JoinPoint joinPoint, Loggable loggable, Object result) {
         try {
+            User user = getCurrentUser();
             String action = loggable.action();
             String category = loggable.category();
 
-            // Start with base details
-            StringBuilder detailsBuffer = new StringBuilder("Executed " + action + " in " + category);
-            String entityId = "N/A";
+            // Extract entity details
+            StringBuilder description = new StringBuilder("Executed " + action + " in " + category);
+            String entityId = extractEntityId(joinPoint.getArgs(), result);
 
+            // Add argument details
             Object[] args = joinPoint.getArgs();
             if (args.length > 0 && args[0] != null) {
                 String argString = args[0].toString();
-
-                // ✅ FIX: Check length. If > 50, it's likely an Object DTO, not an ID.
                 if (argString.length() > 50 || argString.contains("=")) {
-                    // It's a complex object (like MemberDTO), don't put in entityId
-                    detailsBuffer.append(" | Payload: ").append(argString);
-                    entityId = "New/Complex Object";
+                    description.append(" | Payload: ").append(truncate(argString, 200));
                 } else {
-                    // It's likely a simple ID (UUID or String)
-                    detailsBuffer.append(" on Target ID: ").append(argString);
-                    entityId = argString;
+                    description.append(" | Target ID: ").append(argString);
                 }
             }
 
-            // ✅ OPTIONAL: If result has an ID, use it (for Create actions)
-            if (result != null && result.toString().length() < 50) {
-                // Simple heuristic: if result is small (like a UUID return), use it
-                // If result is a DTO, we skip to avoid huge strings again
-            }
-
-            // Safety Truncate just in case
-            if (entityId.length() > 255) {
-                entityId = entityId.substring(0, 255);
-            }
-
-            auditService.logAction(action, category, entityId, detailsBuffer.toString());
+            // Log success
+            auditService.logSuccess(user, action, category, entityId, description.toString());
 
         } catch (Exception e) {
-            log.error("Audit Log Failed: {}", e.getMessage());
+            log.error("Failed to log audit activity: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Log failed method execution
+     */
+    @AfterThrowing(pointcut = "@annotation(loggable)", throwing = "exception")
+    public void logFailure(JoinPoint joinPoint, Loggable loggable, Throwable exception) {
+        try {
+            User user = getCurrentUser();
+            String action = loggable.action();
+            String category = loggable.category();
+
+            // Extract entity details
+            String entityId = extractEntityId(joinPoint.getArgs(), null);
+            String description = "Failed to execute " + action + " in " + category;
+
+            // Log failure
+            auditService.logFailure(user, action, category, entityId, description, exception.getMessage());
+
+        } catch (Exception e) {
+            log.error("Failed to log audit failure: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Extract entity ID from method arguments or result
+     */
+    private String extractEntityId(Object[] args, Object result) {
+        // Try to get ID from result first (for CREATE operations)
+        if (result != null) {
+            String resultStr = result.toString();
+            if (resultStr.length() < 50 && !resultStr.contains("=")) {
+                return resultStr;
+            }
+        }
+
+        // Try to get ID from first argument
+        if (args.length > 0 && args[0] != null) {
+            String argString = args[0].toString();
+            if (argString.length() < 50 && !argString.contains("=")) {
+                return argString;
+            }
+        }
+
+        return "N/A";
+    }
+
+    /**
+     * Get currently authenticated user
+     */
+    private User getCurrentUser() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof User) {
+                return (User) authentication.getPrincipal();
+            }
+        } catch (Exception e) {
+            log.debug("No authenticated user found: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Truncate string to max length
+     */
+    private String truncate(String str, int maxLength) {
+        if (str == null) return null;
+        return str.length() <= maxLength ? str : str.substring(0, maxLength) + "...";
     }
 }

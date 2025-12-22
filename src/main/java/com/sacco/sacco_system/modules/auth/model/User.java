@@ -1,4 +1,4 @@
-package com.sacco.sacco_system.modules.auth.model; // ✅ New Package
+package com.sacco.sacco_system.modules.auth.model; // âœ… New Package
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
 @Table(name = "users")
@@ -23,8 +24,11 @@ public class User implements UserDetails {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String email;
+
+    @Column
+    private String officialEmail; // SACCO email for administrative access (e.g., chairperson@sacco.com)
 
     private String password;
     private String firstName;
@@ -82,6 +86,7 @@ public class User implements UserDetails {
     public boolean isEnabled() { return enabled; }
 
     public enum Role {
-        MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER
+        MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER, ASSISTANT, ASSISTANT_LOAN_OFFICER, ASSISTANT_CHAIRPERSON, ASSISTANT_SECRETARY
     }
 }
+

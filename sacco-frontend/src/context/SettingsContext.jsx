@@ -20,15 +20,18 @@ export const SettingsProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const getImageUrl = (filename) => {
-    return filename ? `http://localhost:8080/uploads/settings/${filename}` : null;
+    return filename ? `http://localhost:8082/uploads/settings/${filename}` : null;
   };
 
   useEffect(() => {
     const fetchSettings = async () => {
       try {
+        console.log('🔄 Fetching settings from /api/settings...');
         const minLoadTime = new Promise(resolve => setTimeout(resolve, 2000));
         const apiCall = api.get('/api/settings');
         const [response] = await Promise.all([apiCall, minLoadTime]);
+
+        console.log('✅ Settings response:', response.data);
 
         if (response.data.success) {
           const settingsMap = response.data.data.reduce((acc, curr) => {
@@ -37,11 +40,19 @@ export const SettingsProvider = ({ children }) => {
           }, {});
 
           const newSettings = { ...settings, ...settingsMap };
+          console.log('💾 Saving settings to localStorage:', newSettings);
           setSettings(newSettings);
           localStorage.setItem('sacco_settings', JSON.stringify(newSettings));
+        } else {
+          console.warn('⚠️ Settings fetch unsuccessful:', response.data);
         }
       } catch (error) {
-        console.error("Failed to load settings");
+        console.error("❌ Failed to load settings:");
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error response:', error.response?.data);
+        console.error('Error status:', error.response?.status);
+        console.error('Full error:', error);
       } finally {
         setLoading(false);
       }

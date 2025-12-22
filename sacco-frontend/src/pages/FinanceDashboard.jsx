@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DashboardHeader from '../components/DashboardHeader';
 import AccountingReports from '../features/finance/components/AccountingReports';
+import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function FinanceDashboard() {
     const [user, setUser] = useState(null);
@@ -17,6 +18,11 @@ export default function FinanceDashboard() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Financial Management</h1>
                     <p className="text-slate-500 text-sm">Ledgers, Reports, and Liquidity Monitoring.</p>
+                </div>
+
+                {/* Share Capital Overview */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <ShareCapitalCard />
                 </div>
 
                 {/* Full Accounting Reports View */}

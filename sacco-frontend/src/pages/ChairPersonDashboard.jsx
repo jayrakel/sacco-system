@@ -3,6 +3,7 @@ import api from '../api';
 import { Users, TrendingUp, Activity, CheckCircle, Clock, Gavel } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import BrandedSpinner from '../components/BrandedSpinner';
+import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function ChairpersonDashboard() {
     const [user, setUser] = useState(null);
@@ -57,7 +58,7 @@ export default function ChairpersonDashboard() {
                     <p className="text-slate-500 text-sm">High-level insights and system health status.</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-indigo-100 flex flex-col items-center text-center">
                         <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full mb-4"><Users size={32}/></div>
                         <h3 className="font-bold text-slate-700 text-lg">System Health</h3>
@@ -75,6 +76,9 @@ export default function ChairpersonDashboard() {
                             {agendaLoans.filter(l => l.status === 'ON_AGENDA').length}
                         </div>
                     </div>
+
+                    {/* Share Capital Card */}
+                    <ShareCapitalCard />
                 </div>
 
                 {/* 2. MEETING AGENDA TABLE */}

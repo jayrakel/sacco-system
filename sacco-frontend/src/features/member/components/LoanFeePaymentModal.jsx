@@ -4,7 +4,7 @@ import { X, CreditCard, Smartphone, CheckCircle, Loader, ArrowRight, AlertCircle
 // ✅ FIX: Use 3 levels up ('../../../') to reach 'src/components'
 import BrandedSpinner from '../../../components/BrandedSpinner';
 
-export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }) {
+export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan, isNewApplication = false }) {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [fee, setFee] = useState(0);
@@ -12,16 +12,50 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
     const [paymentStatus, setPaymentStatus] = useState('idle'); // idle, processing, verified, failed
 
     useEffect(() => {
-        if (isOpen && loan) {
+        if (isOpen) {
             setStep(1);
             setPaymentStatus('idle');
-            fetchFee();
+            if (isNewApplication) {
+                // For new applications, fetch system processing fee
+                fetchSystemProcessingFee();
+            } else if (loan) {
+                // For existing loans, fetch specific loan fee
+                fetchFee();
+            }
         }
-    }, [isOpen, loan]);
+    }, [isOpen, loan, isNewApplication]);
+
+    const fetchSystemProcessingFee = async () => {
+        try {
+            // Get default processing fee from system settings or products
+            const res = await api.get('/api/loans/products');
+            if (res.data.success && res.data.data.length > 0) {
+                // Use the first product's processing fee as default
+                // Or you can add a system setting for this
+                setFee(res.data.data[0].processingFee || 500);
+            }
+        } catch (e) {
+            console.error("Failed to fetch processing fee", e);
+            setFee(500); // Default fallback
+        }
+    };
 
     const fetchFee = async () => {
-        if (!loan) return;
         try {
+            if (isNewApplication) {
+                // For new applications, fetch from system setting
+                const res = await api.get('/api/loans/application-fee');
+                if (res.data.success) {
+                    setFee(res.data.amount);
+                } else {
+                    setFee(500); // Fallback
+                }
+                return;
+            }
+
+            // For existing loans with product
+            if (!loan) return;
+
             // 1. Check if fee is passed directly
             if (loan.processingFee) {
                 setFee(loan.processingFee);
@@ -42,7 +76,7 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
             }
         } catch (e) {
             console.error("Failed to fetch fee", e);
-            setFee(0);
+            setFee(500); // Fallback
         }
     };
 
@@ -60,23 +94,45 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
     const confirmPayment = async () => {
         try {
             const refCode = "MPESA" + Math.floor(100000 + Math.random() * 900000);
-            const params = new URLSearchParams();
-            params.append('referenceCode', refCode);
+            console.log("Processing payment with reference:", refCode);
+            console.log("Is new application:", isNewApplication);
 
-            await api.post(`/api/loans/${loan.id}/pay-fee`, params);
+            if (isNewApplication) {
+                // For new applications, use the new endpoint that creates draft
+                const params = new URLSearchParams();
+                params.append('referenceCode', refCode);
 
-            setPaymentStatus('verified');
-            setTimeout(() => {
-                onSuccess();
-                onClose();
-            }, 2500);
+                console.log("Calling /api/loans/pay-application-fee...");
+                const res = await api.post('/api/loans/pay-application-fee', params);
+                console.log("Payment response:", res.data);
+
+                setPaymentStatus('verified');
+                setTimeout(() => {
+                    console.log("Calling onSuccess with draft loan:", res.data.data);
+                    onSuccess(res.data.data); // Pass the draft loan data
+                    onClose();
+                }, 2500);
+            } else {
+                // For existing loans, use the original logic
+                const params = new URLSearchParams();
+                params.append('referenceCode', refCode);
+
+                await api.post(`/api/loans/${loan.id}/pay-fee`, params);
+
+                setPaymentStatus('verified');
+                setTimeout(() => {
+                    onSuccess();
+                    onClose();
+                }, 2500);
+            }
         } catch (e) {
+            console.error("Payment failed:", e);
             setPaymentStatus('failed');
             setStep(1);
         }
     };
 
-    if (!isOpen || !loan) return null;
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
@@ -84,7 +140,10 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
 
                 {/* Header */}
                 <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center text-slate-800">
-                    <h3 className="font-bold flex items-center gap-2"><CreditCard size={20} className="text-indigo-600"/> Pay Application Fee</h3>
+                    <h3 className="font-bold flex items-center gap-2">
+                        <CreditCard size={20} className="text-indigo-600"/>
+                        {isNewApplication ? 'Loan Application Fee' : 'Pay Application Fee'}
+                    </h3>
                     <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition"><X size={20} className="text-slate-400"/></button>
                 </div>
 
@@ -93,12 +152,21 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                     {step === 1 && (
                         <form onSubmit={initiatePayment} className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                             <div className="text-center">
-                                <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">Total Amount Due</p>
+                                <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">
+                                    {isNewApplication ? 'Application Fee' : 'Total Amount Due'}
+                                </p>
                                 <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight">KES {Number(fee).toLocaleString()}</h2>
-                                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-medium">
-                                    <span>Loan Ref:</span>
-                                    <span className="font-mono text-slate-700 font-bold">{loan.loanNumber}</span>
-                                </div>
+                                {!isNewApplication && loan && (
+                                    <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-medium">
+                                        <span>Loan Ref:</span>
+                                        <span className="font-mono text-slate-700 font-bold">{loan.loanNumber}</span>
+                                    </div>
+                                )}
+                                {isNewApplication && (
+                                    <p className="mt-3 text-sm text-slate-600">
+                                        Pay this fee to access the loan application form
+                                    </p>
+                                )}
                             </div>
 
                             <div className="space-y-4">

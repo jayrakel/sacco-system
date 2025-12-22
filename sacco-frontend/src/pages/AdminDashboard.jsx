@@ -25,6 +25,7 @@ import SavingsProducts from '../features/savings/components/SavingsProducts';
 import ReportsDashboard from '../features/reports/ReportsDashboard';
 import AuditLogs from '../features/admin/components/AuditLogs';
 import AssetManager from '../features/admin/components/AssetManager';
+import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
@@ -138,16 +139,34 @@ function OverviewTab({ setActiveTab }) {
 
     const loadDashboard = async () => {
         try {
+            console.log('📊 Loading Admin Dashboard...');
+
             // 1. Fetch Summary Stats (Always Today)
+            console.log('🔄 Fetching /api/reports/today...');
             const todayRes = await api.get('/api/reports/today');
-            if (todayRes.data.success) setStats(todayRes.data.data);
+            console.log('✅ Today report response:', todayRes.data);
+
+            if (todayRes.data.success) {
+                console.log('📈 Stats loaded:', todayRes.data.data);
+                setStats(todayRes.data.data);
+            } else {
+                console.warn('⚠️ Today report unsuccessful:', todayRes.data);
+            }
 
             // 2. Fetch Chart Data
+            console.log('📊 Fetching chart data...');
             fetchChartData();
 
             setLoading(false);
+            console.log('✅ Dashboard loaded successfully');
         } catch (e) {
-            console.error("Dashboard Load Failed", e);
+            console.error("❌ Dashboard Load Failed:");
+            console.error('Error name:', e.name);
+            console.error('Error message:', e.message);
+            console.error('Error response:', e.response?.data);
+            console.error('Error status:', e.response?.status);
+            console.error('Request URL:', e.config?.url);
+            console.error('Full error:', e);
             setLoading(false);
         }
     };
@@ -155,14 +174,21 @@ function OverviewTab({ setActiveTab }) {
     // ✅ NEW: Fetch Chart Data with Custom Dates
     const fetchChartData = async () => {
         try {
+            console.log(`🔄 Fetching chart data from ${dateRange.start} to ${dateRange.end}...`);
             const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
+            console.log('✅ Chart data response:', chartRes.data);
+
             if (chartRes.data.success && chartRes.data.data.length > 0) {
+                console.log('📊 Chart data points:', chartRes.data.data.length);
                 setChartData(chartRes.data.data);
             } else {
+                console.warn('⚠️ No chart data available');
                 setChartData([]); // Empty state if no data
             }
         } catch (e) {
-            console.error("Chart Data Failed", e);
+            console.error("❌ Chart Data Failed:");
+            console.error('Error details:', e.response?.data || e.message);
+            console.error('Full error:', e);
         }
     };
 
@@ -207,11 +233,14 @@ function OverviewTab({ setActiveTab }) {
         <div className="space-y-6 animate-in fade-in">
 
             {/* STATS GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <StatCard label="Total Savings" value={stats.totalSavings} icon={Wallet} color="bg-emerald-600" subtext="Member Deposits" />
                 <StatCard label="Net Income" value={stats.netIncome} icon={TrendingUp} color="bg-indigo-600" subtext="Fees + Interest - Expenses" />
                 <StatCard label="Active Members" value={stats.totalMembers} icon={Users} color="bg-blue-600" subtext="Registered & Verified" />
                 <StatCard label="Loans Issued" value={stats.totalLoansIssued} icon={CreditCard} color="bg-purple-600" subtext="Total Disbursed" />
+                
+                {/* Share Capital Card */}
+                <ShareCapitalCard />
             </div>
 
             {/* CHART ROW */}

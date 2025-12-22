@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { Wallet, AlertCircle, TrendingUp, CreditCard, Bell } from 'lucide-react';
+import ShareCapitalCard from '../../../components/ShareCapitalCard';
 
 export default function MemberOverview({ user }) {
     const [balanceData, setBalanceData] = useState({ balance: 0, accounts: [] });
@@ -57,7 +58,7 @@ export default function MemberOverview({ user }) {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><Wallet size={20} /></div>
@@ -81,9 +82,14 @@ export default function MemberOverview({ user }) {
                         <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><TrendingUp size={20} /></div>
                         <span className="text-xs font-bold text-slate-400 uppercase">Interest Earned</span>
                     </div>
-                    <h3 className="text-2xl font-bold text-slate-800">KES --</h3>
-                    <p className="text-xs text-slate-500">Year to Date</p>
+                    <h3 className="text-2xl font-bold text-slate-800">
+                        KES {Number(balanceData.interestEarned || 0).toLocaleString()}
+                    </h3>
+                    <p className="text-xs text-slate-500">Total Accrued</p>
                 </div>
+
+                {/* Share Capital Card */}
+                <ShareCapitalCard forCurrentUser={true} showOwnershipPercentage={true} />
             </div>
 
             {/* Recent Notifications */}

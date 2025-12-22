@@ -35,4 +35,7 @@ build/
 ## security ##
 .env
 
+## uploads ##
+uploads/
+
 node_modules

@@ -1,0 +1,24 @@
+package com.sacco.sacco_system.modules.loan.domain.repository;
+
+import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.UUID;
+
+@Repository
+public interface GuarantorRepository extends JpaRepository<Guarantor, UUID> {
+    List<Guarantor> findByLoan(Loan loan);
+    long countByLoanAndStatus(Loan loan, Guarantor.GuarantorStatus status);
+
+    // Find all guarantor requests for a member (all statuses)
+    List<Guarantor> findByMemberId(UUID memberId);
+
+    // Find guarantor requests for a member by status
+    List<Guarantor> findByMemberIdAndStatus(UUID memberId, Guarantor.GuarantorStatus status);
+}
+
+
+

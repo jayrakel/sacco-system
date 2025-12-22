@@ -24,21 +24,31 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
 
     useEffect(() => {
         if (isOpen) {
+            console.log("LoanApplicationModal opened with resumeLoan:", resumeLoan);
             fetchProducts();
             fetchMembers();
             fetchLimit();
 
             if (resumeLoan) {
                 // ✅ RESUME MODE
+                console.log("Resume mode - loan ID:", resumeLoan.id);
                 setLoanId(resumeLoan.id);
-                // Try to pre-fill Step 1 if data is available, otherwise skip to Step 2
-                // Since resumeLoan might be a summary DTO, we might not have all details for Step 1
-                // But typically if it's DRAFT, we assume Step 1 was done.
-                // We'll jump to Step 2 to manage guarantors.
-                setStep(2);
-                fetchExistingGuarantors(resumeLoan.id);
+
+                // Check if loan has product details (completed step 1)
+                if (resumeLoan.productName && resumeLoan.principalAmount) {
+                    // Step 1 was completed - go to step 2 (guarantors)
+                    console.log("Loan has product details - jumping to step 2");
+                    setStep(2);
+                    fetchExistingGuarantors(resumeLoan.id);
+                } else {
+                    // Step 1 not completed - stay on step 1
+                    console.log("Loan needs product details - staying on step 1");
+                    setStep(1);
+                    setFormData({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
+                }
             } else {
                 // ✅ NEW MODE
+                console.log("New application mode");
                 setStep(1);
                 setLoanId(null);
                 setSelectedGuarantors([]);

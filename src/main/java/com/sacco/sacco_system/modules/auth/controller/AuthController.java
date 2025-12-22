@@ -7,6 +7,7 @@ import com.sacco.sacco_system.modules.auth.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -46,6 +47,18 @@ public class AuthController {
             return ResponseEntity.ok(Map.of("success", true, "message", "Password changed successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, Object>> logout(@AuthenticationPrincipal User user) {
+        try {
+            authService.logout(user);
+            // Log successful logout
+            auditService.logSuccess(user, AuditLog.Actions.LOGOUT, "Auth", user.getId().toString(), "User logged out");
+            return ResponseEntity.ok(Map.of("success", true, "message", "Logged out successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "message", "Logged out")); // Always return success for logout
         }
     }
 }
