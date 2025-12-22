@@ -69,6 +69,9 @@ public class Member {
     @Enumerated(EnumType.STRING)
     private MemberStatus status = MemberStatus.ACTIVE;
 
+    @Enumerated(EnumType.STRING)
+    private RegistrationStatus registrationStatus = RegistrationStatus.PENDING;
+
     private BigDecimal totalShares = BigDecimal.ZERO;
 
     private BigDecimal totalSavings = BigDecimal.ZERO;
@@ -118,6 +121,10 @@ public class Member {
 
     public enum MemberStatus {
         ACTIVE, INACTIVE, SUSPENDED, DECEASED
+    }
+
+    public enum RegistrationStatus {
+        PENDING, PAID
     }
 }
 

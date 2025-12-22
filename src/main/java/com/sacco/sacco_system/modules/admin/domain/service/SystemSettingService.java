@@ -43,6 +43,8 @@ public class SystemSettingService {
             entry("MIN_SAVINGS_TO_GUARANTEE", "10000"),
             entry("MIN_MONTHS_TO_GUARANTEE", "6"),
             entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
+            // Share Capital
+            entry("SHARE_VALUE", "100"),
             // Branding
             entry("SACCO_NAME", "Sacco System"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),

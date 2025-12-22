@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import {
     Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon,
-    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders
+    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw
 } from 'lucide-react';
 
 // Import Sub-Components (Ensure these files exist in your project structure)
 import LoanProducts from '../../features/loans/components/LoanProducts';
 import SavingsProducts from '../../features/savings/components/SavingsProducts';
 import AccountingConfig from '../../features/finance/components/AccountingConfig';
+import DepositProductsManager from '../../features/finance/components/DepositProductsManager';
 
 export default function SystemSettings() {
     const [activeTab, setActiveTab] = useState('general');
@@ -20,6 +21,10 @@ export default function SystemSettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
+
+    // --- MAINTENANCE STATE ---
+    const [recalculating, setRecalculating] = useState(false);
+    const [recalculateMessage, setRecalculateMessage] = useState('');
 
     // Base URL for image display - matches the API base URL
     const BASE_URL = "http://localhost:8082/uploads/settings/";
@@ -82,6 +87,26 @@ export default function SystemSettings() {
         setSaving(false);
     };
 
+    const recalculateShares = async () => {
+        if (!window.confirm('This will recalculate all share capital records based on the current SHARE_VALUE setting. Continue?')) {
+            return;
+        }
+
+        setRecalculating(true);
+        setRecalculateMessage('');
+        try {
+            const response = await api.post('/api/shares/admin/recalculate');
+            if (response.data.success) {
+                setRecalculateMessage(`✅ ${response.data.message}. ${response.data.data.recordsUpdated} records updated with share value KES ${response.data.data.shareValue}`);
+            } else {
+                setRecalculateMessage(`❌ ${response.data.message}`);
+            }
+        } catch (error) {
+            setRecalculateMessage('❌ Failed to recalculate shares: ' + (error.response?.data?.message || error.message));
+        }
+        setRecalculating(false);
+    };
+
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Configuration...</div>;
 
     // Categorize Settings for General Tab
@@ -103,7 +128,8 @@ export default function SystemSettings() {
         s.key.includes('MIN_SHARE_CAPITAL') ||
         s.key.includes('MIN_SAVINGS_TO_GUARANTEE') ||
         s.key.includes('MIN_MONTHS_TO_GUARANTEE') ||
-        s.key.includes('MAX_GUARANTOR_LIMIT_RATIO')
+        s.key.includes('MAX_GUARANTOR_LIMIT_RATIO') ||
+        s.key === 'SHARE_VALUE'
     );
 
     // --- RENDER ---
@@ -149,10 +175,22 @@ export default function SystemSettings() {
                         <Package size={16}/> Loan & Savings Products
                     </button>
                     <button
+                        onClick={() => setActiveTab('deposit-products')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'deposit-products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <PiggyBank size={16}/> Deposit Products
+                    </button>
+                    <button
                         onClick={() => setActiveTab('accounting')}
                         className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         <Link size={16}/> Accounting Rules
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('maintenance')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Wrench size={16}/> Maintenance
                     </button>
                 </div>
 
@@ -311,6 +349,7 @@ export default function SystemSettings() {
                                                 {setting.key === 'MIN_SAVINGS_FOR_LOAN' && 'Minimum savings balance required to apply for a loan'}
                                                 {setting.key === 'MIN_MONTHS_MEMBERSHIP' && 'Minimum membership duration (in months) to apply for a loan'}
                                                 {setting.key === 'MIN_SHARE_CAPITAL' && 'Minimum share capital required to apply for a loan'}
+                                                {setting.key === 'SHARE_VALUE' && 'Price per share for share capital contributions (use Maintenance tab to recalculate existing shares after changing)'}
                                                 {setting.key === 'MIN_SAVINGS_TO_GUARANTEE' && 'Minimum savings required to be a guarantor'}
                                                 {setting.key === 'MIN_MONTHS_TO_GUARANTEE' && 'Minimum membership duration to be a guarantor'}
                                                 {setting.key === 'MAX_GUARANTOR_LIMIT_RATIO' && 'Maximum guarantee exposure = savings × this ratio'}
@@ -358,9 +397,71 @@ export default function SystemSettings() {
                         </div>
                     )}
 
-                    {/* VIEW 4: ACCOUNTING */}
+                    {/* VIEW 4: DEPOSIT PRODUCTS */}
+                    {activeTab === 'deposit-products' && (
+                        <DepositProductsManager />
+                    )}
+
+                    {/* VIEW 5: ACCOUNTING */}
                     {activeTab === 'accounting' && (
                         <AccountingConfig />
+                    )}
+
+                    {/* VIEW 6: MAINTENANCE TOOLS */}
+                    {activeTab === 'maintenance' && (
+                        <div className="space-y-6 animate-in fade-in">
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
+                                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+                                    <Wrench size={20} className="text-blue-600"/> System Maintenance Tools
+                                </h3>
+                                <p className="text-sm text-slate-600 mb-6">
+                                    Administrative tools for data maintenance and system health.
+                                </p>
+
+                                {/* Share Capital Recalculation */}
+                                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="p-3 bg-amber-100 rounded-lg">
+                                            <RefreshCw size={24} className="text-amber-600"/>
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-slate-800 mb-2">Recalculate Share Capital</h4>
+                                            <p className="text-sm text-slate-600 mb-4">
+                                                Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong> system setting. 
+                                                Use this when:
+                                            </p>
+                                            <ul className="text-sm text-slate-600 mb-4 ml-4 list-disc space-y-1">
+                                                <li>Share value has been updated in System Parameters</li>
+                                                <li>Share counts appear incorrect or inconsistent</li>
+                                                <li>After migrating data from another system</li>
+                                            </ul>
+                                            
+                                            {recalculateMessage && (
+                                                <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                                                    {recalculateMessage}
+                                                </div>
+                                            )}
+
+                                            <button
+                                                onClick={recalculateShares}
+                                                disabled={recalculating}
+                                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                                            >
+                                                {recalculating ? (
+                                                    <>
+                                                        <RefreshCw size={18} className="animate-spin"/> Recalculating...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <RefreshCw size={18}/> Recalculate All Shares
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                 </div>

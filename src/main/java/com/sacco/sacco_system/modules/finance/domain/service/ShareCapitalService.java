@@ -4,12 +4,14 @@ import com.sacco.sacco_system.modules.finance.domain.entity.ShareCapital;
 import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +29,7 @@ public class ShareCapitalService {
     private final ShareCapitalRepository shareCapitalRepository;
     private final MemberRepository memberRepository;
     private final AccountingService accountingService;
+    private final SystemSettingService systemSettingService;
 
     /**
      * Purchase shares for a member
@@ -124,9 +127,50 @@ public class ShareCapitalService {
      * Get share value (price per share)
      */
     public BigDecimal getShareValue() {
-        // For now, fixed at KES 100 per share
-        // Could be dynamic based on SACCO valuation in future
-        return BigDecimal.valueOf(100);
+        // Get from system settings, default to KES 100
+        return BigDecimal.valueOf(systemSettingService.getDouble("SHARE_VALUE", 100.0));
+    }
+
+    /**
+     * Recalculate all share capital records based on current share value
+     * Use this to fix inconsistencies when share value changes
+     */
+    public int recalculateAllShares() {
+        BigDecimal currentShareValue = getShareValue();
+        List<ShareCapital> allRecords = shareCapitalRepository.findAll();
+        int updatedCount = 0;
+
+        for (ShareCapital shareCapital : allRecords) {
+            // Update share value to current setting
+            shareCapital.setShareValue(currentShareValue);
+
+            // Recalculate shares based on paid amount
+            BigDecimal sharesOwned = shareCapital.getPaidAmount()
+                    .divide(currentShareValue, 2, RoundingMode.DOWN);
+            
+            shareCapital.setPaidShares(sharesOwned);
+            shareCapital.setTotalShares(sharesOwned);
+
+            shareCapitalRepository.save(shareCapital);
+
+            // Sync to member record (for loan eligibility checks)
+            Member member = shareCapital.getMember();
+            member.setTotalShares(shareCapital.getPaidAmount());
+            memberRepository.save(member);
+
+            updatedCount++;
+
+            log.info("Recalculated shares for member {}: {} shares @ KES {} per share (Total: KES {})",
+                    shareCapital.getMember().getMemberNumber(),
+                    sharesOwned,
+                    currentShareValue,
+                    shareCapital.getPaidAmount());
+        }
+
+        log.info("Recalculated {} share capital records with share value KES {}",
+                updatedCount, currentShareValue);
+
+        return updatedCount;
     }
 }
 

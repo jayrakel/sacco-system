@@ -112,5 +112,31 @@ public class ShareCapitalController {
                 )
         ));
     }
+
+    /**
+     * Recalculate all share capital records (Admin only)
+     * Use this when share value changes or to fix data inconsistencies
+     */
+    @PostMapping("/admin/recalculate")
+    public ResponseEntity<Map<String, Object>> recalculateAllShares() {
+        try {
+            int updatedCount = shareCapitalService.recalculateAllShares();
+            BigDecimal currentShareValue = shareCapitalService.getShareValue();
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Successfully recalculated " + updatedCount + " share capital records",
+                    "data", Map.of(
+                            "recordsUpdated", updatedCount,
+                            "shareValue", currentShareValue
+                    )
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Recalculation failed: " + e.getMessage()
+            ));
+        }
+    }
 }
 
