@@ -31,7 +31,7 @@ public class SystemSettingService {
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
-            entry("LOAN_INTEREST_RATE", "12"),
+            entry("LOAN_INTEREST_RATE", "10"),
             entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             entry("LOAN_LIMIT_MULTIPLIER", "3"),
             entry("LOAN_APPLICATION_FEE", "500"),
@@ -46,7 +46,7 @@ public class SystemSettingService {
             // Share Capital
             entry("SHARE_VALUE", "100"),
             // Branding
-            entry("SACCO_NAME", "Sacco System"),
+            entry("SACCO_NAME", "Secure Sacco"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
             entry("SACCO_LOGO", ""),
             entry("SACCO_FAVICON", ""),

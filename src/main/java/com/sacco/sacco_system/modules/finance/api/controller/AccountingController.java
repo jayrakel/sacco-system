@@ -9,14 +9,12 @@ import com.sacco.sacco_system.modules.finance.domain.repository.GLAccountReposit
 import com.sacco.sacco_system.modules.finance.domain.repository.GlMappingRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.JournalEntryRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
-import com.sacco.sacco_system.modules.finance.domain.service.ChartOfAccountsSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,9 +27,9 @@ public class AccountingController {
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
     private final AccountingService accountingService;
-    private final ChartOfAccountsSetupService setupService;
+    
+    // REMOVED: ChartOfAccountsSetupService dependency
 
-    // âœ… NEW REPOSITORIES
     private final GlMappingRepository glMappingRepository;
     private final FiscalPeriodRepository fiscalPeriodRepository;
 
@@ -40,15 +38,17 @@ public class AccountingController {
     @PostMapping("/setup/initialize")
     public ResponseEntity<Map<String, Object>> initializeAccounting() {
         try {
-            if (setupService.isInitialized()) {
+            // Check directly using the repository instead of the deleted service
+            if (accountRepository.count() > 0) {
                 return ResponseEntity.ok(Map.of(
                         "success", false,
                         "message", "Chart of Accounts already initialized. Use /reset endpoint to reinitialize."
                 ));
             }
 
-            setupService.initializeChartOfAccounts();
-            setupService.initializeGLMappings();
+            // Use AccountingService which loads from accounts.json
+            accountingService.initChartOfAccounts();
+            accountingService.initDefaultMappings();
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -67,9 +67,13 @@ public class AccountingController {
     @PostMapping("/setup/reset")
     public ResponseEntity<Map<String, Object>> resetAccounting() {
         try {
-            setupService.resetChartOfAccounts();
-            setupService.initializeChartOfAccounts();
-            setupService.initializeGLMappings();
+            // Perform reset logic directly using repositories
+            glMappingRepository.deleteAll();
+            accountRepository.deleteAll();
+            
+            // Re-initialize using AccountingService
+            accountingService.initChartOfAccounts();
+            accountingService.initDefaultMappings();
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -87,7 +91,7 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> getSetupStatus() {
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "initialized", setupService.isInitialized(),
+                "initialized", accountRepository.count() > 0,
                 "accountsCount", accountRepository.count(),
                 "mappingsCount", glMappingRepository.count(),
                 "journalEntriesCount", journalRepository.count()
@@ -121,7 +125,6 @@ public class AccountingController {
 
     @PutMapping("/accounts/{code}/toggle")
     public ResponseEntity<Map<String, Object>> toggleAccountStatus(@PathVariable String code) {
-        // TODO: Service method returns void, stubbing with success response
         accountingService.toggleAccountStatus(code);
         return ResponseEntity.ok(Map.of("success", true, "message", "Account status updated"));
     }
@@ -204,15 +207,7 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> toggleFiscalPeriod(@PathVariable UUID id) {
         FiscalPeriod period = fiscalPeriodRepository.findById(id).orElseThrow();
         period.setActive(!period.isActive());
-        if (period.isActive()) {
-            // Deactivate others? Logic can be added here if needed to enforce single active period
-        }
         fiscalPeriodRepository.save(period);
         return ResponseEntity.ok(Map.of("success", true, "message", "Status Changed"));
     }
 }
-
-
-
-
-
