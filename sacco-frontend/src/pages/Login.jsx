@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginUser } from '../features/auth/services/authService';
 import api from '../api';
-import { ShieldCheck, Lock, Mail, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ChevronRight, AlertTriangle, RefreshCw, X, ArrowRight } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
 import BrandedSpinner from '../components/BrandedSpinner'; // ✅ Import New Component
 
@@ -11,6 +11,9 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [localLoading, setLocalLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState({ type: '', msg: '' });
   const [showResend, setShowResend] = useState(false);
   const [resendStatus, setResendStatus] = useState('');
   const navigate = useNavigate();
@@ -53,6 +56,20 @@ export default function Login() {
         if (msg.includes("verify your email")) setShowResend(true);
       }
       setLocalLoading(false);
+  };
+
+  const handleForgotPassword = async (e) => {
+      e.preventDefault();
+      setForgotStatus({ type: 'loading', msg: 'Processing...' });
+      
+      try {
+          await api.post('/api/auth/forgot-password', { email: forgotEmail });
+          setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
+          setForgotEmail(''); // Clear input
+      } catch (err) {
+          // Even if it fails, we usually show success for security, unless it's a network error
+          setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
+      }
   };
 
   const handleResend = async () => {
@@ -147,6 +164,16 @@ export default function Login() {
                   <input type="password" required className="w-full border border-slate-300 p-3 pl-10 rounded-xl focus:ring-2 focus:ring-slate-900 outline-none transition" value={password} onChange={e => setPassword(e.target.value)} />
                 </div>
               </div>
+              {/* Forgot Password Link - Add this above the button */}
+              <div className="flex justify-end">
+                  <button 
+                    type="button"
+                    onClick={() => setShowForgotModal(true)}
+                    className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
+              </div>
               <button
                 disabled={localLoading}
                 className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl transition flex justify-center gap-2 items-center disabled:opacity-50 disabled:cursor-not-allowed"
@@ -167,6 +194,56 @@ export default function Login() {
             </form>
           </div>
         </div>
+
+        {/* --- FORGOT PASSWORD MODAL --- */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200">
+                <button 
+                    onClick={() => setShowForgotModal(false)}
+                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 bg-slate-50 rounded-full"
+                >
+                    <X size={20} />
+                </button>
+
+                <div className="text-center mb-6">
+                    <div className="bg-emerald-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
+                        <Lock size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-800">Reset Password</h3>
+                    <p className="text-slate-500 text-sm mt-1">Enter your email to receive a secure reset link.</p>
+                </div>
+
+                {forgotStatus.msg && (
+                    <div className={`mb-4 p-3 rounded-lg text-sm flex items-center gap-2 ${forgotStatus.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+                        {forgotStatus.type === 'loading' ? <BrandedSpinner size="small" /> : <ShieldCheck size={16} />}
+                        {forgotStatus.msg}
+                    </div>
+                )}
+
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
+                        <input 
+                            type="email" 
+                            required
+                            className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                            value={forgotEmail}
+                            onChange={(e) => setForgotEmail(e.target.value)}
+                            placeholder="name@example.com"
+                        />
+                    </div>
+                    <button 
+                        type="submit"
+                        disabled={forgotStatus.type === 'loading'}
+                        className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition flex justify-center items-center gap-2"
+                    >
+                        Send Reset Link <ArrowRight size={18} />
+                    </button>
+                </form>
+            </div>
+        </div>
+      )}
 
         {/* Footer */}
         <div className="w-full text-center py-6 text-slate-400 text-sm mt-auto border-t border-slate-200">

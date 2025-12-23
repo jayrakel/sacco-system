@@ -78,11 +78,21 @@ public class AccountingService {
      * Dynamic posting - looks up account codes from GL mapping configuration
      */
     @Transactional
-    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
+    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount, String overrideDebitAccount) {
         GlMapping mapping = glMappingRepository.findByEventName(eventName)
                 .orElseThrow(() -> new RuntimeException("GL Mapping not found for event: " + eventName));
 
-        postDoubleEntry(description, referenceNo, mapping.getDebitAccountCode(), mapping.getCreditAccountCode(), amount);
+        // Use the override if provided, otherwise fall back to the default configured in accounts.json
+        String debitCode = (overrideDebitAccount != null && !overrideDebitAccount.isEmpty()) 
+                ? overrideDebitAccount 
+                : mapping.getDebitAccountCode();
+
+        postDoubleEntry(description, referenceNo, debitCode, mapping.getCreditAccountCode(), amount);
+    }
+
+    @Transactional
+    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
+        postEvent(eventName, description, referenceNo, amount, null);
     }
 
     /**

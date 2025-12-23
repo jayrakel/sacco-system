@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api';
-import { UserPlus, Save, X, AlertCircle, User, Users, Camera, Info, CreditCard } from 'lucide-react';
+import { UserPlus, Save, X, AlertCircle, User, Users, Camera, Info, CreditCard, CheckCircle, Building } from 'lucide-react';
 
 export default function AddMember() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [regFee, setRegFee] = useState('0');
+  
+  // ✅ New State for Bank Accounts & Success Modal
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdMemberData, setCreatedMemberData] = useState(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -16,20 +21,34 @@ export default function AddMember() {
     firstName: '', lastName: '', email: '', phoneNumber: '',
     idNumber: '', kraPin: '', dateOfBirth: '', address: '',
     nextOfKinName: '', nextOfKinPhone: '', nextOfKinRelation: '',
-    // ✅ Added Missing Fields
     paymentMethod: 'CASH',
-    referenceCode: ''
+    referenceCode: '',
+    bankAccountCode: '' // ✅ Added state for selected bank
   });
 
   useEffect(() => {
-    const fetchFee = async () => {
+    const initData = async () => {
         try {
+            // 1. Fetch Settings
             const res = await api.get('/api/settings');
             const fee = res.data.data.find(s => s.key === 'REGISTRATION_FEE')?.value || '0';
             setRegFee(fee);
+
+            // 2. ✅ Fetch Accounts for dropdown
+            const accountsRes = await api.get('/api/accounting/accounts');
+            if(accountsRes.data.success) {
+                // Filter only Active BANKS (Codes 1010 to 1099 based on your accounts.json)
+                const banks = accountsRes.data.data.filter(acc => 
+                    acc.type === 'ASSET' && 
+                    acc.active && 
+                    parseInt(acc.code) >= 1010 && 
+                    parseInt(acc.code) <= 1099
+                );
+                setBankAccounts(banks);
+            }
         } catch(e) { console.error(e); }
     };
-    fetchFee();
+    initData();
   }, []);
 
   const handleChange = (e) => {
@@ -49,9 +68,15 @@ export default function AddMember() {
     setLoading(true);
     setError('');
 
-    // Basic validation for reference code if not CASH
     if (formData.paymentMethod !== 'CASH' && !formData.referenceCode) {
         setError("Reference Code is required for MPESA/Bank payments.");
+        setLoading(false);
+        return;
+    }
+
+    // ✅ Validate Bank Selection
+    if (formData.paymentMethod === 'BANK_TRANSFER' && !formData.bankAccountCode) {
+        setError("Please select the Bank Account that received the funds.");
         setLoading(false);
         return;
     }
@@ -59,7 +84,6 @@ export default function AddMember() {
     try {
       const submitData = new FormData();
 
-      // 1. Prepare Member JSON
       const memberJson = JSON.stringify({
           firstName: formData.firstName,
           lastName: formData.lastName,
@@ -77,22 +101,21 @@ export default function AddMember() {
       const jsonBlob = new Blob([memberJson], { type: "application/json" });
       submitData.append("member", jsonBlob);
 
-      // 2. Append File
       if (selectedFile) submitData.append("file", selectedFile);
 
-      // 3. ✅ Append Query Params (Payment Info) to URL, NOT FormData
-      // The backend expects @RequestParam for these, so we send them in the URL query string
+      // ✅ Send bankAccountCode in params
       const response = await api.post('/api/members', submitData, {
           params: {
               paymentMethod: formData.paymentMethod,
-              referenceCode: formData.paymentMethod === 'CASH' ? 'CASH' : formData.referenceCode
+              referenceCode: formData.paymentMethod === 'CASH' ? 'CASH' : formData.referenceCode,
+              bankAccountCode: formData.bankAccountCode // Sending the selected bank
           }
-          // ❌ REMOVED manual "Content-Type". Let Axios handle it!
       });
 
       if (response.data.success) {
-        alert(`Member Registered!\nMember No: ${response.data.data.memberNumber}`);
-        navigate(-1);
+        // ✅ Show Modal instead of alert
+        setCreatedMemberData(response.data.data);
+        setShowSuccessModal(true);
       }
     } catch (err) {
       console.error("Registration Error:", err);
@@ -103,9 +126,10 @@ export default function AddMember() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans flex justify-center items-start">
+    <div className="min-h-screen bg-slate-50 p-8 font-sans flex justify-center items-start relative">
       <div className="max-w-6xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-
+        
+        {/* Header */}
         <div className="bg-slate-900 text-white p-6 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <UserPlus className="text-emerald-400" size={28} />
@@ -127,22 +151,20 @@ export default function AddMember() {
         )}
 
         <form onSubmit={handleSubmit} className="p-8 space-y-8">
-
+          {/* ... (Photo, Personal Info, Contact, Next of Kin sections remain UNCHANGED) ... */}
+          {/* I am omitting them here for brevity, keep your existing code for these sections */}
+          
           {/* Profile Photo */}
           <div className="flex flex-col items-center justify-center">
             <div className="w-32 h-32 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative group hover:border-emerald-500 transition">
-                {preview ? (
-                    <img src={preview} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                    <Camera className="text-slate-400" size={32} />
-                )}
+                {preview ? <img src={preview} alt="Preview" className="w-full h-full object-cover" /> : <Camera className="text-slate-400" size={32} />}
                 <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer"/>
             </div>
             <p className="text-sm text-slate-500 mt-2">Click to upload photo</p>
           </div>
 
-          {/* Personal Info */}
-          <div>
+           {/* Personal Info */}
+           <div>
             <div className="flex items-center gap-2 mb-4 border-b pb-2">
                 <User className="text-blue-600" size={20}/>
                 <h3 className="text-lg font-bold text-slate-800">Personal Information</h3>
@@ -187,7 +209,7 @@ export default function AddMember() {
             </div>
           </div>
 
-          {/* ✅ Payment Details Section */}
+          {/* ✅ Payment Details Section (UPDATED) */}
           <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-200">
                 <CreditCard className="text-emerald-600" size={20}/>
@@ -230,6 +252,32 @@ export default function AddMember() {
                         />
                     </div>
                 )}
+
+                {/* ✅ Dynamic Bank Dropdown */}
+                {formData.paymentMethod === 'BANK_TRANSFER' && (
+                    <div className="md:col-span-2 bg-white p-4 rounded border border-slate-200 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2 text-slate-700 font-bold">
+                            <Building size={18} />
+                            <span>Select Receiving Bank Account</span>
+                        </div>
+                        <select
+                            name="bankAccountCode"
+                            className="input-field border-emerald-500 ring-1 ring-emerald-100"
+                            onChange={handleChange}
+                            required
+                        >
+                            <option value="">-- Choose Account --</option>
+                            {bankAccounts.map(acc => (
+                                <option key={acc.code} value={acc.code}>
+                                    {acc.name} ({acc.code}) - Bal: {acc.balance.toLocaleString()}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Select the internal Sacco account where the transfer was received.
+                        </p>
+                    </div>
+                )}
             </div>
           </div>
 
@@ -241,9 +289,47 @@ export default function AddMember() {
               {loading ? "Registering..." : <><Save size={20} /> Register Member</>}
             </button>
           </div>
-
         </form>
       </div>
+
+      {/* ✅ CUSTOM SUCCESS MODAL */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200">
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-emerald-500 p-4 rounded-full shadow-lg border-4 border-white">
+                    <CheckCircle className="text-white w-12 h-12" />
+                </div>
+                
+                <div className="mt-8 text-center">
+                    <h3 className="text-2xl font-bold text-slate-800">Registration Successful!</h3>
+                    <p className="text-slate-500 mt-2">The member has been added to the system.</p>
+                    
+                    <div className="bg-slate-50 rounded-lg p-4 mt-6 border border-slate-200">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Member Number</p>
+                        <p className="text-3xl font-mono font-bold text-emerald-600 mt-1">
+                            {createdMemberData?.memberNumber}
+                        </p>
+                    </div>
+
+                    <div className="mt-6 flex gap-3">
+                        <button 
+                            onClick={() => navigate('/admin-dashboard?tab=members')}
+                            className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition"
+                        >
+                            View All Members
+                        </button>
+                        <button 
+                            onClick={() => navigate('/admin-dashboard?tab=register')}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition shadow-lg hover:shadow-emerald-500/30"
+                        >
+                            Add Another
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       <style>{`.input-field { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; background: #f8fafc; transition: all 0.2s; } .input-field:focus { background: white; border-color: #0f172a; box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.1); }`}</style>
     </div>
   );

@@ -44,8 +44,8 @@ public class MemberService {
     @Value("${app.upload.dir:uploads/profiles/}")
     private String uploadDir;
 
-    // âœ… ADDED AUDIT LOGGING
-    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode) throws IOException {
+    //  ADDED AUDIT LOGGING
+    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode, String bankAccountCode) throws IOException {
 
         // ✅ Check for duplicate email
         if (memberRepository.findByEmail(memberDTO.getEmail()).isPresent()) {
@@ -119,17 +119,29 @@ public class MemberService {
             Transaction saved = transactionRepository.save(registrationTx);
 
             String narrative = "Registration Fee - " + savedMember.getMemberNumber();
-            String ref = saved.getTransactionId(); // Use transaction ID as reference
+            String ref = saved.getTransactionId(); 
 
             try {
+                // ✅ DYNAMIC ACCOUNT SELECTION LOGIC
+                String debitAccount;
+                
                 if ("CASH".equalsIgnoreCase(paymentMethod)) {
-                    accountingService.postDoubleEntry(narrative, ref, "1001", "4001", amount);
+                    debitAccount = "1001"; // Cash Account
+                } else if ("MPESA".equalsIgnoreCase(paymentMethod)) {
+                    debitAccount = "1002"; // M-Pesa Account
+                } else if ("BANK_TRANSFER".equalsIgnoreCase(paymentMethod)) {
+                    debitAccount = (bankAccountCode != null && !bankAccountCode.isEmpty()) ? bankAccountCode : "1003";
                 } else {
-                    accountingService.postDoubleEntry(narrative, ref, "1002", "4001", amount);
+                    debitAccount = "1001"; // Fallback
                 }
+
+                // Credit Account is always "Registration Fees Income" (e.g., 4001)
+                accountingService.postDoubleEntry(narrative, ref, debitAccount, "4001", amount);
+                
             } catch (Exception e) {
                 log.error("Failed to post GL entry: {}", e.getMessage());
             }
+        
         }
 
         SavingsAccount savingsAccount = SavingsAccount.builder()
@@ -184,7 +196,7 @@ public class MemberService {
         return convertToDTO(saved);
     }
 
-    // âœ… ADDED AUDIT LOGGING
+    // ADDED AUDIT LOGGING
     public MemberDTO updateMember(UUID id, MemberDTO memberDTO) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
@@ -204,7 +216,7 @@ public class MemberService {
         return convertToDTO(updatedMember);
     }
 
-    // âœ… ADDED AUDIT LOGGING
+    // ADDED AUDIT LOGGING
     public void deleteMember(UUID id) {
         Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
         member.setStatus(Member.MemberStatus.INACTIVE);

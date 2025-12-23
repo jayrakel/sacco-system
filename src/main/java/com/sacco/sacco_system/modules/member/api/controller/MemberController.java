@@ -45,16 +45,15 @@ public class MemberController {
             @RequestPart("member") String memberDtoString,
             @RequestPart(value = "file", required = false) MultipartFile file,
             @RequestParam("paymentMethod") String paymentMethod,
-            @RequestParam("referenceCode") String referenceCode
+            @RequestParam("referenceCode") String referenceCode,
+            @RequestParam(value = "bankAccountCode", required = false) String bankAccountCode
     ) {
         try {
             // Convert JSON string to DTO
             ObjectMapper mapper = new ObjectMapper();
             mapper.findAndRegisterModules(); // Handle Dates
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
-
-            // Use RegistrationService to coordinate User + Member creation
-            MemberDTO created = registrationService.registerMember(memberDTO, file, paymentMethod, referenceCode);
+            MemberDTO created = registrationService.registerMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

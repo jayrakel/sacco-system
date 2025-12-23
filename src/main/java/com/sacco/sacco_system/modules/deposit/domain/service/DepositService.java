@@ -26,7 +26,6 @@ import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -48,7 +47,9 @@ public class DepositService {
 
     private final DepositRepository depositRepository;
     private final DepositAllocationRepository allocationRepository;
-    private final DepositProductRepository depositProductRepository;    private final MemberRepository memberRepository;    private final SavingsAccountRepository savingsAccountRepository;
+    private final DepositProductRepository depositProductRepository;
+    private final MemberRepository memberRepository;
+    private final SavingsAccountRepository savingsAccountRepository;
     private final LoanRepository loanRepository;
     private final FineRepository fineRepository;
     private final ShareCapitalRepository shareCapitalRepository;
@@ -68,7 +69,7 @@ public class DepositService {
         // 1. Validate allocations sum equals total
         validateAllocations(request);
 
-        // 2. Create deposit entity
+        // 2. Create deposit entity (Initial State)
         Deposit deposit = Deposit.builder()
                 .member(member)
                 .totalAmount(request.getTotalAmount())
@@ -77,40 +78,23 @@ public class DepositService {
                 .paymentReference(request.getPaymentReference())
                 .notes(request.getNotes())
                 .allocations(new ArrayList<>())
+                .createdAt(LocalDateTime.now()) // Ensure createdAt is set
                 .build();
 
-        // 3. Process each allocation
+        // 3. Process each allocation (FAIL FAST STRATEGY)
         List<DepositAllocation> allocations = new ArrayList<>();
-        boolean allSuccess = true;
 
         for (AllocationRequest allocationReq : request.getAllocations()) {
-            try {
-                DepositAllocation allocation = processAllocation(member, deposit, allocationReq);
-                allocations.add(allocation);
-                
-                if (allocation.getStatus() == AllocationStatus.FAILED) {
-                    allSuccess = false;
-                }
-            } catch (Exception e) {
-                log.error("Failed to process allocation: {}", e.getMessage());
-                DepositAllocation failedAllocation = DepositAllocation.builder()
-                        .deposit(deposit)
-                        .destinationType(allocationReq.getDestinationType())
-                        .amount(allocationReq.getAmount())
-                        .status(AllocationStatus.FAILED)
-                        .errorMessage(e.getMessage())
-                        .notes(allocationReq.getNotes())
-                        .build();
-                allocations.add(failedAllocation);
-                allSuccess = false;
-            }
+            // This will throw an exception if validation fails or accounting fails
+            DepositAllocation allocation = processAllocation(member, deposit, allocationReq);
+            allocations.add(allocation);
         }
 
         deposit.setAllocations(allocations);
-        deposit.setStatus(allSuccess ? DepositStatus.COMPLETED : DepositStatus.FAILED);
+        deposit.setStatus(DepositStatus.COMPLETED);
         deposit.setProcessedAt(LocalDateTime.now());
 
-        // 4. Save deposit
+        // 4. Save deposit (Cascades allocations)
         Deposit savedDeposit = depositRepository.save(deposit);
 
         return convertToDTO(savedDeposit);
@@ -171,6 +155,7 @@ public class DepositService {
         }
 
         // Deposit to savings account
+        // Note: SavingsService might need similar updates if it doesn't accept source account override
         savingsService.deposit(account.getAccountNumber(), allocation.getAmount(), "Multi-deposit allocation");
 
         allocation.setSavingsAccount(account);
@@ -232,12 +217,16 @@ public class DepositService {
         fine.setPaymentReference(allocation.getDeposit().getTransactionReference());
         fineRepository.save(fine);
 
-        // Create accounting entry
+        // ✅ Determine Source Account based on Payment Method
+        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
+
+        // Create accounting entry with Source Account
         accountingService.postEvent(
                 "FINE_PAYMENT",
                 "Fine payment: " + fine.getDescription(),
                 allocation.getDeposit().getTransactionReference(),
-                allocation.getAmount()
+                allocation.getAmount(),
+                sourceAccount // ✅ Fixed: Passing source account
         );
 
         // Create transaction record
@@ -255,7 +244,7 @@ public class DepositService {
         allocation.setFine(fine);
         allocation.setStatus(AllocationStatus.COMPLETED);
         
-        log.info("Routed {} to fine payment", allocation.getAmount());
+        log.info("Routed {} to fine payment via {}", allocation.getAmount(), sourceAccount);
     }
 
     /**
@@ -284,12 +273,16 @@ public class DepositService {
         
         depositProductRepository.save(product);
 
-        // Create accounting entry
+        // ✅ Determine Source Account
+        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
+
+        // Create accounting entry with Source Account
         accountingService.postEvent(
                 "CONTRIBUTION_RECEIVED",
                 "Contribution to: " + product.getName(),
                 allocation.getDeposit().getTransactionReference(),
-                allocation.getAmount()
+                allocation.getAmount(),
+                sourceAccount // ✅ Fixed: Passing source account
         );
 
         // Create transaction record
@@ -307,7 +300,7 @@ public class DepositService {
         allocation.setDepositProduct(product);
         allocation.setStatus(AllocationStatus.COMPLETED);
         
-        log.info("Routed {} to contribution product: {}", allocation.getAmount(), product.getName());
+        log.info("Routed {} to contribution product: {} via {}", allocation.getAmount(), product.getName(), sourceAccount);
     }
 
     /**
@@ -344,12 +337,16 @@ public class DepositService {
         member.setTotalShares(shareCapital.getPaidAmount());
         memberRepository.save(member);
 
-        // Create accounting entry
+        // ✅ Determine Source Account
+        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
+
+        // Create accounting entry with Source Account
         accountingService.postEvent(
-                "SHARE_CAPITAL_CONTRIBUTION",
+                "SHARE_CAPITAL_PURCHASE", 
                 "Share capital contribution",
                 allocation.getDeposit().getTransactionReference(),
-                allocation.getAmount()
+                allocation.getAmount(),
+                sourceAccount // ✅ Fixed: Passing source account
         );
 
         // Create transaction record
@@ -366,8 +363,7 @@ public class DepositService {
 
         allocation.setStatus(AllocationStatus.COMPLETED);
         
-        log.info("Routed {} to share capital - {} shares purchased @ KES {} per share", 
-                allocation.getAmount(), sharesOwned, shareValue);
+        log.info("Routed {} to share capital via {}", allocation.getAmount(), sourceAccount);
     }
 
     /**
@@ -407,27 +403,18 @@ public class DepositService {
         });
     }
 
-    /**
-     * Get member's deposit history
-     */
     public List<DepositDTO> getMemberDeposits(Member member) {
         return depositRepository.findByMemberOrderByCreatedAtDesc(member).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get deposit by ID
-     */
     public DepositDTO getDepositById(UUID id) {
         Deposit deposit = depositRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Deposit not found"));
         return convertToDTO(deposit);
     }
 
-    /**
-     * Convert entity to DTO
-     */
     private DepositDTO convertToDTO(Deposit deposit) {
         return DepositDTO.builder()
                 .id(deposit.getId())
@@ -447,9 +434,6 @@ public class DepositService {
                 .build();
     }
 
-    /**
-     * Convert allocation entity to DTO
-     */
     private AllocationDTO convertAllocationToDTO(DepositAllocation allocation) {
         String destinationName = getDestinationName(allocation);
         
@@ -464,9 +448,6 @@ public class DepositService {
                 .build();
     }
 
-    /**
-     * Get friendly name for destination
-     */
     private String getDestinationName(DepositAllocation allocation) {
         switch (allocation.getDestinationType()) {
             case SAVINGS_ACCOUNT:
@@ -489,6 +470,20 @@ public class DepositService {
                 return "Share Capital";
             default:
                 return allocation.getDestinationType().toString();
+        }
+    }
+
+    /**
+     * ✅ Helper method to get the correct Debit Account based on Payment Method
+     */
+    private String getDebitAccountForPayment(String paymentMethod) {
+        if (paymentMethod == null) return "1001"; // Default to Cash
+        
+        switch (paymentMethod.toUpperCase()) {
+            case "MPESA": return "1002"; // M-Pesa Paybill
+            case "BANK": return "1010";  // Default Bank (Equity). Ideally this comes from the request.
+            case "CASH": return "1001";  // Cash on Hand
+            default: return "1001";
         }
     }
 }

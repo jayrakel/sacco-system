@@ -186,6 +186,7 @@ public class UserService {
                 .updatedAt(user.getUpdatedAt())
                 .build();
     }
+    
 
     public String generateTemporaryPassword() {
         return UUID.randomUUID().toString().substring(0, 8);

@@ -11,6 +11,7 @@ import SystemSetup from './pages/SystemSetup';
 import VerifyEmail from './pages/VerifyEmail';
 import AddMember from './pages/members/AddMember';
 import SystemSettings from './pages/admin/SystemSettings';
+import ResetPassword from './pages/ResetPassword';
 
 // Role Dashboards
 import LoansDashboard from './pages/LoansDashboard';
@@ -53,6 +54,7 @@ function App() {
           <Route path="/change-password" element={<ChangePassword />} />
           <Route path="/system-setup" element={<SystemSetup />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Dashboards */}
           <Route path="/dashboard" element={<MemberDashboard />} />

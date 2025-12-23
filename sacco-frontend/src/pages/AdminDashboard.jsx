@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'; // ✅ Added useSearchParams, Link
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import api from '../api';
 
@@ -9,7 +9,7 @@ import {
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
     PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
-    Briefcase, Calendar, Filter // ✅ Added Calendar & Filter
+    Briefcase, Calendar, Filter
 } from 'lucide-react';
 
 // Components
@@ -29,17 +29,20 @@ import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
-    const [activeTab, setActiveTab] = useState('overview');
+    
+    // ✅ 1. REPLACE STATE WITH URL SEARCH PARAMS
+    const [searchParams] = useSearchParams();
+    const activeTab = searchParams.get('tab') || 'overview'; // Default to 'overview'
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
     }, []);
 
-    // --- TAB BUTTON COMPONENT ---
+    // ✅ 2. UPDATE TAB BUTTON TO USE REAL LINKS
     const TabButton = ({ id, label, icon: Icon }) => (
-        <button
-            onClick={() => setActiveTab(id)}
+        <Link
+            to={`?tab=${id}`} // Updates URL like /admin?tab=finance
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 border whitespace-nowrap ${
                 activeTab === id
                 ? 'bg-indigo-900 text-white shadow-md border-indigo-900'
@@ -48,13 +51,13 @@ export default function AdminDashboard() {
         >
             <Icon size={16} className={activeTab === id ? "text-indigo-200" : "text-slate-400"}/>
             {label}
-        </button>
+        </Link>
     );
 
     // --- CONTENT SWITCHER ---
     const renderContent = () => {
         switch(activeTab) {
-            case 'overview': return <OverviewTab setActiveTab={setActiveTab} />;
+            case 'overview': return <OverviewTab />;
             case 'finance': return <FinanceTab />;
             case 'savings': return (
                 <div className="space-y-8 animate-in fade-in">
@@ -86,7 +89,7 @@ export default function AdminDashboard() {
                     </div>
                 );
             case 'audit': return <AuditLogs />;
-            default: return <OverviewTab setActiveTab={setActiveTab} />;
+            default: return <OverviewTab />;
         }
     };
 
@@ -122,12 +125,15 @@ export default function AdminDashboard() {
 // ==================================================================================
 // 1. OVERVIEW TAB (Real Stats + Custom Date Filter Chart)
 // ==================================================================================
-function OverviewTab({ setActiveTab }) {
+function OverviewTab() {
     const [stats, setStats] = useState({ totalMembers: 0, totalSavings: 0, totalLoansIssued: 0, netIncome: 0 });
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
+    
+    // ✅ 3. USE NAVIGATE FOR INTERNAL ACTIONS
+    const navigate = useNavigate(); 
 
-    // ✅ NEW: Custom Date Range State (Defaults to last 7 days)
+    // Date Range State
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
@@ -161,34 +167,24 @@ function OverviewTab({ setActiveTab }) {
             console.log('✅ Dashboard loaded successfully');
         } catch (e) {
             console.error("❌ Dashboard Load Failed:");
-            console.error('Error name:', e.name);
-            console.error('Error message:', e.message);
-            console.error('Error response:', e.response?.data);
-            console.error('Error status:', e.response?.status);
-            console.error('Request URL:', e.config?.url);
             console.error('Full error:', e);
             setLoading(false);
         }
     };
 
-    // ✅ NEW: Fetch Chart Data with Custom Dates
+    // Fetch Chart Data with Custom Dates
     const fetchChartData = async () => {
         try {
             console.log(`🔄 Fetching chart data from ${dateRange.start} to ${dateRange.end}...`);
             const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
-            console.log('✅ Chart data response:', chartRes.data);
-
+            
             if (chartRes.data.success && chartRes.data.data.length > 0) {
-                console.log('📊 Chart data points:', chartRes.data.data.length);
                 setChartData(chartRes.data.data);
             } else {
-                console.warn('⚠️ No chart data available');
                 setChartData([]); // Empty state if no data
             }
         } catch (e) {
-            console.error("❌ Chart Data Failed:");
-            console.error('Error details:', e.response?.data || e.message);
-            console.error('Full error:', e);
+            console.error("❌ Chart Data Failed:", e);
         }
     };
 
@@ -197,17 +193,13 @@ function OverviewTab({ setActiveTab }) {
         try {
             await api.post('/api/reports/generate');
             alert("✅ Report Generated successfully! Check Reports tab.");
-            setActiveTab('reports');
+            navigate('?tab=reports'); // ✅ Link navigation
         } catch (e) { alert("Report Generation Failed"); }
     };
 
     const handleSystemDiag = () => {
         alert("System Status: Operational\nDatabase: Connected\nEmail Service: Active");
     };
-
-    const handleReviewMembers = () => {
-        setActiveTab('members');
-    }
 
     const StatCard = ({ label, value, icon: Icon, color, subtext }) => (
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all group">
@@ -246,7 +238,7 @@ function OverviewTab({ setActiveTab }) {
             {/* CHART ROW */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* ✅ DYNAMIC CHART WITH CUSTOM DATE FILTER */}
+                {/* DYNAMIC CHART WITH CUSTOM DATE FILTER */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
 
                     {/* Header with Title & Custom Date Picker */}
@@ -256,7 +248,7 @@ function OverviewTab({ setActiveTab }) {
                             Performance
                         </h3>
 
-                        {/* ✅ DATE RANGE FILTER UI */}
+                        {/* DATE RANGE FILTER UI */}
                         <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                             <div className="flex items-center gap-1 px-2">
                                 <Calendar size={14} className="text-slate-400"/>
@@ -285,12 +277,13 @@ function OverviewTab({ setActiveTab }) {
                             </button>
                         </div>
 
-                        <button
-                            onClick={() => setActiveTab('reports')}
+                        {/* ✅ Button is now a Link */}
+                        <Link
+                            to="?tab=reports"
                             className="hidden sm:flex text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition items-center gap-1 whitespace-nowrap"
                         >
                             View Reports <ChevronRight size={14}/>
-                        </button>
+                        </Link>
                     </div>
 
                     {/* The Chart */}
@@ -338,13 +331,14 @@ function OverviewTab({ setActiveTab }) {
                             </div>
                         </button>
 
-                        <button onClick={handleReviewMembers} className="w-full bg-slate-50 hover:bg-blue-50 hover:text-blue-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-blue-200 group text-left">
+                        {/* ✅ Link navigation for Review Members */}
+                        <Link to="?tab=members" className="w-full bg-slate-50 hover:bg-blue-50 hover:text-blue-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-blue-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-blue-600"><Users size={16}/></div>
                             <div>
                                 <span className="block">Review Members</span>
                                 <span className="text-[10px] text-slate-400 font-normal">Manage member accounts</span>
                             </div>
-                        </button>
+                        </Link>
 
                         <button onClick={handleSystemDiag} className="w-full bg-slate-50 hover:bg-amber-50 hover:text-amber-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-amber-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-amber-600"><AlertCircle size={16}/></div>
@@ -535,7 +529,7 @@ function MembersTab() {
                         <tr>
                             <th className="p-4">Member No</th>
                             <th className="p-4">Name</th>
-                            <th className="p-4">Email</th> {/* ✅ Added Email Header */}
+                            <th className="p-4">Email</th>
                             <th className="p-4">Contact</th>
                             <th className="p-4">Status</th>
                             <th className="p-4 text-right">Savings</th>
@@ -551,7 +545,6 @@ function MembersTab() {
                                     </div>
                                     {m.firstName} {m.lastName}
                                 </td>
-                                {/* ✅ Added Email Cell */}
                                 <td className="p-4 text-slate-500 text-xs">{m.email}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.phoneNumber}</td>
                                 <td className="p-4"><span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-[10px] font-bold uppercase">{m.status}</span></td>
