@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.finance.domain.entity;
-import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -70,7 +69,7 @@ public class Transaction {
         REGISTRATION_FEE,
         SHARE_PURCHASE,
 
-        // âœ… LOAN RELATED TYPES
+        // ✅ LOAN RELATED TYPES
         PROCESSING_FEE,         // Application/Processing Fee
         LOAN_DISBURSEMENT,      // Money out to member
         LOAN_REPAYMENT,         // Money in from member
@@ -82,13 +81,9 @@ public class Transaction {
     public enum PaymentMethod {
         CASH,
         BANK_TRANSFER,
+        BANK,   // ✅ Added to support the new routing logic
         MPESA,
         CHECK,
         SYSTEM
     }
 }
-
-
-
-
-

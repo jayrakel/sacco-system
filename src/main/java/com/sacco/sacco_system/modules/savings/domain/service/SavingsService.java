@@ -17,6 +17,9 @@ import java.util.stream.Collectors;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -35,6 +38,10 @@ public class SavingsService {
     private final SavingsProductRepository savingsProductRepository;
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
+    
+    // ✅ ADDED: Dependencies to check liabilities
+    private final LoanRepository loanRepository;
+    private final GuarantorRepository guarantorRepository;
 
     // ========================================================================
     // 1. ACCOUNT MANAGEMENT
@@ -149,25 +156,54 @@ public class SavingsService {
         transactionRepository.save(tx);
 
         // ✅ POST TO ACCOUNTING with Source Account Override
-        // This ensures the debit goes to Bank (1010) or M-Pesa (1002) correctly
         accountingService.postEvent(
             "SAVINGS_DEPOSIT",
             description != null ? description : "Savings Deposit - " + member.getMemberNumber(),
-            "DEP-" + savedAccount.getId(), // Reference
+            "DEP-" + savedAccount.getId(), 
             amount,
-            sourceAccountCode // ✅ Pass the source account
+            sourceAccountCode 
         );
 
         return convertToDTO(savedAccount);
     }
 
     /**
-     * MEMBER EXIT WITHDRAWAL - Only allowed when member exits the SACCO
+     * ✅ SECURED: MEMBER EXIT WITHDRAWAL
+     * Prevents exit if member has active loans or is a guarantor.
      */
     public SavingsAccountDTO processMemberExit(UUID memberId, String reason) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
+        // 1. ✅ Check for Active Loans (Self)
+        boolean hasActiveLoans = loanRepository.existsByMemberIdAndStatusIn(
+                memberId, 
+                List.of(
+                    Loan.LoanStatus.ACTIVE,
+                    Loan.LoanStatus.IN_ARREARS,
+                    Loan.LoanStatus.DISBURSED
+                )
+        );
+
+        if (hasActiveLoans) {
+            throw new RuntimeException("Cannot exit SACCO: You have active unpaid loans. Please clear them first.");
+        }
+
+        // 2. ✅ Check for Active Guarantees (Others)
+        boolean isActiveGuarantor = guarantorRepository.existsByMemberIdAndLoanStatusIn(
+                memberId,
+                List.of(
+                    Loan.LoanStatus.ACTIVE,
+                    Loan.LoanStatus.IN_ARREARS,
+                    Loan.LoanStatus.DISBURSED
+                )
+        );
+
+        if (isActiveGuarantor) {
+            throw new RuntimeException("Cannot exit SACCO: You are guaranteeing active loans for other members. You must be replaced as a guarantor before you can exit.");
+        }
+
+        // 3. Proceed with Account Closure
         List<SavingsAccount> accounts = savingsAccountRepository.findByMemberId(memberId);
 
         if (accounts.isEmpty()) {
