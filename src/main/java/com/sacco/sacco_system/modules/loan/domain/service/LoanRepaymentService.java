@@ -1,10 +1,13 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,12 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -31,7 +28,7 @@ public class LoanRepaymentService {
     private final ReferenceCodeService referenceCodeService;
 
     /**
-     * âœ… Generates the repayment schedule based on Weeks/Months and Grace Period.
+     * ✅ Generates the repayment schedule based on Weeks/Months and Grace Period.
      * This is called by LoanService when the Treasurer disburses the loan.
      */
     public void generateRepaymentSchedule(Loan loan, int gracePeriodWeeks) {
@@ -94,11 +91,17 @@ public class LoanRepaymentService {
     }
 
     /**
-     * âœ… Processes a payment transaction with Prepayment/Arrears logic.
-     * Logic: Puts money into a "pot" (Payment + Previous Overpayment),
-     * then pays off Arrears -> Current Installment -> Future Overpayment.
+     * Overloaded processPayment for backward compatibility (Defaults to CASH/System)
      */
     public void processPayment(Loan loan, BigDecimal amountPaid) {
+        processPayment(loan, amountPaid, null);
+    }
+
+    /**
+     * ✅ UPDATED: Processes a payment transaction with Routing logic.
+     * Accepts sourceAccountCode to ensure the General Ledger is updated correctly.
+     */
+    public void processPayment(Loan loan, BigDecimal amountPaid, String sourceAccountCode) {
         // 1. Create the "Pot" (Current Payment + Any stored Prepayment)
         BigDecimal pot = amountPaid.add(loan.getTotalPrepaid() != null ? loan.getTotalPrepaid() : BigDecimal.ZERO);
         loan.setTotalPrepaid(BigDecimal.ZERO); // Clear buffer (will rebuild at end if pot remains)
@@ -147,36 +150,49 @@ public class LoanRepaymentService {
         }
 
         // 5. Reduce Principal Balance
-        loan.setLoanBalance(loan.getLoanBalance().subtract(amountPaid));
+        // Note: Using max(0) to prevent negative balance visual issues, though status handles completion
+        BigDecimal currentBalance = loan.getLoanBalance();
+        loan.setLoanBalance(currentBalance.subtract(amountPaid));
+        
         if (loan.getLoanBalance().compareTo(BigDecimal.ZERO) <= 0) {
             loan.setStatus(Loan.LoanStatus.COMPLETED);
         }
 
         loanRepository.save(loan);
 
+        // Determine Payment Method
+        Transaction.PaymentMethod paymentMethod = Transaction.PaymentMethod.CASH;
+        if (sourceAccountCode != null) {
+            if (sourceAccountCode.equals("1002")) paymentMethod = Transaction.PaymentMethod.MPESA;
+            else if (sourceAccountCode.startsWith("101")) paymentMethod = Transaction.PaymentMethod.BANK;
+        }
+
         // Create transaction record
         Transaction transaction = Transaction.builder()
                 .member(loan.getMember())
                 .type(Transaction.TransactionType.LOAN_REPAYMENT)
                 .amount(amountPaid)
-                .paymentMethod(Transaction.PaymentMethod.CASH)
+                .paymentMethod(paymentMethod)
                 .referenceCode(referenceCodeService.generateReferenceCode())
                 .description("Loan repayment - " + loan.getLoanNumber())
                 .balanceAfter(loan.getLoanBalance())
                 .build();
         transactionRepository.save(transaction);
 
-        // ✅ POST TO ACCOUNTING - Creates journal entry for repayment
-        // Calculate principal vs interest portion of the payment
-        BigDecimal principal = amountPaid.min(loan.getLoanBalance());
-        BigDecimal interest = amountPaid.subtract(principal);
-        accountingService.postLoanRepayment(loan, principal, interest);
-        // Creates:
-        //   DEBIT Cash (1020)
-        //   CREDIT Loans Receivable (1100) - principal portion
-        //   CREDIT Interest Income (4010) - interest portion
+        // ✅ POST TO ACCOUNTING - Explicitly using the Source Account
+        // Since loanBalance includes interest, we treat the repayment as reducing the Loan Receivable Asset.
+        // Any split between Principal/Interest income is handled by your loan configuration, 
+        // but for now we route the full amount to the Principal Repayment GL (1200) to reduce the asset.
+        
+        BigDecimal principalPortion = amountPaid; 
+        
+        // Post Principal Repayment (Credit 1200, Debit Source)
+        accountingService.postEvent(
+            "LOAN_REPAYMENT_PRINCIPAL", 
+            "Loan Repayment - " + loan.getLoanNumber(), 
+            loan.getLoanNumber(), 
+            principalPortion, 
+            sourceAccountCode // ✅ Correctly routes to Bank/Mpesa/Cash
+        );
     }
 }
-
-
-

@@ -154,14 +154,21 @@ public class DepositService {
             throw new IllegalStateException("Savings account is not active");
         }
 
-        // Deposit to savings account
-        // Note: SavingsService might need similar updates if it doesn't accept source account override
-        savingsService.deposit(account.getAccountNumber(), allocation.getAmount(), "Multi-deposit allocation");
+        // ✅ Determine Source Account based on Payment Method
+        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
+
+        // Deposit to savings account (Passing Source Account)
+        savingsService.deposit(
+            account.getAccountNumber(), 
+            allocation.getAmount(), 
+            "Multi-deposit allocation", 
+            sourceAccount // ✅ Fixed: Passing source account
+        );
 
         allocation.setSavingsAccount(account);
         allocation.setStatus(AllocationStatus.COMPLETED);
         
-        log.info("Routed {} to savings account {}", allocation.getAmount(), account.getAccountNumber());
+        log.info("Routed {} to savings account {} via {}", allocation.getAmount(), account.getAccountNumber(), sourceAccount);
     }
 
     /**
@@ -183,13 +190,20 @@ public class DepositService {
             throw new IllegalStateException("Loan is not active");
         }
 
-        // Make loan repayment
-        loanRepaymentService.processPayment(loan, allocation.getAmount());
+        // ✅ Determine Source Account based on Payment Method
+        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
+
+        // Make loan repayment (Passing Source Account)
+        loanRepaymentService.processPayment(
+            loan, 
+            allocation.getAmount(), 
+            sourceAccount // ✅ Fixed: Passing source account
+        );
 
         allocation.setLoan(loan);
         allocation.setStatus(AllocationStatus.COMPLETED);
         
-        log.info("Routed {} to loan repayment for loan {}", allocation.getAmount(), loan.getLoanNumber());
+        log.info("Routed {} to loan repayment for loan {} via {}", allocation.getAmount(), loan.getLoanNumber(), sourceAccount);
     }
 
     /**

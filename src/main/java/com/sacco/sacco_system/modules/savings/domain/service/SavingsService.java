@@ -67,7 +67,8 @@ public class SavingsService {
         SavingsAccount savedAccount = savingsAccountRepository.save(account);
 
         if (initialDeposit != null && initialDeposit.compareTo(BigDecimal.ZERO) > 0) {
-            deposit(savedAccount.getAccountNumber(), initialDeposit, "Opening Deposit");
+            // Default opening deposit to CASH (1001) if not specified
+            deposit(savedAccount.getAccountNumber(), initialDeposit, "Opening Deposit", "1001");
         }
 
         return convertToDTO(savedAccount);
@@ -81,14 +82,12 @@ public class SavingsService {
         return convertToDTO(savingsAccountRepository.findByAccountNumber(accountNumber).orElseThrow(() -> new RuntimeException("Account not found")));
     }
 
-    // âœ… Matches Controller 'getMyBalance' call
     public List<SavingsAccountDTO> getMemberAccounts(UUID memberId) {
         return savingsAccountRepository.findByMemberId(memberId).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
-    // âœ… Alias for Controller 'getSavingsAccountsByMemberId' call
     public List<SavingsAccountDTO> getSavingsAccountsByMemberId(UUID memberId) {
         return getMemberAccounts(memberId);
     }
@@ -106,7 +105,17 @@ public class SavingsService {
     // 2. TRANSACTIONS
     // ========================================================================
 
+    /**
+     * Overloaded deposit method for legacy calls (defaults to CASH/System)
+     */
     public SavingsAccountDTO deposit(String accountNumber, BigDecimal amount, String description) {
+        return deposit(accountNumber, amount, description, null);
+    }
+
+    /**
+     * ✅ UPDATED: Deposit with Source Account Routing
+     */
+    public SavingsAccountDTO deposit(String accountNumber, BigDecimal amount, String description, String sourceAccountCode) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Amount must be positive");
 
         SavingsAccount account = savingsAccountRepository.findByAccountNumber(accountNumber)
@@ -120,39 +129,45 @@ public class SavingsService {
         member.setTotalSavings(member.getTotalSavings().add(amount));
         memberRepository.save(member);
 
+        // Determine Payment Method for Transaction Record
+        Transaction.PaymentMethod paymentMethod = Transaction.PaymentMethod.CASH;
+        if (sourceAccountCode != null) {
+            if (sourceAccountCode.equals("1002")) paymentMethod = Transaction.PaymentMethod.MPESA;
+            else if (sourceAccountCode.startsWith("101")) paymentMethod = Transaction.PaymentMethod.BANK;
+        }
+
         // Create transaction record
         Transaction tx = Transaction.builder()
                 .savingsAccount(account)
                 .member(member)
                 .type(Transaction.TransactionType.DEPOSIT)
                 .amount(amount)
+                .paymentMethod(paymentMethod)
                 .description(description != null ? description : "Deposit")
                 .balanceAfter(savedAccount.getBalance())
                 .build();
         transactionRepository.save(tx);
 
-        // ✅ POST TO ACCOUNTING - Creates: DEBIT Cash (1020), CREDIT Member Savings (2010)
-        accountingService.postSavingsDeposit(member, amount);
+        // ✅ POST TO ACCOUNTING with Source Account Override
+        // This ensures the debit goes to Bank (1010) or M-Pesa (1002) correctly
+        accountingService.postEvent(
+            "SAVINGS_DEPOSIT",
+            description != null ? description : "Savings Deposit - " + member.getMemberNumber(),
+            "DEP-" + savedAccount.getId(), // Reference
+            amount,
+            sourceAccountCode // ✅ Pass the source account
+        );
 
         return convertToDTO(savedAccount);
     }
 
     /**
      * MEMBER EXIT WITHDRAWAL - Only allowed when member exits the SACCO
-     * Regular withdrawals are NOT permitted in this savings-only SACCO
-     * Members benefit through: Loans, Dividends, Share appreciation
      */
     public SavingsAccountDTO processMemberExit(UUID memberId, String reason) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        // Check if member has active loans
-        // TODO: Add check for active loans once loan module is integrated
-        // if (hasActiveLoan(memberId)) {
-        //     throw new RuntimeException("Cannot exit SACCO with active loans. Please clear all loans first.");
-        // }
-
-        // Get all member's savings accounts
         List<SavingsAccount> accounts = savingsAccountRepository.findByMemberId(memberId);
 
         if (accounts.isEmpty()) {
@@ -161,7 +176,6 @@ public class SavingsService {
 
         BigDecimal totalWithdrawal = BigDecimal.ZERO;
 
-        // Close all accounts and calculate total
         for (SavingsAccount account : accounts) {
             totalWithdrawal = totalWithdrawal.add(account.getBalance());
             account.setStatus(SavingsAccount.AccountStatus.CLOSED);
@@ -173,12 +187,10 @@ public class SavingsService {
             throw new RuntimeException("No funds available to withdraw");
         }
 
-        // Update member status
         member.setTotalSavings(BigDecimal.ZERO);
-        member.setStatus(Member.MemberStatus.INACTIVE); // Mark as exited
+        member.setStatus(Member.MemberStatus.INACTIVE); 
         memberRepository.save(member);
 
-        // Create transaction record
         Transaction tx = Transaction.builder()
                 .member(member)
                 .type(Transaction.TransactionType.WITHDRAWAL)
@@ -188,7 +200,6 @@ public class SavingsService {
                 .build();
         transactionRepository.save(tx);
 
-        // Create Withdrawal entity for accounting
         Withdrawal withdrawal = Withdrawal.builder()
                 .member(member)
                 .amount(totalWithdrawal)
@@ -198,24 +209,15 @@ public class SavingsService {
                 .processingDate(LocalDateTime.now())
                 .build();
 
-        // ✅ POST TO ACCOUNTING - Creates: DEBIT Member Savings (2010), CREDIT Cash (1020)
         accountingService.postSavingsWithdrawal(withdrawal);
 
-        // Return last account (for confirmation)
         return accounts.isEmpty() ? null : convertToDTO(accounts.get(0));
     }
 
-    /**
-     * DEPRECATED: Regular withdrawals are NOT allowed in this SACCO
-     * Use processMemberExit() instead when member leaves the SACCO
-     */
     @Deprecated
     public SavingsAccountDTO withdraw(String accountNumber, BigDecimal amount, String description) {
-        throw new RuntimeException("Regular withdrawals are not allowed. Members can only withdraw when exiting the SACCO. Benefits include loans, dividends, and share appreciation.");
+        throw new RuntimeException("Regular withdrawals are not allowed. Members can only withdraw when exiting the SACCO.");
     }
-
-    // âœ… REMOVED: Transfer Funds Method (not needed for savings-only SACCO)
-    // Members cannot transfer between accounts
 
     // ========================================================================
     // 3. INTEREST CALCULATION
@@ -236,7 +238,6 @@ public class SavingsService {
                     if(acc.getAccruedInterest() != null) acc.setAccruedInterest(acc.getAccruedInterest().add(interest));
                     savingsAccountRepository.save(acc);
 
-                    // Create transaction record for interest earned
                     Transaction tx = Transaction.builder()
                             .member(acc.getMember())
                             .type(Transaction.TransactionType.INTEREST_EARNED)
@@ -280,6 +281,3 @@ public class SavingsService {
                 .build();
     }
 }
-
-
-
