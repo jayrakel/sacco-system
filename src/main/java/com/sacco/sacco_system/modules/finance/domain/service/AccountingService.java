@@ -75,24 +75,34 @@ public class AccountingService {
     }
 
     /**
-     * Dynamic posting - looks up account codes from GL mapping configuration
+     * ✅ UPDATED: Master postEvent that accepts BOTH Debit and Credit overrides.
+     * This is crucial for routing Loan Disbursements (Override Credit) and Deposits (Override Debit).
      */
     @Transactional
-    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount, String overrideDebitAccount) {
+    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount, String overrideDebitAccount, String overrideCreditAccount) {
         GlMapping mapping = glMappingRepository.findByEventName(eventName)
                 .orElseThrow(() -> new RuntimeException("GL Mapping not found for event: " + eventName));
 
-        // Use the override if provided, otherwise fall back to the default configured in accounts.json
+        // Use overrides if provided, otherwise fallback to defaults
         String debitCode = (overrideDebitAccount != null && !overrideDebitAccount.isEmpty()) 
-                ? overrideDebitAccount 
-                : mapping.getDebitAccountCode();
+                ? overrideDebitAccount : mapping.getDebitAccountCode();
+                
+        String creditCode = (overrideCreditAccount != null && !overrideCreditAccount.isEmpty()) 
+                ? overrideCreditAccount : mapping.getCreditAccountCode();
 
-        postDoubleEntry(description, referenceNo, debitCode, mapping.getCreditAccountCode(), amount);
+        postDoubleEntry(description, referenceNo, debitCode, creditCode, amount);
     }
 
+    // Overload for Debit Override only (used by DepositService)
+    @Transactional
+    public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount, String overrideDebitAccount) {
+        postEvent(eventName, description, referenceNo, amount, overrideDebitAccount, null);
+    }
+
+    // Overload for Standard calls
     @Transactional
     public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
-        postEvent(eventName, description, referenceNo, amount, null);
+        postEvent(eventName, description, referenceNo, amount, null, null);
     }
 
     /**
@@ -273,18 +283,33 @@ public class AccountingService {
     }
 
     /**
-     * Post loan disbursement transaction
+     * ✅ UPDATED: Accepts sourceAccountCode (Credit Override)
+     * This allows loan disbursements to come from Bank or Cash instead of default M-Pesa.
      */
+    public void postLoanDisbursement(Loan loan, String sourceAccountCode) {
+        log.info("Posting loan disbursement for loan {} from {}", loan.getLoanNumber(), sourceAccountCode);
+        
+        // Pass sourceAccountCode as the CREDIT override (2nd override param)
+        postEvent(
+            "LOAN_DISBURSEMENT", 
+            "Loan Disbursement - " + loan.getLoanNumber(),
+            loan.getLoanNumber(), 
+            loan.getPrincipalAmount(), 
+            null,              // Default Debit (1200 Loan Receivable)
+            sourceAccountCode  // Override Credit (Source of Funds)
+        );
+    }
+
+    // Overload for backward compatibility
     public void postLoanDisbursement(Loan loan) {
-        log.info("Posting loan disbursement for loan {}", loan.getLoanNumber());
-        postEvent("LOAN_DISBURSEMENT", "Loan Disbursement - " + loan.getLoanNumber(),
-                loan.getLoanNumber(), loan.getPrincipalAmount());
+        postLoanDisbursement(loan, null);
     }
 
     /**
      * Post loan repayment transaction (principal and interest)
      */
     public void postLoanRepayment(Loan loan, BigDecimal principalAmount, BigDecimal interestAmount) {
+        // Note: For source-routed repayments, use the overloaded version in other services
         log.info("Posting loan repayment for loan {} - Principal: {}, Interest: {}",
                 loan.getLoanNumber(), principalAmount, interestAmount);
 
@@ -451,8 +476,3 @@ public class AccountingService {
         log.debug("Created mapping: {} -> DR: {} CR: {}", eventType, debitAccount, creditAccount);
     }
 }
-
-
-
-
-

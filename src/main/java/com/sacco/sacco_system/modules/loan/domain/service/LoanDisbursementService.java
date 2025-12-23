@@ -174,16 +174,39 @@ public class LoanDisbursementService {
         Loan loan = disbursement.getLoan();
         loan.setStatus(Loan.LoanStatus.DISBURSED);
         loan.setDisbursementDate(LocalDate.now());
-        loan.setLoanBalance(loan.getPrincipalAmount()); // Set initial balance
+        loan.setLoanBalance(loan.getPrincipalAmount()); 
         loanRepository.save(loan);
 
-        // ✅ POST TO ACCOUNTING - Creates: DEBIT Loans Receivable (1100), CREDIT Cash (1020)
-        accountingService.postLoanDisbursement(loan);
+        // ✅ DETERMINE SOURCE ACCOUNT (Credit Account)
+        String sourceAccount = getCreditAccountForDisbursement(disbursement);
 
-        log.info("Disbursement completed for loan {}. Method: {}. Accounting entry created.",
-                loan.getLoanNumber(), disbursement.getMethod());
+        // ✅ POST TO ACCOUNTING with Routing (Pass sourceAccount as override)
+        // This ensures if we pay by Cheque, it credits Bank (1010). If M-Pesa, it credits Paybill (1002).
+        accountingService.postLoanDisbursement(loan, sourceAccount);
+
+        log.info("Disbursement completed for loan {}. Method: {}. Accounting entry created via {}.",
+                loan.getLoanNumber(), disbursement.getMethod(), sourceAccount);
 
         return saved;
+    }
+
+    /**
+     * ✅ Helper to determine where money came from (Credit Account)
+     */
+    private String getCreditAccountForDisbursement(LoanDisbursement disbursement) {
+        switch (disbursement.getMethod()) {
+            case MPESA: 
+                return "1002"; // M-Pesa Paybill
+            case CHEQUE:
+            case BANK_TRANSFER:
+            case EFT:
+            case RTGS:
+                return "1010"; // Bank Account (Equity)
+            case CASH:
+                return "1001"; // Cash on Hand
+            default:
+                return "1002"; // Default fallback
+        }
     }
 
     /**
@@ -232,9 +255,6 @@ public class LoanDisbursementService {
         return disbursementRepository.save(disbursement);
     }
 
-    /**
-     * Get disbursement by loan
-     */
     public LoanDisbursement getDisbursementByLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -243,23 +263,14 @@ public class LoanDisbursementService {
                 .orElse(null);
     }
 
-    /**
-     * Get pending disbursements (waiting for treasurer)
-     */
     public List<LoanDisbursement> getPendingDisbursements() {
         return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.APPROVED);
     }
 
-    /**
-     * Get disbursements awaiting approval
-     */
     public List<LoanDisbursement> getDisbursementsAwaitingApproval() {
         return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.PREPARED);
     }
 
-    /**
-     * Get disbursement statistics
-     */
     public Map<String, Object> getDisbursementStatistics() {
         Map<String, Object> stats = new HashMap<>();
 
@@ -278,4 +289,3 @@ public class LoanDisbursementService {
                 .orElse(null);
     }
 }
-
