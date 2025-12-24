@@ -92,6 +92,35 @@ public class SystemSettingService {
     }
 
     @Transactional
+    public SystemSetting createOrUpdate(String key, String value, String description) {
+        return repository.findByKey(key)
+                .map(existing -> {
+                    existing.setValue(value);
+                    if (description != null && !description.isEmpty()) {
+                        existing.setDescription(description);
+                    }
+                    return repository.save(existing);
+                })
+                .orElseGet(() -> {
+                    // Determine type automatically
+                    String type = "STRING";
+                    try {
+                        Double.parseDouble(value);
+                        type = "NUMBER";
+                    } catch (NumberFormatException e) {
+                        // Keep as STRING
+                    }
+
+                    return repository.save(SystemSetting.builder()
+                            .key(key)
+                            .value(value)
+                            .description(description)
+                            .dataType(type)
+                            .build());
+                });
+    }
+
+    @Transactional
     public SystemSetting updateSetting(String key, String value) {
         SystemSetting setting = repository.findByKey(key)
                 .orElseThrow(() -> new RuntimeException("Setting not found: " + key));

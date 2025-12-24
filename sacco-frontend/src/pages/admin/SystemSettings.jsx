@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import {
     Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon,
-    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw
+    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw, Plus, X
 } from 'lucide-react';
 
 // Import Sub-Components
@@ -21,6 +21,10 @@ export default function SystemSettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
+
+    // --- ADD SETTING STATE ---
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
 
     // --- MAINTENANCE STATE ---
     const [recalculating, setRecalculating] = useState(false);
@@ -87,6 +91,19 @@ export default function SystemSettings() {
         setSaving(false);
     };
 
+    const handleAddSetting = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post('/api/settings', newSetting);
+            alert("Setting Added!");
+            setShowAddModal(false);
+            setNewSetting({ key: '', value: '', description: '' });
+            fetchSettings();
+        } catch (err) {
+            alert("Failed to add setting");
+        }
+    };
+
     const recalculateShares = async () => {
         if (!window.confirm('This will recalculate all share capital records based on the current SHARE_VALUE setting. Continue?')) {
             return;
@@ -109,28 +126,22 @@ export default function SystemSettings() {
 
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Configuration...</div>;
 
-    // Categorize Settings for General Tab
-    // Updated: SACCO_ADDRESS, SACCO_PHONE etc will automatically fall into this category
+    // Categorize Settings
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
-
-    // Categorize Settings for System Parameters Tab
+    
     const operationalSettings = settings.filter(s =>
-        s.key.includes('FEE') ||
-        s.key.includes('RATE') ||
-        s.key.includes('CONTRIBUTION') ||
-        s.key.includes('INTEREST') ||
-        s.key.includes('GRACE') ||
-        s.key.includes('MULTIPLIER') ||
-        s.key.includes('VOTING') ||
-        s.key.includes('LOAN_APPLICATION_FEE') ||
-        s.key.includes('MIN_SAVINGS_FOR_LOAN') ||
-        s.key.includes('MIN_MONTHS_MEMBERSHIP') ||
-        s.key.includes('MIN_SHARE_CAPITAL') ||
-        s.key.includes('MIN_SAVINGS_TO_GUARANTEE') ||
-        s.key.includes('MIN_MONTHS_TO_GUARANTEE') ||
-        s.key.includes('MAX_GUARANTOR_LIMIT_RATIO') ||
+        s.key.includes('FEE') || s.key.includes('RATE') || s.key.includes('CONTRIBUTION') ||
+        s.key.includes('INTEREST') || s.key.includes('GRACE') || s.key.includes('MULTIPLIER') ||
+        s.key.includes('VOTING') || s.key.includes('MIN_') || s.key.includes('MAX_') ||
         s.key === 'SHARE_VALUE'
+    );
+
+    // ✅ Catch-all for new custom settings that don't fit the above filters
+    const miscSettings = settings.filter(s => 
+        !brandingSettings.includes(s) && 
+        !bankSettings.includes(s) && 
+        !operationalSettings.includes(s)
     );
 
     return (
@@ -143,15 +154,23 @@ export default function SystemSettings() {
                         <Settings className="text-emerald-400" size={28} />
                         <div>
                             <h2 className="text-xl font-bold">System Configuration</h2>
-                            <p className="text-slate-400 text-sm">Manage branding, products, and accounting rules.</p>
+                            <p className="text-slate-400 text-sm">Manage branding, products, and system rules.</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => navigate('/admin-dashboard')}
-                        className="flex items-center gap-2 text-slate-400 hover:text-white transition"
-                    >
-                        <ArrowLeft size={20} /> Back
-                    </button>
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => setShowAddModal(true)} 
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded text-sm font-bold transition"
+                        >
+                            <Plus size={16} /> Add Setting
+                        </button>
+                        <button
+                            onClick={() => navigate('/admin-dashboard')}
+                            className="flex items-center gap-2 text-slate-400 hover:text-white transition"
+                        >
+                            <ArrowLeft size={20} /> Back
+                        </button>
+                    </div>
                 </div>
 
                 {/* Navigation Tabs */}
@@ -212,7 +231,6 @@ export default function SystemSettings() {
                                                             <Upload size={14} /> Upload Image
                                                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(setting.key, e.target.files[0])} />
                                                         </label>
-                                                        <p className="text-xs text-slate-400 mt-1">Recommended: PNG or JPG</p>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -222,7 +240,6 @@ export default function SystemSettings() {
                                                         <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
                                                     </div>
                                                 ) : setting.key.includes('ADDRESS') ? (
-                                                    // NEW: Handle Address as TextArea
                                                     <textarea 
                                                         value={setting.value} 
                                                         onChange={(e) => handleValueChange(setting.key, e.target.value)} 
@@ -257,17 +274,11 @@ export default function SystemSettings() {
                                             />
                                         </div>
                                     ))}
-                                    {bankSettings.length === 0 && <p className="text-slate-400 italic text-sm">No bank details configured. Restart backend to initialize.</p>}
                                 </div>
                             </div>
 
-                            {/* Save Button */}
                             <div className="flex justify-end pt-4 border-t border-slate-200">
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={saving}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
-                                >
+                                <button onClick={saveSettings} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50">
                                     {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
                                 </button>
                             </div>
@@ -284,80 +295,65 @@ export default function SystemSettings() {
                                 </div>
                             )}
 
-                            {/* Operational Parameters */}
                             <div>
                                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
                                     <Sliders size={20} className="text-purple-600"/> Operational Parameters
                                 </h3>
-                                <p className="text-sm text-slate-500 mb-6">Configure fees, interest rates, and operational rules for your SACCO.</p>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {operationalSettings.map((setting) => (
                                         <div key={setting.key} className="bg-purple-50 p-4 rounded-lg border border-purple-100">
                                             <label className="block text-xs font-bold text-purple-800 mb-2 uppercase tracking-wide">
                                                 {setting.key.replace(/_/g, ' ')}
                                             </label>
-
-                                            {setting.key === 'LOAN_VOTING_METHOD' ? (
-                                                <select
-                                                    value={setting.value}
-                                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                                    className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
-                                                >
-                                                    <option value="MANUAL">Manual Approval</option>
-                                                    <option value="DEMOCRATIC">Democratic Voting</option>
-                                                    <option value="AUTO">Automatic Approval</option>
-                                                </select>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        value={setting.value}
-                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                                        className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
-                                                        step={setting.key.includes('RATE') ? '0.1' : '1'}
-                                                        min="0"
-                                                    />
-                                                    <span className="text-sm font-bold text-purple-600 whitespace-nowrap">
-                                                        {setting.key.includes('RATE') ? '%' :
-                                                         setting.key.includes('WEEKS') ? 'weeks' :
-                                                         setting.key.includes('MULTIPLIER') ? 'x' : 'KES'}
-                                                    </span>
-                                                </div>
-                                            )}
+                                            <input
+                                                type="text"
+                                                value={setting.value}
+                                                onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                                            />
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Save Button */}
-                            <div className="flex justify-end pt-4 border-t border-slate-200">
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={saving}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
-                                >
+                            {/* Miscellaneous Settings (Newly Added) */}
+                            {miscSettings.length > 0 && (
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                                        <Settings size={20} className="text-gray-600"/> Other Settings
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {miscSettings.map((setting) => (
+                                            <div key={setting.key} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                                                    {setting.key.replace(/_/g, ' ')}
+                                                </label>
+                                                <div className="text-xs text-gray-500 mb-1">{setting.description}</div>
+                                                <input
+                                                    type="text"
+                                                    value={setting.value}
+                                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded font-medium text-slate-800 focus:ring-2 focus:ring-gray-500 outline-none bg-white"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end pt-4 border-t border-slate-200 mt-6">
+                                <button onClick={saveSettings} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50">
                                     {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* OTHER TABS (PRODUCTS, ETC) */}
+                    {/* OTHER TABS */}
                     {activeTab === 'products' && (
                         <div className="space-y-12 animate-in fade-in">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <FileText size={20} className="text-purple-600"/> Loan Products
-                                </h3>
-                                <LoanProducts />
-                            </div>
-                            <div className="border-t pt-8">
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <PiggyBank size={20} className="text-emerald-600"/> Savings Products
-                                </h3>
-                                <SavingsProducts />
-                            </div>
+                            <div><h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><FileText size={20} className="text-purple-600"/> Loan Products</h3><LoanProducts /></div>
+                            <div className="border-t pt-8"><h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><PiggyBank size={20} className="text-emerald-600"/> Savings Products</h3><SavingsProducts /></div>
                         </div>
                     )}
                     
@@ -365,42 +361,18 @@ export default function SystemSettings() {
                     
                     {activeTab === 'accounting' && <AccountingConfig />}
 
-                    {/* VIEW 6: MAINTENANCE TOOLS */}
                     {activeTab === 'maintenance' && (
                         <div className="space-y-6 animate-in fade-in">
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-                                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                    <Wrench size={20} className="text-blue-600"/> System Maintenance Tools
-                                </h3>
-                                <p className="text-sm text-slate-600 mb-6">
-                                    Administrative tools for data maintenance and system health.
-                                </p>
-
-                                {/* Share Capital Recalculation */}
-                                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2"><Wrench size={20} className="text-blue-600"/> System Maintenance Tools</h3>
+                                <div className="bg-white border border-slate-200 rounded-lg p-6 mt-4">
                                     <div className="flex items-start gap-4">
-                                        <div className="p-3 bg-amber-100 rounded-lg">
-                                            <RefreshCw size={24} className="text-amber-600"/>
-                                        </div>
+                                        <div className="p-3 bg-amber-100 rounded-lg"><RefreshCw size={24} className="text-amber-600"/></div>
                                         <div className="flex-1">
                                             <h4 className="font-bold text-slate-800 mb-2">Recalculate Share Capital</h4>
-                                            <p className="text-sm text-slate-600 mb-4">
-                                                Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong> system setting.
-                                            </p>
-                                            
-                                            {recalculateMessage && (
-                                                <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                                                    {recalculateMessage}
-                                                </div>
-                                            )}
-
-                                            <button
-                                                onClick={recalculateShares}
-                                                disabled={recalculating}
-                                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                                            >
-                                                {recalculating ? "Recalculating..." : "Recalculate All Shares"}
-                                            </button>
+                                            <p className="text-sm text-slate-600 mb-4">Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong>.</p>
+                                            {recalculateMessage && <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>{recalculateMessage}</div>}
+                                            <button onClick={recalculateShares} disabled={recalculating} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">{recalculating ? "Recalculating..." : "Recalculate All Shares"}</button>
                                         </div>
                                     </div>
                                 </div>
@@ -410,6 +382,37 @@ export default function SystemSettings() {
 
                 </div>
             </div>
+
+            {/* ADD SETTING MODAL */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">Add New Setting</h3>
+                            <button onClick={() => setShowAddModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                        </div>
+                        <form onSubmit={handleAddSetting} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Key (Unique Name)</label>
+                                <input className="w-full p-2 border rounded uppercase" placeholder="e.g. MPESA_API_KEY" required value={newSetting.key} onChange={e => setNewSetting({...newSetting, key: e.target.value.replace(/\s+/g, '_')})} />
+                                <p className="text-[10px] text-slate-400 mt-1">Use SACCO_ prefix for branding, FEE_ for fees.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Value</label>
+                                <input className="w-full p-2 border rounded" placeholder="Setting Value" required value={newSetting.value} onChange={e => setNewSetting({...newSetting, value: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
+                                <textarea className="w-full p-2 border rounded" placeholder="What is this setting for?" value={newSetting.description} onChange={e => setNewSetting({...newSetting, description: e.target.value})} />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Save Setting</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -28,9 +28,17 @@ public class SystemSettingController {
         try {
             String key = body.get("key");
             String value = body.get("value");
-            // Reuse the existing update logic from your service
-            SystemSetting updated = service.updateSetting(key, value);
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Setting saved"));
+            String description = body.get("description");
+
+            if (key == null || value == null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Key and Value are required"));
+            }
+
+            // Convert key to uppercase snake_case (e.g. "My Setting" -> "MY_SETTING")
+            String formattedKey = key.trim().toUpperCase().replace(" ", "_");
+
+            SystemSetting updated = service.createOrUpdate(formattedKey, value, description);
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Setting saved successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

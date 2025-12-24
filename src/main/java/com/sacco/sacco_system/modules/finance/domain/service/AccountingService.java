@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.Data;
@@ -265,6 +266,73 @@ public class AccountingService {
     }
 
     /**
+     * Generate detailed Ledger Activity Report
+     * Calculates Opening Balance (pre-start date) and Activity (within date range)
+     */
+    public List<Map<String, Object>> getLedgerActivity(LocalDate startDate, LocalDate endDate) {
+        List<GLAccount> accounts = glAccountRepository.findAll();
+        List<Map<String, Object>> report = new ArrayList<>();
+
+        // 1. Get Opening Balances (Sum of all transactions BEFORE startDate)
+        List<Object[]> openingTotals = journalLineRepository.getAccountTotalsUpToDate(startDate.atStartOfDay());
+
+        // 2. Get Period Activity (Sum of transactions WITHIN range)
+        List<Object[]> periodTotals = journalLineRepository.getAccountTotalsInRange(startDate.atStartOfDay(), endDate.atTime(LocalTime.MAX));
+
+        for (GLAccount account : accounts) {
+            BigDecimal openingBal = BigDecimal.ZERO;
+            BigDecimal periodDebit = BigDecimal.ZERO;
+            BigDecimal periodCredit = BigDecimal.ZERO;
+
+            // Find Opening Balance
+            for (Object[] row : openingTotals) {
+                if (row[0].equals(account.getCode())) {
+                    BigDecimal debit = (row[1] != null) ? (BigDecimal) row[1] : BigDecimal.ZERO;
+                    BigDecimal credit = (row[2] != null) ? (BigDecimal) row[2] : BigDecimal.ZERO;
+                    
+                    if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
+                        openingBal = debit.subtract(credit);
+                    } else {
+                        openingBal = credit.subtract(debit);
+                    }
+                    break;
+                }
+            }
+
+            // Find Period Activity
+            for (Object[] row : periodTotals) {
+                if (row[0].equals(account.getCode())) {
+                    periodDebit = (row[1] != null) ? (BigDecimal) row[1] : BigDecimal.ZERO;
+                    periodCredit = (row[2] != null) ? (BigDecimal) row[2] : BigDecimal.ZERO;
+                    break;
+                }
+            }
+
+            // Only add active accounts or accounts with non-zero activity/balance
+            if (account.isActive() || openingBal.compareTo(BigDecimal.ZERO) != 0 || 
+                periodDebit.compareTo(BigDecimal.ZERO) != 0 || periodCredit.compareTo(BigDecimal.ZERO) != 0) {
+                
+                BigDecimal netChange = (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE)
+                        ? periodDebit.subtract(periodCredit)
+                        : periodCredit.subtract(periodDebit);
+
+                Map<String, Object> row = new HashMap<>();
+                row.put("accountCode", account.getCode());
+                row.put("accountName", account.getName());
+                row.put("type", account.getType().toString());
+                row.put("openingBalance", openingBal);
+                row.put("periodDebits", periodDebit);
+                row.put("periodCredits", periodCredit);
+                row.put("netChange", netChange);
+                row.put("closingBalance", openingBal.add(netChange));
+
+                report.add(row);
+            }
+        }
+        return report;
+    }
+
+    /**
      * Get journal entries within date range
      */
     public List<JournalEntry> getJournalEntries(LocalDate startDate, LocalDate endDate) {
@@ -381,40 +449,39 @@ public class AccountingService {
 
     /**
      * Initialize Chart of Accounts from accounts.json
+     * ✅ UPDATED: Now checks strictly PER ACCOUNT instead of skipping if DB is not empty.
      */
     public void initChartOfAccounts() {
-        long accountCount = glAccountRepository.count();
-
-        if (accountCount > 0) {
-            log.info("ℹ️ GL Accounts already initialized ({} accounts), skipping...", accountCount);
-            return;
-        }
-
         try {
             log.info("📊 Loading Chart of Accounts from accounts.json...");
 
             ClassPathResource resource = new ClassPathResource("accounts.json");
             InputStream inputStream = resource.getInputStream();
 
-            // Use the injected ObjectMapper instead of creating a new one
             List<Map<String, String>> accountsData = objectMapper.readValue(
                 inputStream,
                 new TypeReference<List<Map<String, String>>>() {}
             );
 
             for (Map<String, String> accountData : accountsData) {
-                GLAccount account = GLAccount.builder()
-                        .code(accountData.get("code"))
-                        .name(accountData.get("name"))
-                        .type(AccountType.valueOf(accountData.get("type")))
-                        .balance(BigDecimal.ZERO)
-                        .active(true)
-                        .build();
+                String code = accountData.get("code");
+                
+                // ✅ Check if THIS account exists before adding it
+                // This ensures accounts.json is the source of truth for missing accounts
+                if (!glAccountRepository.existsById(code)) {
+                    GLAccount account = GLAccount.builder()
+                            .code(code)
+                            .name(accountData.get("name"))
+                            .type(AccountType.valueOf(accountData.get("type")))
+                            .balance(BigDecimal.ZERO)
+                            .active(true)
+                            .build();
 
-                glAccountRepository.save(account);
+                    glAccountRepository.save(account);
+                }
             }
 
-            log.info("✅ Initialized {} GL Accounts from accounts.json", accountsData.size());
+            log.info("✅ Verified/Initialized {} GL Accounts from accounts.json", accountsData.size());
         } catch (Exception e) {
             log.error("❌ Failed to initialize GL Accounts: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize Chart of Accounts", e);
@@ -423,15 +490,9 @@ public class AccountingService {
 
     /**
      * Initialize default GL mappings for common transaction types
+     * ✅ UPDATED: Now includes ASSET_PURCHASE and runs on every startup.
      */
     public void initDefaultMappings() {
-        long mappingCount = glMappingRepository.count();
-
-        if (mappingCount > 0) {
-            log.info("ℹ️ GL Mappings already initialized ({} mappings), skipping...", mappingCount);
-            return;
-        }
-
         log.info("🔗 Creating default GL Mappings...");
 
         // Savings Deposit Mapping
@@ -463,6 +524,9 @@ public class AccountingService {
 
         // Fine/Penalty Payment Mapping
         createMapping("FINE_PAYMENT", "1002", "4004", "Fine/Penalty Payment");
+
+        // ✅ ADDED: Asset Purchase Mapping (Debit Fixed Assets, Credit Cash/Bank)
+        createMapping("ASSET_PURCHASE", "1300", "1001", "Asset Purchase");
 
         log.info("✅ Created default GL Mappings");
     }
