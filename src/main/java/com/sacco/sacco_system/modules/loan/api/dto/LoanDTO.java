@@ -29,6 +29,7 @@ public class LoanDTO {
     private LocalDate disbursementDate;
     private BigDecimal processingFee;
     private BigDecimal memberSavings;
+    private BigDecimal weeklyRepaymentAmount;
 
     // âœ… NEW: Missing fields for Voting
     private int votesYes;

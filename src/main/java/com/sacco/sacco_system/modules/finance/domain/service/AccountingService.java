@@ -447,6 +447,9 @@ public class AccountingService {
         createMapping("LOAN_REPAYMENT_INTEREST", "1002", "4002", "Loan Interest Income");
 
         // Registration Fee Mapping
+        createMapping("REGISTRATION_FEE_CASH", "1001", "4001", "Registration Fee via Cash");
+        createMapping("REGISTRATION_FEE_MPESA", "1002", "4001", "Registration Fee via M-Pesa");
+        createMapping("REGISTRATION_FEE_BANK_TRANSFER", "1010", "4001", "Registration Fee via Bank (Default)");
         createMapping("REGISTRATION_FEE", "1002", "4001", "Member Registration Fee");
 
         // Loan Processing Fee Mapping
@@ -465,6 +468,11 @@ public class AccountingService {
     }
 
     private void createMapping(String eventType, String debitAccount, String creditAccount, String description) {
+        // Prevent duplicates
+        if (glMappingRepository.findByEventName(eventType).isPresent()) {
+            return; 
+        }
+        
         GlMapping mapping = GlMapping.builder()
                 .eventName(eventType)
                 .debitAccountCode(debitAccount)

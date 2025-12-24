@@ -38,11 +38,12 @@ public class Loan {
     private BigDecimal loanBalance; // Outstanding Balance
 
     // Installment Tracking
-    private BigDecimal monthlyRepayment; // The standard installment amount
+    @Column(name = "weekly_repayment_amount")
+    private BigDecimal weeklyRepaymentAmount; // The standard installment amount
     private Integer duration;
 
     @Enumerated(EnumType.STRING)
-    private DurationUnit durationUnit; // WEEKS or MONTHS
+    private DurationUnit durationUnit; // WEEKS
 
     // --- Repayment Engine ---
     private BigDecimal totalPrepaid = BigDecimal.ZERO; // Buffer for overpayments
@@ -115,6 +116,3 @@ public class Loan {
         return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
     }
 }
-
-
-

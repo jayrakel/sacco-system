@@ -253,6 +253,23 @@ public class EmailService {
         sendHtmlEmail(to, subject, htmlContent);
     }
 
+    @Async
+    public void sendGenericEmail(String to, String subject, String messageBody) {
+        String htmlContent = String.format(
+                """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                    <h2 style="color: #059669;">Sacco Notification</h2>
+                    <p style="font-size: 16px; color: #374151; line-height: 1.6;">%s</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #6b7280;">Log in to your dashboard to view more details.</p>
+                </div>
+                """,
+                messageBody.replace("\n", "<br>") // Handle new lines
+        );
+
+        sendHtmlEmail(to, subject, htmlContent);
+    }
+
     // --- HELPER: GENERIC SENDER ---
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
         try {

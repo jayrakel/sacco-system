@@ -118,30 +118,26 @@ public class MemberService {
 
             Transaction saved = transactionRepository.save(registrationTx);
 
+            String paymentSuffix = paymentMethod.toUpperCase();
+
+            if ("BANK_TRANSFER".equals(paymentSuffix) && bankAccountCode != null && !bankAccountCode.isEmpty()) {
+
             String narrative = "Registration Fee - " + savedMember.getMemberNumber();
-            String ref = saved.getTransactionId(); 
+            accountingService.postDoubleEntry(narrative, saved.getTransactionId(), bankAccountCode, "4001", amount);
+            } else {
+                // For standard methods (CASH, MPESA), use the System Mappings
+                 String eventName = "REGISTRATION_FEE_" + paymentSuffix;
+                 String narrative = "Registration Fee - " + savedMember.getMemberNumber();
 
             try {
-                // ✅ DYNAMIC ACCOUNT SELECTION LOGIC
-                String debitAccount;
-                
-                if ("CASH".equalsIgnoreCase(paymentMethod)) {
-                    debitAccount = "1001"; // Cash Account
-                } else if ("MPESA".equalsIgnoreCase(paymentMethod)) {
-                    debitAccount = "1002"; // M-Pesa Account
-                } else if ("BANK_TRANSFER".equalsIgnoreCase(paymentMethod)) {
-                    debitAccount = (bankAccountCode != null && !bankAccountCode.isEmpty()) ? bankAccountCode : "1003";
-                } else {
-                    debitAccount = "1001"; // Fallback
-                }
-
-                // Credit Account is always "Registration Fees Income" (e.g., 4001)
-                accountingService.postDoubleEntry(narrative, ref, debitAccount, "4001", amount);
-                
-            } catch (Exception e) {
-                log.error("Failed to post GL entry: {}", e.getMessage());
-            }
-        
+                     // This looks up "REGISTRATION_FEE_CASH" in the database to find "1001" automatically
+                     accountingService.postEvent(eventName, narrative, saved.getTransactionId(), amount);
+                 } catch (Exception e) {
+                     log.error("Accounting Error: Mapping not found for event {}", eventName);
+                     // Optional: Fail safely or throw exception depending on policy
+                 }
+             }
+                        
         }
 
         SavingsAccount savingsAccount = SavingsAccount.builder()

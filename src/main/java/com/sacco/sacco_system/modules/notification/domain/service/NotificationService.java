@@ -21,6 +21,7 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final EmailService emailService; 
 
     /**
      * General purpose notification with optional Email/SMS channels.
@@ -39,12 +40,16 @@ public class NotificationService {
         // 2. Email
         if (sendEmail) {
             log.info(">> Email queued for: {}", user.getEmail());
-            // emailService.sendGenericEmail(user.getEmail(), title, message);
+            try {
+                emailService.sendGenericEmail(user.getEmail(), title, message);
+            } catch (Exception e) {
+                log.error("Failed to send email to {}: {}", user.getEmail(), e.getMessage());
+            }
         }
 
-        // 3. SMS
+        // 3. SMS (Placeholder for future SMS integration)
         if (sendSms) {
-            log.info(">> SMS queued for user ID: {}", userId);
+            log.info(">> SMS queued for user ID: {} (SMS Provider not configured)", userId);
         }
     }
 
