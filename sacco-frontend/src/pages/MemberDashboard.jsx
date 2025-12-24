@@ -1,23 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Wallet, PiggyBank, HandCoins, ThumbsUp, ThumbsDown, Megaphone, Activity } from 'lucide-react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { CreditCard, PiggyBank, HandCoins, ThumbsUp, ThumbsDown, Megaphone, Activity, FileText } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import MemberOverview from '../features/member/components/MemberOverview';
 import MemberSavings from '../features/member/components/MemberSavings';
 import MemberLoans from '../features/member/components/MemberLoans';
 import MemberActivities from '../features/member/components/MemberActivities';
+import MemberStatements from '../features/member/components/MemberStatements';
 import api from '../api';
 
 export default function MemberDashboard() {
     const [user, setUser] = useState(null);
-    const [activeTab, setActiveTab] = useState('overview');
-    const [votingAgenda, setVotingAgenda] = useState([]); // ✅ Store Active Votes
+    const [searchParams] = useSearchParams();
+    const [votingAgenda, setVotingAgenda] = useState([]);
+    
+    // Get active tab from URL or default to 'overview'
+    const activeTab = searchParams.get('tab') || 'overview';
 
     useEffect(() => {
+        // 1. Load cached user first for speed
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
 
-        fetchVotingAgenda(); // ✅ Check for active votes on load
+        // 2. Fetch fresh profile from API
+        fetchUserProfile();
+
+        // 3. Check for votes
+        fetchVotingAgenda(); 
     }, []);
+
+    const fetchUserProfile = async () => {
+        try {
+            const res = await api.get('/api/members/me');
+            if (res.data.success) {
+                setUser(res.data.data);
+                localStorage.setItem('sacco_user', JSON.stringify(res.data.data));
+            }
+        } catch (error) {
+            console.error("Failed to refresh user profile", error);
+        }
+    };
 
     const fetchVotingAgenda = async () => {
         try {
@@ -36,7 +58,6 @@ export default function MemberDashboard() {
                 params: { voteYes }
             });
             alert(`Vote cast successfully!`);
-            // Refresh to remove the item or update state if needed
             fetchVotingAgenda();
         } catch (error) {
             alert(error.response?.data?.message || "Voting failed");
@@ -49,7 +70,7 @@ export default function MemberDashboard() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8 animate-in fade-in">
 
-                {/* ✅ NEW: DEMOCRATIC VOTING SECTION */}
+                {/* DEMOCRATIC VOTING SECTION */}
                 {votingAgenda.length > 0 && (
                     <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl shadow-xl p-6 text-white mb-8 border border-white/10">
                         <div className="flex items-center gap-3 mb-4 border-b border-white/20 pb-4">
@@ -94,34 +115,112 @@ export default function MemberDashboard() {
                     </div>
                 )}
 
-                {/* Standard Dashboard Tabs */}
-                <div className="flex gap-4 overflow-x-auto pb-2 border-b border-slate-200">
-                    <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<CreditCard size={18}/>} label="Overview" />
-                    <TabButton active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon={<PiggyBank size={18}/>} label="My Savings" />
-                    <TabButton active={activeTab === 'loans'} onClick={() => setActiveTab('loans')} icon={<HandCoins size={18}/>} label="My Loans" />
-                    <TabButton active={activeTab === 'activities'} onClick={() => setActiveTab('activities')} icon={<Activity size={18}/>} label="Recent Activities" />
+                {/* Dashboard Tabs - Complete Link Implementation */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 pb-2 border-b border-slate-200">
+                    <Link 
+                        to="?tab=overview" 
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-emerald-200 group text-left ${
+                            activeTab === 'overview' 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : 'bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border-slate-100'
+                        }`}
+                    >
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
+                            activeTab === 'overview' ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-emerald-600'
+                        }`}>
+                            <CreditCard size={16}/>
+                        </div>
+                        <div>
+                            <span className="block">Financial Overview</span>
+                            <span className="text-[10px] text-slate-400 font-normal">View savings & loan summary</span>
+                        </div>
+                    </Link>
+                    
+                    <Link 
+                        to="?tab=savings" 
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-blue-200 group text-left ${
+                            activeTab === 'savings' 
+                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                            : 'bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border-slate-100'
+                        }`}
+                    >
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
+                            activeTab === 'savings' ? 'bg-blue-100 text-blue-600' : 'bg-white text-blue-600'
+                        }`}>
+                            <PiggyBank size={16}/>
+                        </div>
+                        <div>
+                            <span className="block">My Savings</span>
+                            <span className="text-[10px] text-slate-400 font-normal">View your savings accounts</span>
+                        </div>
+                    </Link>
+                    
+                    <Link 
+                        to="?tab=loans" 
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-yellow-200 group text-left ${
+                            activeTab === 'loans' 
+                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
+                            : 'bg-slate-50 hover:bg-yellow-50 hover:text-yellow-700 border-slate-100'
+                        }`}
+                    >
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
+                            activeTab === 'loans' ? 'bg-yellow-100 text-yellow-600' : 'bg-white text-yellow-600'
+                        }`}>
+                            <HandCoins size={16}/>
+                        </div>
+                        <div>
+                            <span className="block">My Loans</span>
+                            <span className="text-[10px] text-slate-400 font-normal">View your loan accounts</span>
+                        </div>
+                    </Link>
+                    
+                    <Link 
+                        to="?tab=statements" 
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-purple-200 group text-left ${
+                            activeTab === 'statements' 
+                            ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                            : 'bg-slate-50 hover:bg-purple-50 hover:text-purple-700 border-slate-100'
+                        }`}
+                    >
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
+                            activeTab === 'statements' ? 'bg-purple-100 text-purple-600' : 'bg-white text-purple-600'
+                        }`}>
+                            <FileText size={16}/>
+                        </div>
+                        <div>
+                            <span className="block">Statements</span>
+                            <span className="text-[10px] text-slate-400 font-normal">View your statements</span>
+                        </div>
+                    </Link>
+                    
+                    <Link 
+                        to="?tab=activities" 
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-indigo-200 group text-left ${
+                            activeTab === 'activities' 
+                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                            : 'bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 border-slate-100'
+                        }`}
+                    >
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
+                            activeTab === 'activities' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-indigo-600'
+                        }`}>
+                            <Activity size={16}/>
+                        </div>
+                        <div>
+                            <span className="block">Activities</span>
+                            <span className="text-[10px] text-slate-400 font-normal">View your recent activities</span>
+                        </div>
+                    </Link>
                 </div>
 
                 <div className="min-h-[400px] mt-6">
                     {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
                     {activeTab === 'loans' && <MemberLoans />}
+                    {activeTab === 'statements' && <MemberStatements user={user} />}
                     {activeTab === 'activities' && <MemberActivities />}
                 </div>
             </main>
         </div>
-    );
-}
-
-// Helper for Tabs
-function TabButton({ active, onClick, icon, label }) {
-    return (
-        <button
-            onClick={onClick}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap
-                ${active ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20" : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-200"}`}
-        >
-            {icon} {label}
-        </button>
     );
 }
