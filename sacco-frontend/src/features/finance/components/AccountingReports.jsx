@@ -3,7 +3,7 @@ import api from '../../../api';
 import { 
     BookOpen, Loader2, Plus, X, Calendar, Filter, RefreshCw, Trash2, Save,
     LayoutDashboard, TrendingUp, DollarSign, Users, AlertCircle, FileText, PieChart as PieIcon,
-    Printer, CheckCircle, AlertTriangle
+    Printer, CheckCircle, AlertTriangle, Download
 } from 'lucide-react';
 import { 
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
@@ -13,6 +13,7 @@ import { useSettings } from '../../../context/SettingsContext';
 export default function AccountingReports() {
     const [accounts, setAccounts] = useState([]);
     const [journal, setJournal] = useState([]);
+    const [activityReport, setActivityReport] = useState([]); // Stores dynamic ledger data
     const [view, setView] = useState('overview'); 
     const [loading, setLoading] = useState(true);
 
@@ -29,7 +30,8 @@ export default function AccountingReports() {
     // Modals & Printing
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEntryModal, setShowEntryModal] = useState(false);
-    const [printingReport, setPrintingReport] = useState(null); // 'balance-sheet' | 'income-statement'
+    const [printingReport, setPrintingReport] = useState(null); // 'balance-sheet' | 'income-statement' | 'ledger'
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Forms
     const [newAccount, setNewAccount] = useState({ code: '', name: '', type: 'ASSET' });
@@ -48,19 +50,43 @@ export default function AccountingReports() {
         setLoading(true);
         try {
             let accEndpoint = '/api/accounting/accounts'; 
+            let activityEndpoint = null;
+
             if (dateRange.endDate) {
                 let query = `?endDate=${dateRange.endDate}`;
                 if (dateRange.startDate) query += `&startDate=${dateRange.startDate}`;
                 accEndpoint = `/api/accounting/report${query}`;
+                
+                // Fetch Activity Report specifically if dates are present
+                if (dateRange.startDate) {
+                    activityEndpoint = `/api/accounting/report/activity${query}`;
+                }
             }
 
-            const [accRes, jourRes] = await Promise.all([
+            const promises = [
                 api.get(accEndpoint),
                 api.get('/api/accounting/journal')
-            ]);
+            ];
+
+            if (activityEndpoint) {
+                promises.push(api.get(activityEndpoint));
+            }
+
+            const results = await Promise.all(promises);
+            const accRes = results[0];
+            const jourRes = results[1];
+            const actRes = results.length > 2 ? results[2] : null;
 
             if(accRes.data.success) setAccounts(accRes.data.data);
             if(jourRes.data.success) setJournal(jourRes.data.data);
+            
+            // Handle activity report data
+            if (actRes && actRes.data) {
+                setActivityReport(actRes.data.activity || []);
+            } else {
+                setActivityReport([]); 
+            }
+
         } catch (error) { console.error("Error fetching data", error); } 
         finally { setLoading(false); }
     };
@@ -116,13 +142,53 @@ export default function AccountingReports() {
     };
     const toggleAccount = async (code) => { await api.put(`/api/accounting/accounts/${code}/toggle`); fetchData(); };
 
-    // --- PRINTING LOGIC ---
+    // --- PRINTING & DOWNLOADING LOGIC ---
     const handlePrint = (reportType) => {
         setPrintingReport(reportType);
         setTimeout(() => {
             window.print();
-            setPrintingReport(null); // Reset after print dialog closes
         }, 500);
+    };
+
+    const handleDownloadPdf = async () => {
+        setIsDownloading(true);
+        const element = document.getElementById('printable-report-content');
+        if (!element) {
+            alert("Report content not found!");
+            setIsDownloading(false);
+            return;
+        }
+
+        // Dynamically load html2pdf from CDN if not present
+        if (!window.html2pdf) {
+            try {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.body.appendChild(script);
+                });
+            } catch (e) {
+                alert("Could not load PDF generator. Please use the Print -> Save as PDF option.");
+                window.print();
+                setIsDownloading(false);
+                return;
+            }
+        }
+
+        const opt = {
+            margin:       [10, 10, 10, 10], // mm
+            filename:     `${printingReport}_${new Date().toISOString().split('T')[0]}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+
+        window.html2pdf().set(opt).from(element).save().then(() => {
+            setIsDownloading(false);
+        });
     };
 
     // --- CHART DATA PREP ---
@@ -163,7 +229,7 @@ export default function AccountingReports() {
                             { id: 'overview', label: 'Overview', icon: LayoutDashboard },
                             { id: 'balance-sheet', label: 'Balance Sheet', icon: FileText },
                             { id: 'income-statement', label: 'P&L', icon: TrendingUp },
-                            { id: 'accounts', label: 'Accounts', icon: BookOpen },
+                            { id: 'ledger', label: 'Ledger', icon: BookOpen },
                             { id: 'journal', label: 'Journal', icon: Calendar }
                         ].map(tab => (
                             <button
@@ -244,7 +310,7 @@ export default function AccountingReports() {
                             </div>
                         </div>
                         <button onClick={() => handlePrint('balance-sheet')} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm">
-                            <Printer size={16}/> Download PDF
+                            <Printer size={16}/> Print / Download
                         </button>
                     </div>
 
@@ -314,7 +380,7 @@ export default function AccountingReports() {
                             <p className="text-slate-500 text-sm mt-1">Statement of Profit & Loss</p>
                         </div>
                         <button onClick={() => handlePrint('income-statement')} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm">
-                            <Printer size={16}/> Download PDF
+                            <Printer size={16}/> Print / Download
                         </button>
                     </div>
                     <div className="p-8 space-y-8">
@@ -356,139 +422,257 @@ export default function AccountingReports() {
                 </div>
             )}
 
-            {/* --- VIEW 4 & 5: ACCOUNTS & JOURNAL (Skipped for brevity, existing logic maintained) --- */}
-            {(view === 'accounts' || view === 'journal') && (
+            {/* --- VIEW 4: LEDGER ACTIVITY (NEW) --- */}
+            {view === 'ledger' && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden">
-                    {/* Reuse existing code for tables here */}
-                    {view === 'accounts' && (
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-700">Ledger Accounts</h3>
-                            <button onClick={() => setShowAddModal(true)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center gap-1"><Plus size={14}/> Add New</button>
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                            <h3 className="font-bold text-slate-700">General Ledger Activity</h3>
+                            <span className="text-xs text-slate-500 bg-white border px-2 py-1 rounded">
+                                {dateRange.startDate ? `${dateRange.startDate} to ${dateRange.endDate || 'Now'}` : 'All Time'}
+                            </span>
                         </div>
-                    )}
-                    {view === 'accounts' ? (
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100"><tr><th className="p-4">Code</th><th className="p-4">Name</th><th className="p-4">Type</th><th className="p-4 text-right">Balance</th><th className="p-4 text-center">Status</th></tr></thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {accounts.map(acc => (
-                                    <tr key={acc.code} className="hover:bg-slate-50">
-                                        <td className="p-4 font-mono text-slate-500">{acc.code}</td><td className="p-4 font-bold text-slate-700">{acc.name}</td><td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold text-slate-600">{acc.type}</span></td><td className="p-4 text-right font-mono font-bold">{formatMoney(acc.balance)}</td><td className="p-4 text-center"><button onClick={() => toggleAccount(acc.code)} className={`text-xs font-bold ${acc.active ? 'text-emerald-600 hover:underline' : 'text-red-600 hover:underline'}`}>{acc.active ? 'Active' : 'Disabled'}</button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <div className="flex gap-2">
+                             <button onClick={() => setShowAddModal(true)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center gap-1"><Plus size={14}/> Add Account</button>
+                             <button onClick={() => handlePrint('ledger')} className="text-slate-600 hover:text-indigo-600 p-2"><Printer size={18}/></button>
+                        </div>
+                    </div>
+
+                    {!dateRange.startDate ? (
+                        <div className="p-12 text-center text-slate-400 flex flex-col items-center">
+                            <Calendar size={48} className="mb-4 text-slate-200"/>
+                            <p>Please select a Start Date to view the Period Activity and Opening Balances.</p>
+                        </div>
                     ) : (
-                        <div className="p-4 space-y-4">
-                            {journal.map(entry => (
-                                <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition">
-                                    <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-2"><div><p className="font-bold text-slate-800">{entry.description}</p><p className="text-xs text-slate-400 font-mono">Ref: {entry.referenceNo}</p></div><span className="text-xs bg-slate-100 px-2 py-1 rounded font-medium">{new Date(entry.transactionDate).toLocaleDateString()}</span></div>
-                                    <div className="space-y-1">{entry.lines.map(line => (<div key={line.id} className="flex justify-between text-sm"><span className="text-slate-600">{line.account.name} <span className="text-xs text-slate-300">({line.account.code})</span></span><div className="flex gap-4 font-mono text-xs"><span className="w-20 text-right text-emerald-600">{line.debit > 0 ? formatMoney(line.debit) : '-'}</span><span className="w-20 text-right text-slate-600">{line.credit > 0 ? formatMoney(line.credit) : '-'}</span></div></div>))}</div>
-                                </div>
-                            ))}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-4">Account</th>
+                                        <th className="p-4 text-right">Opening Bal</th>
+                                        <th className="p-4 text-right text-emerald-600">Debit</th>
+                                        <th className="p-4 text-right text-red-600">Credit</th>
+                                        <th className="p-4 text-right">Net Change</th>
+                                        <th className="p-4 text-right font-black">Closing Bal</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {activityReport.map((row, i) => (
+                                        <tr key={i} className="hover:bg-slate-50">
+                                            <td className="p-4">
+                                                <div className="font-bold text-slate-700">{row.accountName}</div>
+                                                <div className="text-xs text-slate-400 font-mono">{row.accountCode}</div>
+                                            </td>
+                                            <td className="p-4 text-right font-mono text-slate-500">{formatMoney(row.openingBalance)}</td>
+                                            <td className="p-4 text-right font-mono text-emerald-600">{formatMoney(row.periodDebits)}</td>
+                                            <td className="p-4 text-right font-mono text-red-600">{formatMoney(row.periodCredits)}</td>
+                                            <td className="p-4 text-right font-mono font-medium">{formatMoney(row.netChange)}</td>
+                                            <td className="p-4 text-right font-mono font-bold text-slate-900 bg-slate-50/50">{formatMoney(row.closingBalance)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* --- VIEW 5: JOURNAL --- */}
+            {view === 'journal' && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden">
+                    <div className="p-4 space-y-4">
+                        {journal.map(entry => (
+                            <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition">
+                                <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-2"><div><p className="font-bold text-slate-800">{entry.description}</p><p className="text-xs text-slate-400 font-mono">Ref: {entry.referenceNo}</p></div><span className="text-xs bg-slate-100 px-2 py-1 rounded font-medium">{new Date(entry.transactionDate).toLocaleDateString()}</span></div>
+                                <div className="space-y-1">{entry.lines.map(line => (<div key={line.id} className="flex justify-between text-sm"><span className="text-slate-600">{line.account.name} <span className="text-xs text-slate-300">({line.account.code})</span></span><div className="flex gap-4 font-mono text-xs"><span className="w-20 text-right text-emerald-600">{line.debit > 0 ? formatMoney(line.debit) : '-'}</span><span className="w-20 text-right text-slate-600">{line.credit > 0 ? formatMoney(line.credit) : '-'}</span></div></div>))}</div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
             {/* --- PRINTABLE REPORT TEMPLATE (Hidden unless printing) --- */}
             {printingReport && (
-                <div className="fixed inset-0 bg-white z-[9999] overflow-auto p-12 hidden print:block">
+                <div className="fixed inset-0 bg-white z-[9999] overflow-auto hidden print:block" id="printable-report-content">
                     <style>{`
                         @media print {
-                            @page { size: A4; margin: 15mm; }
+                            @page { size: A4; margin: 10mm; }
                             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                            .print-hidden { display: none !important; }
-                            .print-visible { display: block !important; }
+                            /* Hide everything except the printable root content */
+                            body > *:not(#root) { display: none; }
+                            #root > *:not(.print\\:block) { display: none; }
+                            
+                            /* Layout for Repeated Header/Footer */
+                            tfoot { display: table-footer-group; }
+                            thead { display: table-header-group; }
+                            .report-footer-space { height: 40px; }
+                            .report-header-space { height: 100px; }
+                            
+                            /* Fixed Header/Footer Positioning */
+                            .report-header-fixed { position: fixed; top: 0; left: 0; right: 0; height: 100px; background: white; z-index: 10; border-bottom: 2px solid #0f172a; }
+                            .report-footer-fixed { position: fixed; bottom: 0; left: 0; right: 0; height: 30px; border-top: 1px solid #cbd5e1; background: white; z-index: 10; padding-top: 5px; }
                         }
-                        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); width: 80%; max-width: 500px; opacity: 0.08; z-index: -1; pointer-events: none; }
                     `}</style>
-
-                    {/* Watermark */}
-                    <div className="watermark">
-                        {logoUrl ? <img src={logoUrl} alt="Watermark" className="w-full h-auto object-contain" /> : null}
+                    
+                    {/* Floating Controls for Screen View (Hidden in Print) */}
+                    <div className="fixed top-4 right-4 flex gap-2 print:hidden z-50">
+                        <button 
+                            onClick={handleDownloadPdf} 
+                            disabled={isDownloading}
+                            className={`bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2 hover:bg-indigo-700 ${isDownloading ? 'opacity-50 cursor-wait' : ''}`}
+                        >
+                            {isDownloading ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>} 
+                            {isDownloading ? 'Generating...' : 'Download PDF'}
+                        </button>
+                        <button onClick={() => window.print()} className="bg-slate-700 text-white px-4 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2 hover:bg-slate-800">
+                            <Printer size={16}/> Print
+                        </button>
+                        <button onClick={() => setPrintingReport(null)} className="bg-white text-slate-700 border px-4 py-2 rounded-lg font-bold shadow-lg hover:bg-slate-50">
+                            Close
+                        </button>
                     </div>
 
-                    {/* Header */}
-                    <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4 mb-8">
+                    {/* MAIN PRINTABLE TABLE (Wraps content to allow header/footer repetition) */}
+                    <table className="w-full text-sm">
+                        {/* THEAD: Reserved space for fixed header */}
+                        <thead>
+                            <tr>
+                                <td><div className="report-header-space"></div></td>
+                            </tr>
+                        </thead>
+
+                        {/* TBODY: Actual Content */}
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <div className="py-4">
+                                        {/* Dynamic Content Switching */}
+                                        {printingReport === 'balance-sheet' && (
+                                            <div className="grid grid-cols-2 gap-8">
+                                                <div>
+                                                    <h3 className="font-bold text-slate-800 border-b border-black pb-1 mb-2">ASSETS</h3>
+                                                    {accounts.filter(a => a.type === 'ASSET' && a.active).map(a => (
+                                                        <div key={a.code} className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                                    ))}
+                                                    <div className="flex justify-between border-t-2 border-black pt-2 mt-4 font-bold"><span className="uppercase">Total Assets</span><span>{formatMoney(totalAssets)}</span></div>
+                                                </div>
+                                                <div className="space-y-8">
+                                                    <div>
+                                                        <h3 className="font-bold text-slate-800 border-b border-black pb-1 mb-2">LIABILITIES</h3>
+                                                        {accounts.filter(a => a.type === 'LIABILITY' && a.active).map(a => (
+                                                            <div key={a.code} className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                                        ))}
+                                                        <div className="flex justify-between border-t border-black pt-2 mt-2 font-bold text-sm"><span>Total Liabilities</span><span>{formatMoney(totalLiabilities)}</span></div>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-slate-800 border-b border-black pb-1 mb-2">EQUITY</h3>
+                                                        {accounts.filter(a => a.type === 'EQUITY' && a.active).map(a => (
+                                                            <div key={a.code} className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                                        ))}
+                                                        <div className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">Net Income</span><span className="font-mono">{formatMoney(getNetIncome())}</span></div>
+                                                        <div className="flex justify-between border-t border-black pt-2 mt-2 font-bold text-sm"><span>Total Equity</span><span>{formatMoney(totalEquity)}</span></div>
+                                                    </div>
+                                                    <div className="flex justify-between border-t-2 border-black pt-2 font-bold"><span className="uppercase">Total Liab. & Equity</span><span>{formatMoney(totalLiabilities + totalEquity)}</span></div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {printingReport === 'income-statement' && (
+                                            <div className="max-w-2xl mx-auto">
+                                                 <h3 className="font-bold text-slate-800 border-b border-black pb-1 mb-2">REVENUE</h3>
+                                                 {accounts.filter(a => a.type === 'INCOME' && a.active).map(a => (
+                                                     <div key={a.code} className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                                 ))}
+                                                 <div className="flex justify-between border-t border-black pt-2 mt-2 mb-8 font-bold"><span>Total Revenue</span><span>{formatMoney(getTotal('INCOME'))}</span></div>
+
+                                                 <h3 className="font-bold text-slate-800 border-b border-black pb-1 mb-2">EXPENSES</h3>
+                                                 {accounts.filter(a => a.type === 'EXPENSE' && a.active).map(a => (
+                                                     <div key={a.code} className="flex justify-between py-1 border-b border-slate-100"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                                 ))}
+                                                 <div className="flex justify-between border-t border-black pt-2 mt-2 font-bold"><span>Total Expenses</span><span>{formatMoney(getTotal('EXPENSE'))}</span></div>
+
+                                                 <div className="flex justify-between border-t-4 double border-black pt-4 mt-8 text-xl font-bold"><span>NET INCOME</span><span>{formatMoney(getNetIncome())}</span></div>
+                                            </div>
+                                        )}
+
+                                        {printingReport === 'ledger' && (
+                                            <table className="w-full text-xs">
+                                                <thead className="border-b border-black font-bold text-left">
+                                                    <tr>
+                                                        <th className="py-2">Account</th>
+                                                        <th className="text-right">Opening</th>
+                                                        <th className="text-right">Debit</th>
+                                                        <th className="text-right">Credit</th>
+                                                        <th className="text-right">Closing</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-200">
+                                                    {activityReport.map((row, i) => (
+                                                        <tr key={i}>
+                                                            <td className="py-2">
+                                                                <span className="font-bold">{row.accountName}</span> <span className="text-slate-500">({row.accountCode})</span>
+                                                            </td>
+                                                            <td className="text-right">{formatMoney(row.openingBalance)}</td>
+                                                            <td className="text-right">{formatMoney(row.periodDebits)}</td>
+                                                            <td className="text-right">{formatMoney(row.periodCredits)}</td>
+                                                            <td className="text-right font-bold">{formatMoney(row.closingBalance)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                        
+                                        {/* Signatories Area */}
+                                        <div className="mt-20 grid grid-cols-2 gap-20 page-break-inside-avoid">
+                                            <div className="border-t border-black pt-2">
+                                                <p className="font-bold text-slate-800 text-sm">Prepared By:</p>
+                                                <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
+                                            </div>
+                                            <div className="border-t border-black pt-2">
+                                                <p className="font-bold text-slate-800 text-sm">Approved By:</p>
+                                                <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+
+                        {/* TFOOT: Reserved space for fixed footer */}
+                        <tfoot>
+                            <tr>
+                                <td><div className="report-footer-space"></div></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    {/* FIXED HEADER CONTENT */}
+                    <div className="report-header-fixed px-10 py-6 flex justify-between items-start">
                         <div>
-                            {logoUrl && <img src={logoUrl} alt="Logo" className="h-16 w-auto mb-2 object-contain" />}
-                            <h1 className="text-2xl font-black text-slate-900 uppercase">{printingReport === 'balance-sheet' ? 'Statement of Financial Position' : 'Statement of Comprehensive Income'}</h1>
-                            <p className="text-sm text-slate-600 mt-1">As of {new Date().toLocaleDateString('en-GB')}</p>
+                            {logoUrl && <img src={logoUrl} alt="Logo" className="h-12 object-contain mb-1" />}
+                            <h1 className="text-xl font-black text-slate-900 uppercase">
+                                {printingReport.replace('-', ' ')} REPORT
+                            </h1>
+                            <p className="text-xs text-slate-600">
+                                Period: {dateRange.startDate ? `${dateRange.startDate} to ${dateRange.endDate}` : `As of ${new Date().toLocaleDateString()}`}
+                            </p>
                         </div>
                         <div className="text-right">
-                            <h2 className="text-lg font-bold text-slate-800">{orgName}</h2>
-                            <p className="text-xs text-slate-600 whitespace-pre-line">{orgAddress}</p>
-                            <p className="text-xs text-slate-600 mt-1">{orgContact}</p>
+                            <h2 className="font-bold text-slate-800">{orgName}</h2>
+                            <p className="text-[10px] text-slate-600 whitespace-pre-line leading-tight">{orgAddress}</p>
+                            <p className="text-[10px] text-slate-600 mt-1">{orgContact}</p>
                         </div>
                     </div>
 
-                    {/* Report Content */}
-                    <div className="min-h-[500px]">
-                        {printingReport === 'balance-sheet' ? (
-                            <div className="grid grid-cols-2 gap-8">
-                                <div>
-                                    <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">ASSETS</h3>
-                                    {accounts.filter(a => a.type === 'ASSET' && a.active).map(a => (
-                                        <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
-                                    ))}
-                                    <div className="flex justify-between border-t-2 border-slate-800 pt-2 mt-4 font-bold"><span className="uppercase">Total Assets</span><span>{formatMoney(totalAssets)}</span></div>
-                                </div>
-                                <div className="space-y-8">
-                                    <div>
-                                        <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">LIABILITIES</h3>
-                                        {accounts.filter(a => a.type === 'LIABILITY' && a.active).map(a => (
-                                            <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
-                                        ))}
-                                        <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold text-sm"><span>Total Liabilities</span><span>{formatMoney(totalLiabilities)}</span></div>
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">EQUITY</h3>
-                                        {accounts.filter(a => a.type === 'EQUITY' && a.active).map(a => (
-                                            <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
-                                        ))}
-                                        <div className="flex justify-between py-1 text-sm"><span className="text-slate-700">Net Income</span><span className="font-mono">{formatMoney(getNetIncome())}</span></div>
-                                        <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold text-sm"><span>Total Equity</span><span>{formatMoney(totalEquity)}</span></div>
-                                    </div>
-                                    <div className="flex justify-between border-t-2 border-slate-800 pt-2 font-bold"><span className="uppercase">Total Liab. & Equity</span><span>{formatMoney(totalLiabilities + totalEquity)}</span></div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="max-w-2xl mx-auto">
-                                <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">REVENUE</h3>
-                                {accounts.filter(a => a.type === 'INCOME' && a.active).map(a => (
-                                    <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
-                                ))}
-                                <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 mb-8 font-bold"><span>Total Revenue</span><span>{formatMoney(getTotal('INCOME'))}</span></div>
-
-                                <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">EXPENSES</h3>
-                                {accounts.filter(a => a.type === 'EXPENSE' && a.active).map(a => (
-                                    <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
-                                ))}
-                                <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold"><span>Total Expenses</span><span>{formatMoney(getTotal('EXPENSE'))}</span></div>
-
-                                <div className="flex justify-between border-t-4 double border-slate-800 pt-4 mt-8 text-xl font-bold"><span>NET INCOME</span><span>{formatMoney(getNetIncome())}</span></div>
-                            </div>
-                        )}
+                    {/* FIXED FOOTER CONTENT */}
+                    <div className="report-footer-fixed px-10 flex justify-between items-center text-[10px] text-slate-400 uppercase tracking-widest">
+                        <span>System Generated • {new Date().toLocaleString()}</span>
+                        <span>{orgName}</span>
                     </div>
 
-                    {/* Signatories Footer */}
-                    <div className="mt-20 grid grid-cols-2 gap-20">
-                        <div className="border-t border-slate-400 pt-2">
-                            <p className="font-bold text-slate-800 text-sm">Prepared By:</p>
-                            <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
-                        </div>
-                        <div className="border-t border-slate-400 pt-2">
-                            <p className="font-bold text-slate-800 text-sm">Approved By:</p>
-                            <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
-                        </div>
-                    </div>
-                    <div className="text-center mt-12 text-[10px] text-slate-400 uppercase tracking-widest">
-                        System Generated Document • {new Date().toISOString()} • {orgName}
-                    </div>
                 </div>
             )}
 
-            {/* Modals */}
             {showEntryModal && (
                 <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">

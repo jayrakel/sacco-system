@@ -219,7 +219,7 @@ public class AccountingReportService {
 
     /**
      * Get Account Activity Summary
-     * Shows transaction volume per account
+     * Shows transaction volume per account with DYNAMIC OPENING BALANCES
      */
     public Map<String, Object> getAccountActivity(LocalDate startDate, LocalDate endDate) {
         log.info("Generating Account Activity from {} to {}", startDate, endDate);
@@ -227,35 +227,73 @@ public class AccountingReportService {
         List<GLAccount> allAccounts = glAccountRepository.findAll();
         List<Map<String, Object>> activityList = new ArrayList<>();
 
+        // 1. Fetch Opening Balances (Historical totals BEFORE startDate)
+        List<Object[]> historicalTotals = journalLineRepository.getAccountTotalsBeforeDate(startDate);
+        Map<String, BigDecimal> openingBalanceMap = new HashMap<>();
+
+        for (Object[] row : historicalTotals) {
+            String code = (String) row[0];
+            BigDecimal totalDebits = (BigDecimal) row[1];
+            BigDecimal totalCredits = (BigDecimal) row[2];
+            // Store raw difference (Debit - Credit)
+            openingBalanceMap.put(code, totalDebits.subtract(totalCredits));
+        }
+
         for (GLAccount account : allAccounts) {
             if (!account.isActive()) continue;
 
-            // Get transaction count for this account
+            // 2. Get Period Activity (Between startDate and endDate)
             Long transactionCount = journalLineRepository.countByAccountCodeAndDateRange(
                     account.getCode(), startDate, endDate);
 
-            BigDecimal totalDebits = journalLineRepository.sumDebitsByAccountAndDateRange(
+            BigDecimal periodDebits = journalLineRepository.sumDebitsByAccountAndDateRange(
                     account.getCode(), startDate, endDate);
-            BigDecimal totalCredits = journalLineRepository.sumCreditsByAccountAndDateRange(
-                    account.getCode(), startDate, endDate);
+            if (periodDebits == null) periodDebits = BigDecimal.ZERO;
 
-            if (transactionCount > 0) {
+            BigDecimal periodCredits = journalLineRepository.sumCreditsByAccountAndDateRange(
+                    account.getCode(), startDate, endDate);
+            if (periodCredits == null) periodCredits = BigDecimal.ZERO;
+
+            // 3. Calculate Opening Balance for this specific account
+            BigDecimal rawOpeningBal = openingBalanceMap.getOrDefault(account.getCode(), BigDecimal.ZERO);
+            BigDecimal openingBalance;
+
+            // Adjust display based on Account Type
+            if (isDebitAccount(account.getType())) {
+                openingBalance = rawOpeningBal; // Asset/Expense: Positive is Debit
+            } else {
+                openingBalance = rawOpeningBal.negate(); // Liability/Equity/Income: Positive is Credit
+            }
+
+            // 4. Calculate Net Change in Period
+            BigDecimal netChange;
+            if (isDebitAccount(account.getType())) {
+                netChange = periodDebits.subtract(periodCredits);
+            } else {
+                netChange = periodCredits.subtract(periodDebits);
+            }
+
+            // 5. Calculate Closing Balance
+            BigDecimal closingBalance = openingBalance.add(netChange);
+
+            // Only add to list if there is activity or a non-zero balance
+            if (transactionCount > 0 || openingBalance.compareTo(BigDecimal.ZERO) != 0) {
                 Map<String, Object> activity = new HashMap<>();
                 activity.put("accountCode", account.getCode());
                 activity.put("accountName", account.getName());
+                activity.put("type", account.getType());
+                activity.put("openingBalance", openingBalance);
+                activity.put("periodDebits", periodDebits);
+                activity.put("periodCredits", periodCredits);
+                activity.put("netChange", netChange);
+                activity.put("closingBalance", closingBalance);
                 activity.put("transactionCount", transactionCount);
-                activity.put("totalDebits", totalDebits != null ? totalDebits : BigDecimal.ZERO);
-                activity.put("totalCredits", totalCredits != null ? totalCredits : BigDecimal.ZERO);
-                activity.put("netChange",
-                        (totalDebits != null ? totalDebits : BigDecimal.ZERO)
-                        .subtract(totalCredits != null ? totalCredits : BigDecimal.ZERO));
                 activityList.add(activity);
             }
         }
 
-        // Sort by transaction count descending
-        activityList.sort((a, b) ->
-                Long.compare((Long) b.get("transactionCount"), (Long) a.get("transactionCount")));
+        // Sort by account code
+        activityList.sort(Comparator.comparing(a -> (String) a.get("accountCode")));
 
         Map<String, Object> result = new HashMap<>();
         result.put("activity", activityList);
@@ -330,4 +368,3 @@ public class AccountingReportService {
         return type == AccountType.ASSET || type == AccountType.EXPENSE;
     }
 }
-
