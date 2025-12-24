@@ -9,18 +9,15 @@ export default function MemberStatements({ user }) {
     const [transactions, setTransactions] = useState([]); 
     const [loading, setLoading] = useState(false);
     
-    // 1. ✅ Access Global Settings
     const { settings, getImageUrl } = useSettings();
     
-    // 2. ✅ Construct Dynamic Data
     const logoUrl = getImageUrl(settings.SACCO_LOGO);
     const orgName = settings.SACCO_NAME || "Sacco System";
     const orgAddress = settings.SACCO_ADDRESS || "Nairobi, Kenya";
     const orgWebsite = settings.SACCO_WEBSITE || "";
     
-    // Smartly join email and phone only if they exist
     const orgContact = [settings.SACCO_EMAIL, settings.SACCO_PHONE]
-        .filter(Boolean) // Removes empty/null/undefined
+        .filter(Boolean)
         .join(' | ');
 
     const [config, setConfig] = useState({
@@ -40,7 +37,6 @@ export default function MemberStatements({ user }) {
                 const data = res.data.data;
                 const rawTransactions = data.transactions || [];
 
-                // Filter out non-statement items
                 const cleanTransactions = rawTransactions.filter(tx => {
                     const desc = tx.description.toLowerCase();
                     return !desc.includes('registration fee') && !desc.includes('joining fee');
@@ -65,21 +61,14 @@ export default function MemberStatements({ user }) {
 
     const handlePrint = () => {
         if (!statementRef.current) return;
-        const printContent = statementRef.current.innerHTML;
-        const originalContent = document.body.innerHTML;
-        
-        document.body.innerHTML = printContent;
         window.print();
-        
-        document.body.innerHTML = originalContent;
-        window.location.reload(); 
     };
 
     const calculateTotals = () => {
         const credit = transactions.reduce((sum, tx) => sum + (tx.amount > 0 ? tx.amount : 0), 0);
         const debit = transactions.reduce((sum, tx) => sum + (tx.amount < 0 ? Math.abs(tx.amount) : 0), 0);
-        const closing = transactions.length > 0 ? transactions[transactions.length - 1].runningBalance : 0;
-        return { credit, debit, closing };
+        const closing = transactions.length > 0 ? transactions[transactions.length - 1].runningBalance : (statement?.openingBalance || 0);
+        return { credit, debit, closing, opening: statement?.openingBalance || 0 };
     };
 
     const totals = calculateTotals();
@@ -137,12 +126,13 @@ export default function MemberStatements({ user }) {
 
             {/* PREVIEW AREA */}
             {statement && (
-                <div className="flex justify-center bg-slate-100 p-8 rounded-xl border border-slate-200 overflow-auto">
+                <div className="flex justify-center bg-slate-100 p-8 rounded-xl border border-slate-200 overflow-auto print:p-0 print:bg-white print:border-none print:overflow-visible">
                     
                     {/* A4 CONTAINER */}
                     <div 
                         ref={statementRef} 
-                        className="bg-white shadow-2xl relative text-slate-800"
+                        id="statement-container"
+                        className="bg-white shadow-2xl relative text-slate-800 print:shadow-none"
                         style={{
                             width: '210mm',
                             minHeight: '297mm',
@@ -153,33 +143,49 @@ export default function MemberStatements({ user }) {
                         
                         <style>{`
                             @media print {
-                                @page { size: A4; margin: 20mm; }
-                                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
-                                .print-hidden { display: none !important; }
-                                div[ref="statementRef"] {
-                                    width: 100% !important; height: 100% !important; box-shadow: none !important; margin: 0 !important;
+                                body { 
+                                    visibility: hidden; 
+                                    margin: 0; 
+                                    padding: 0; 
+                                    overflow: hidden; 
                                 }
+                                #statement-container {
+                                    visibility: visible;
+                                    position: fixed;
+                                    left: 0;
+                                    top: 0;
+                                    margin: 0;
+                                    padding: 20mm !important;
+                                    width: 210mm;
+                                    height: 100%;
+                                    z-index: 9999;
+                                    background: white;
+                                }
+                                #statement-container * {
+                                    visibility: visible;
+                                }
+                                .print:hidden { display: none !important; }
+                                * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                             }
                             .stmt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                            .stmt-table th { background: #0f172a !important; color: white !important; padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; -webkit-print-color-adjust: exact; }
+                            .stmt-table th { background: #0f172a !important; color: white !important; padding: 12px 10px; text-align: left; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; }
                             .stmt-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-                            .stmt-table tr:nth-child(even) { background: #f8fafc !important; -webkit-print-color-adjust: exact; }
+                            .stmt-table tr:nth-child(even) { background: #f8fafc !important; }
                             .money { font-family: 'Consolas', monospace; font-weight: 600; text-align: right; }
                             .credit { color: #059669 !important; }
                             .debit { color: #dc2626 !important; }
                             
-                            /* ✅ DIAGONAL & LARGE WATERMARK */
                             .watermark {
                                 position: absolute; 
                                 top: 50%; 
                                 left: 50%; 
-                                /* Centered + Rotated 30 degrees */
                                 transform: translate(-50%, -50%) rotate(-30deg);
-                                width: 80%; /* Large width */
+                                width: 80%; 
                                 max-width: 600px;
-                                opacity: 0.10; 
+                                opacity: 0.15; 
                                 z-index: 50; 
                                 pointer-events: none; 
+                                mix-blend-mode: multiply;
                             }
                         `}</style>
 
@@ -194,18 +200,17 @@ export default function MemberStatements({ user }) {
                              )}
                         </div>
 
-                        {/* HEADER */}
+                        {/* HEADER - No Wrap */}
                         <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 pb-6 relative z-10">
-                            <div>
-                                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Statement of Account</h1>
+                            <div className="flex-1">
+                                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">Statement of Account</h1>
                                 <p className="text-sm text-slate-500 mt-1">Generated on {docMeta.generatedAt}</p>
                             </div>
 
-                            {/* ✅ DYNAMIC SYSTEM SETTINGS (Right Aligned) */}
-                            <div className="text-right">
-                                <h2 className="text-lg font-bold text-emerald-700">{orgName}</h2>
+                            <div className="text-right flex-1">
+                                <h2 className="text-lg font-bold text-emerald-700 whitespace-nowrap">{orgName}</h2>
                                 <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{orgAddress}</p>
-                                <p className="text-xs text-slate-500 mt-1">{orgContact}</p>
+                                <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{orgContact}</p>
                                 {orgWebsite && (
                                     <p className="text-xs text-blue-600 mt-1 underline decoration-blue-200">
                                         {orgWebsite}
@@ -218,11 +223,11 @@ export default function MemberStatements({ user }) {
                         <div className="flex justify-between mb-8 relative z-10">
                             <div className="w-1/2 pr-4">
                                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-1 w-2/3">Generated For</h3>
-                                <p className="font-bold text-lg text-slate-900 uppercase">{user?.firstName} {user?.lastName}</p>
+                                <p className="font-bold text-lg text-slate-900 uppercase whitespace-nowrap">{user?.firstName} {user?.lastName}</p>
                                 <div className="mt-1 space-y-0.5">
-                                    <p className="text-xs text-slate-600"><span className="font-bold text-slate-400 w-20 inline-block">Member No:</span> {user?.memberNumber || 'N/A'}</p>
-                                    <p className="text-xs text-slate-600"><span className="font-bold text-slate-400 w-20 inline-block">Email:</span> {user?.email}</p>
-                                    <p className="text-xs text-slate-600"><span className="font-bold text-slate-400 w-20 inline-block">Phone:</span> {user?.phoneNumber || 'N/A'}</p>
+                                    <p className="text-xs text-slate-600 flex gap-2"><span className="font-bold text-slate-400 inline-block w-20">Member No:</span> {user?.memberNumber || 'N/A'}</p>
+                                    <p className="text-xs text-slate-600 flex gap-2"><span className="font-bold text-slate-400 inline-block w-20">Email:</span> {user?.email}</p>
+                                    <p className="text-xs text-slate-600 flex gap-2"><span className="font-bold text-slate-400 inline-block w-20">Phone:</span> {user?.phoneNumber || 'N/A'}</p>
                                 </div>
                             </div>
                             
@@ -260,6 +265,15 @@ export default function MemberStatements({ user }) {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {/* Opening Balance Row (Added Explicitly) */}
+                                    <tr>
+                                        <td className="font-mono text-slate-500">{new Date(config.startDate).toLocaleDateString()}</td>
+                                        <td className="italic text-slate-500 font-medium">Opening Balance Brought Forward</td>
+                                        <td className="money text-slate-400">-</td>
+                                        <td className="money text-slate-400">-</td>
+                                        <td className="money font-bold text-blue-700 bg-blue-50/50">{Number(totals.opening).toLocaleString()}</td>
+                                    </tr>
+
                                     {transactions.map((tx, i) => (
                                         <tr key={i}>
                                             <td className="font-mono text-slate-600">{new Date(tx.date).toLocaleDateString()}</td>
@@ -290,9 +304,13 @@ export default function MemberStatements({ user }) {
                             </table>
                         </div>
 
-                        {/* SUMMARY FOOTER */}
+                        {/* SUMMARY FOOTER (Updated with Opening Balance) */}
                         <div className="flex justify-end relative z-10">
-                            <div className="bg-slate-50 border border-slate-200 p-6 rounded-lg w-[280px]">
+                            <div className="bg-slate-50 border border-slate-200 p-6 rounded-lg w-[320px]">
+                                <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold">
+                                    <span>Opening Balance</span>
+                                    <span className="font-mono text-slate-700">{Number(totals.opening).toLocaleString()}</span>
+                                </div>
                                 <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold">
                                     <span>Total Credits</span>
                                     <span className="font-mono text-emerald-600">{Number(totals.credit).toLocaleString()}</span>

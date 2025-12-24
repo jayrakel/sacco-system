@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../../api';
 import { 
     BookOpen, Loader2, Plus, X, Calendar, Filter, RefreshCw, Trash2, Save,
-    LayoutDashboard, TrendingUp, DollarSign, Users, AlertCircle, FileText, PieChart as PieIcon
+    LayoutDashboard, TrendingUp, DollarSign, Users, AlertCircle, FileText, PieChart as PieIcon,
+    Printer, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import { 
     BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
+import { useSettings } from '../../../context/SettingsContext';
 
 export default function AccountingReports() {
     const [accounts, setAccounts] = useState([]);
@@ -14,12 +16,20 @@ export default function AccountingReports() {
     const [view, setView] = useState('overview'); 
     const [loading, setLoading] = useState(true);
 
+    // Global Settings for Branding
+    const { settings, getImageUrl } = useSettings();
+    const logoUrl = getImageUrl(settings.SACCO_LOGO);
+    const orgName = settings.SACCO_NAME || "Sacco System";
+    const orgAddress = settings.SACCO_ADDRESS || "Nairobi, Kenya";
+    const orgContact = [settings.SACCO_EMAIL, settings.SACCO_PHONE].filter(Boolean).join(' | ');
+
     // Date Filters
     const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
 
-    // Modals
+    // Modals & Printing
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEntryModal, setShowEntryModal] = useState(false);
+    const [printingReport, setPrintingReport] = useState(null); // 'balance-sheet' | 'income-statement'
 
     // Forms
     const [newAccount, setNewAccount] = useState({ code: '', name: '', type: 'ASSET' });
@@ -30,7 +40,6 @@ export default function AccountingReports() {
         lines: [{ accountCode: '', debit: 0, credit: 0 }, { accountCode: '', debit: 0, credit: 0 }]
     });
 
-    // Colors for Charts
     const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
     useEffect(() => { fetchData(); }, [dateRange.endDate, dateRange.startDate]);
@@ -63,6 +72,13 @@ export default function AccountingReports() {
 
     const getNetIncome = () => getTotal('INCOME') - getTotal('EXPENSE');
     const formatMoney = (amount) => Number(amount).toLocaleString(undefined, {minimumFractionDigits: 2});
+
+    // Balance Sheet Logic
+    const totalAssets = getTotal('ASSET');
+    const totalLiabilities = getTotal('LIABILITY');
+    const totalEquity = getTotal('EQUITY') + getNetIncome(); // Retained Earnings included
+    const balanceDifference = totalAssets - (totalLiabilities + totalEquity);
+    const isBalanced = Math.abs(balanceDifference) < 1.0; // Allow small floating point margin
 
     // --- MANUAL ENTRY LOGIC ---
     const handleEntryChange = (index, field, value) => {
@@ -100,30 +116,23 @@ export default function AccountingReports() {
     };
     const toggleAccount = async (code) => { await api.put(`/api/accounting/accounts/${code}/toggle`); fetchData(); };
 
+    // --- PRINTING LOGIC ---
+    const handlePrint = (reportType) => {
+        setPrintingReport(reportType);
+        setTimeout(() => {
+            window.print();
+            setPrintingReport(null); // Reset after print dialog closes
+        }, 500);
+    };
+
     // --- CHART DATA PREP ---
-    
-    // 1. P&L Summary
     const plData = [
         { name: 'Revenue', amount: getTotal('INCOME') },
         { name: 'Expenses', amount: getTotal('EXPENSE') },
         { name: 'Net Profit', amount: getNetIncome() },
     ];
-
-    // 2. Asset Allocation (Pie Chart)
-    const assetData = accounts
-        .filter(a => a.type === 'ASSET' && a.active && parseFloat(a.balance) > 0)
-        .map(a => ({ name: a.name, value: parseFloat(a.balance) }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 5); // Top 5 Assets
-
-    // 3. Top Revenue Sources (Bar Chart)
-    const incomeData = accounts
-        .filter(a => a.type === 'INCOME' && a.active && parseFloat(a.balance) > 0)
-        .map(a => ({ name: a.name, amount: parseFloat(a.balance) }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 5); // Top 5 Income Sources
-
-    // Helper for entry modal totals
+    const assetData = accounts.filter(a => a.type === 'ASSET' && a.active && parseFloat(a.balance) > 0).map(a => ({ name: a.name, value: parseFloat(a.balance) })).sort((a, b) => b.value - a.value).slice(0, 5);
+    const incomeData = accounts.filter(a => a.type === 'INCOME' && a.active && parseFloat(a.balance) > 0).map(a => ({ name: a.name, amount: parseFloat(a.balance) })).sort((a, b) => b.amount - a.amount).slice(0, 5);
     const entryTotalDebit = entryForm.lines.reduce((s, l) => s + Number(l.debit), 0);
     const entryTotalCredit = entryForm.lines.reduce((s, l) => s + Number(l.credit), 0);
 
@@ -132,8 +141,8 @@ export default function AccountingReports() {
     return (
         <div className="space-y-6 animate-in fade-in">
 
-            {/* --- HEADER & CONTROLS --- */}
-            <div className="flex flex-col xl:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4">
+            {/* --- HEADER & CONTROLS (Hidden on Print) --- */}
+            <div className="flex flex-col xl:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 gap-4 print:hidden">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2 text-lg">
                     <BookOpen className="text-indigo-600" size={24} />
                     Finance & Accounting
@@ -174,10 +183,10 @@ export default function AccountingReports() {
                 </div>
             </div>
 
-            {/* --- VIEW 1: OVERVIEW (3 CHARTS) --- */}
+            {/* --- VIEW 1: OVERVIEW --- */}
             {view === 'overview' && (
-                <div className="space-y-6">
-                    {/* KPI Cards Row */}
+                <div className="space-y-6 print:hidden">
+                    {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-6 rounded-xl shadow-lg relative overflow-hidden">
                             <DollarSign className="absolute right-4 top-4 opacity-20 w-12 h-12" />
@@ -200,127 +209,55 @@ export default function AccountingReports() {
                             <h3 className="text-2xl font-bold mt-1">KES {formatMoney(getNetIncome())}</h3>
                         </div>
                     </div>
-
-                    {/* Charts Grid */}
+                    {/* Charts */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        
-                        {/* CHART 1: P&L Summary */}
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                                <TrendingUp size={18} className="text-emerald-600"/> P&L Summary
-                            </h3>
-                            <div className="h-64 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={plData}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                        <XAxis dataKey="name" fontSize={12} />
-                                        <YAxis fontSize={12} tickFormatter={(val) => `${val/1000}k`} />
-                                        <Tooltip formatter={(value) => formatMoney(value)} cursor={{fill: 'transparent'}} />
-                                        <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={50}>
-                                            <Cell fill="#10B981" /> {/* Revenue */}
-                                            <Cell fill="#EF4444" /> {/* Expenses */}
-                                            <Cell fill="#3B82F6" /> {/* Net */}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
+                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><TrendingUp size={18} className="text-emerald-600"/> P&L Summary</h3>
+                            <div className="h-64 w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={plData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" /><XAxis dataKey="name" fontSize={12} /><YAxis fontSize={12} tickFormatter={(val) => `${val/1000}k`} /><Tooltip formatter={(value) => formatMoney(value)} cursor={{fill: 'transparent'}} /><Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={50}><Cell fill="#10B981" /><Cell fill="#EF4444" /><Cell fill="#3B82F6" /></Bar></BarChart></ResponsiveContainer></div>
                         </div>
-
-                        {/* CHART 2: Asset Allocation (Donut) */}
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                                <PieIcon size={18} className="text-blue-600"/> Asset Allocation
-                            </h3>
-                            <div className="h-64 w-full flex items-center justify-center">
-                                {assetData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={assetData}
-                                                cx="50%"
-                                                cy="50%"
-                                                innerRadius={60}
-                                                outerRadius={80}
-                                                paddingAngle={5}
-                                                dataKey="value"
-                                            >
-                                                {assetData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip formatter={(value) => formatMoney(value)} />
-                                            <Legend verticalAlign="bottom" height={36}/>
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <p className="text-slate-400 text-sm">No assets recorded yet.</p>
-                                )}
-                            </div>
+                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><PieIcon size={18} className="text-blue-600"/> Asset Allocation</h3>
+                            <div className="h-64 w-full flex items-center justify-center">{assetData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={assetData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{assetData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip formatter={(value) => formatMoney(value)} /><Legend verticalAlign="bottom" height={36}/></PieChart></ResponsiveContainer>) : (<p className="text-slate-400 text-sm">No assets recorded yet.</p>)}</div>
                         </div>
-
-                        {/* CHART 3: Top Revenue Sources (Horizontal Bar) */}
                         <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                                <DollarSign size={18} className="text-purple-600"/> Top Revenue Sources
-                            </h3>
-                            <div className="h-64 w-full">
-                                {incomeData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={incomeData} layout="vertical" margin={{ left: 40 }}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E2E8F0" />
-                                            <XAxis type="number" fontSize={12} tickFormatter={(val) => `${val/1000}k`} />
-                                            <YAxis dataKey="name" type="category" width={150} fontSize={11} fontWeight={500} />
-                                            <Tooltip formatter={(value) => formatMoney(value)} cursor={{fill: '#F8FAFC'}} />
-                                            <Bar dataKey="amount" fill="#8B5CF6" radius={[0, 4, 4, 0]} barSize={20} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <p className="text-slate-400 text-sm text-center pt-20">No revenue data available.</p>
-                                )}
-                            </div>
+                            <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><DollarSign size={18} className="text-purple-600"/> Top Revenue Sources</h3>
+                            <div className="h-64 w-full">{incomeData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><BarChart data={incomeData} layout="vertical" margin={{ left: 40 }}><CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E2E8F0" /><XAxis type="number" fontSize={12} tickFormatter={(val) => `${val/1000}k`} /><YAxis dataKey="name" type="category" width={150} fontSize={11} fontWeight={500} /><Tooltip formatter={(value) => formatMoney(value)} cursor={{fill: '#F8FAFC'}} /><Bar dataKey="amount" fill="#8B5CF6" radius={[0, 4, 4, 0]} barSize={20} /></BarChart></ResponsiveContainer>) : (<p className="text-slate-400 text-sm text-center pt-20">No revenue data available.</p>)}</div>
                         </div>
-
                     </div>
                 </div>
             )}
 
             {/* --- VIEW 2: BALANCE SHEET --- */}
             {view === 'balance-sheet' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Assets */}
-                    <div className="bg-white rounded-xl shadow-sm border-t-4 border-blue-500 p-6">
-                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <DollarSign className="text-blue-500" size={20}/> Assets
-                            </h3>
-                            <span className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-full text-sm">
-                                {formatMoney(getTotal('ASSET'))}
-                            </span>
+                <div className="space-y-6 print:hidden">
+                    {/* Balance Checker Banner */}
+                    <div className={`p-4 rounded-xl flex items-center justify-between shadow-sm border ${isBalanced ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-full ${isBalanced ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {isBalanced ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
+                            </div>
+                            <div>
+                                <h3 className={`font-bold ${isBalanced ? 'text-emerald-900' : 'text-red-900'}`}>
+                                    {isBalanced ? 'Balance Sheet is Balanced' : 'Balance Sheet is Unbalanced'}
+                                </h3>
+                                {!isBalanced && <p className="text-sm text-red-700">Difference: <strong>KES {formatMoney(balanceDifference)}</strong> (Assets ≠ Liab + Equity)</p>}
+                            </div>
                         </div>
-                        <div className="space-y-3">
-                            {accounts.filter(a => a.type === 'ASSET' && a.active).map(a => (
-                                <div key={a.code} className="flex justify-between text-sm group hover:bg-slate-50 p-2 rounded transition">
-                                    <span className="text-slate-600">{a.name} <span className="text-xs text-slate-300 ml-1">{a.code}</span></span>
-                                    <span className="font-mono font-medium text-slate-900">{formatMoney(a.balance)}</span>
-                                </div>
-                            ))}
-                        </div>
+                        <button onClick={() => handlePrint('balance-sheet')} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm">
+                            <Printer size={16}/> Download PDF
+                        </button>
                     </div>
 
-                    {/* Liabilities & Equity */}
-                    <div className="space-y-6">
-                        <div className="bg-white rounded-xl shadow-sm border-t-4 border-red-500 p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Assets */}
+                        <div className="bg-white rounded-xl shadow-sm border-t-4 border-blue-500 p-6">
                             <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
-                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <AlertCircle className="text-red-500" size={20}/> Liabilities
-                                </h3>
-                                <span className="text-red-700 font-bold bg-red-50 px-3 py-1 rounded-full text-sm">
-                                    {formatMoney(getTotal('LIABILITY'))}
-                                </span>
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2"><DollarSign className="text-blue-500" size={20}/> Assets</h3>
+                                <span className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-full text-sm">{formatMoney(totalAssets)}</span>
                             </div>
                             <div className="space-y-3">
-                                {accounts.filter(a => a.type === 'LIABILITY' && a.active).map(a => (
-                                    <div key={a.code} className="flex justify-between text-sm hover:bg-slate-50 p-2 rounded transition">
+                                {accounts.filter(a => a.type === 'ASSET' && a.active).map(a => (
+                                    <div key={a.code} className="flex justify-between text-sm group hover:bg-slate-50 p-2 rounded transition">
                                         <span className="text-slate-600">{a.name} <span className="text-xs text-slate-300 ml-1">{a.code}</span></span>
                                         <span className="font-mono font-medium text-slate-900">{formatMoney(a.balance)}</span>
                                     </div>
@@ -328,25 +265,39 @@ export default function AccountingReports() {
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-xl shadow-sm border-t-4 border-purple-500 p-6">
-                            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
-                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <Users className="text-purple-500" size={20}/> Equity
-                                </h3>
-                                <span className="text-purple-700 font-bold bg-purple-50 px-3 py-1 rounded-full text-sm">
-                                    {formatMoney(getTotal('EQUITY') + getNetIncome())}
-                                </span>
+                        {/* Liabilities & Equity */}
+                        <div className="space-y-6">
+                            <div className="bg-white rounded-xl shadow-sm border-t-4 border-red-500 p-6">
+                                <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><AlertCircle className="text-red-500" size={20}/> Liabilities</h3>
+                                    <span className="text-red-700 font-bold bg-red-50 px-3 py-1 rounded-full text-sm">{formatMoney(totalLiabilities)}</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {accounts.filter(a => a.type === 'LIABILITY' && a.active).map(a => (
+                                        <div key={a.code} className="flex justify-between text-sm hover:bg-slate-50 p-2 rounded transition">
+                                            <span className="text-slate-600">{a.name} <span className="text-xs text-slate-300 ml-1">{a.code}</span></span>
+                                            <span className="font-mono font-medium text-slate-900">{formatMoney(a.balance)}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="space-y-3">
-                                {accounts.filter(a => a.type === 'EQUITY' && a.active).map(a => (
-                                    <div key={a.code} className="flex justify-between text-sm hover:bg-slate-50 p-2 rounded transition">
-                                        <span className="text-slate-600">{a.name} <span className="text-xs text-slate-300 ml-1">{a.code}</span></span>
-                                        <span className="font-mono font-medium text-slate-900">{formatMoney(a.balance)}</span>
+
+                            <div className="bg-white rounded-xl shadow-sm border-t-4 border-purple-500 p-6">
+                                <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users className="text-purple-500" size={20}/> Equity</h3>
+                                    <span className="text-purple-700 font-bold bg-purple-50 px-3 py-1 rounded-full text-sm">{formatMoney(totalEquity)}</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {accounts.filter(a => a.type === 'EQUITY' && a.active).map(a => (
+                                        <div key={a.code} className="flex justify-between text-sm hover:bg-slate-50 p-2 rounded transition">
+                                            <span className="text-slate-600">{a.name} <span className="text-xs text-slate-300 ml-1">{a.code}</span></span>
+                                            <span className="font-mono font-medium text-slate-900">{formatMoney(a.balance)}</span>
+                                        </div>
+                                    ))}
+                                    <div className="flex justify-between text-sm bg-purple-50/50 p-2 rounded border border-purple-100">
+                                        <span className="text-purple-900 font-medium">Net Income (Current)</span>
+                                        <span className="font-mono font-bold text-purple-700">{formatMoney(getNetIncome())}</span>
                                     </div>
-                                ))}
-                                <div className="flex justify-between text-sm bg-purple-50/50 p-2 rounded border border-purple-100">
-                                    <span className="text-purple-900 font-medium">Net Income (Current)</span>
-                                    <span className="font-mono font-bold text-purple-700">{formatMoney(getNetIncome())}</span>
                                 </div>
                             </div>
                         </div>
@@ -356,10 +307,15 @@ export default function AccountingReports() {
 
             {/* --- VIEW 3: INCOME STATEMENT --- */}
             {view === 'income-statement' && (
-                <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-8 border-b border-slate-100 text-center bg-slate-50/50">
-                        <h3 className="text-2xl font-bold text-slate-800">Income Statement</h3>
-                        <p className="text-slate-500 text-sm mt-1">Statement of Profit & Loss</p>
+                <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden">
+                    <div className="p-8 border-b border-slate-100 text-center bg-slate-50/50 flex justify-between items-center">
+                        <div className="text-left">
+                            <h3 className="text-2xl font-bold text-slate-800">Income Statement</h3>
+                            <p className="text-slate-500 text-sm mt-1">Statement of Profit & Loss</p>
+                        </div>
+                        <button onClick={() => handlePrint('income-statement')} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm">
+                            <Printer size={16}/> Download PDF
+                        </button>
                     </div>
                     <div className="p-8 space-y-8">
                         <div>
@@ -400,66 +356,141 @@ export default function AccountingReports() {
                 </div>
             )}
 
-            {/* --- VIEW 4: CHART OF ACCOUNTS --- */}
-            {view === 'accounts' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h3 className="font-bold text-slate-700">Ledger Accounts</h3>
-                        <button onClick={() => setShowAddModal(true)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center gap-1">
-                            <Plus size={14}/> Add New
-                        </button>
-                    </div>
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
-                            <tr><th className="p-4">Code</th><th className="p-4">Name</th><th className="p-4">Type</th><th className="p-4 text-right">Balance</th><th className="p-4 text-center">Status</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {accounts.map(acc => (
-                                <tr key={acc.code} className="hover:bg-slate-50">
-                                    <td className="p-4 font-mono text-slate-500">{acc.code}</td>
-                                    <td className="p-4 font-bold text-slate-700">{acc.name}</td>
-                                    <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold text-slate-600">{acc.type}</span></td>
-                                    <td className="p-4 text-right font-mono font-bold">{formatMoney(acc.balance)}</td>
-                                    <td className="p-4 text-center">
-                                        <button onClick={() => toggleAccount(acc.code)} className={`text-xs font-bold ${acc.active ? 'text-emerald-600 hover:underline' : 'text-red-600 hover:underline'}`}>
-                                            {acc.active ? 'Active' : 'Disabled'}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* --- VIEW 5: JOURNAL ENTRIES --- */}
-            {view === 'journal' && (
-                <div className="space-y-4">
-                    {journal.map(entry => (
-                        <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition">
-                            <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-2">
-                                <div><p className="font-bold text-slate-800">{entry.description}</p><p className="text-xs text-slate-400 font-mono">Ref: {entry.referenceNo}</p></div>
-                                <span className="text-xs bg-slate-100 px-2 py-1 rounded font-medium">{new Date(entry.transactionDate).toLocaleDateString()}</span>
-                            </div>
-                            <div className="space-y-1">
-                                {entry.lines.map(line => (
-                                    <div key={line.id} className="flex justify-between text-sm">
-                                        <span className="text-slate-600">{line.account.name} <span className="text-xs text-slate-300">({line.account.code})</span></span>
-                                        <div className="flex gap-4 font-mono text-xs">
-                                            <span className="w-20 text-right text-emerald-600">{line.debit > 0 ? formatMoney(line.debit) : '-'}</span>
-                                            <span className="w-20 text-right text-slate-600">{line.credit > 0 ? formatMoney(line.credit) : '-'}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+            {/* --- VIEW 4 & 5: ACCOUNTS & JOURNAL (Skipped for brevity, existing logic maintained) --- */}
+            {(view === 'accounts' || view === 'journal') && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden">
+                    {/* Reuse existing code for tables here */}
+                    {view === 'accounts' && (
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-700">Ledger Accounts</h3>
+                            <button onClick={() => setShowAddModal(true)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center gap-1"><Plus size={14}/> Add New</button>
                         </div>
-                    ))}
+                    )}
+                    {view === 'accounts' ? (
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100"><tr><th className="p-4">Code</th><th className="p-4">Name</th><th className="p-4">Type</th><th className="p-4 text-right">Balance</th><th className="p-4 text-center">Status</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {accounts.map(acc => (
+                                    <tr key={acc.code} className="hover:bg-slate-50">
+                                        <td className="p-4 font-mono text-slate-500">{acc.code}</td><td className="p-4 font-bold text-slate-700">{acc.name}</td><td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold text-slate-600">{acc.type}</span></td><td className="p-4 text-right font-mono font-bold">{formatMoney(acc.balance)}</td><td className="p-4 text-center"><button onClick={() => toggleAccount(acc.code)} className={`text-xs font-bold ${acc.active ? 'text-emerald-600 hover:underline' : 'text-red-600 hover:underline'}`}>{acc.active ? 'Active' : 'Disabled'}</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <div className="p-4 space-y-4">
+                            {journal.map(entry => (
+                                <div key={entry.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition">
+                                    <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-2"><div><p className="font-bold text-slate-800">{entry.description}</p><p className="text-xs text-slate-400 font-mono">Ref: {entry.referenceNo}</p></div><span className="text-xs bg-slate-100 px-2 py-1 rounded font-medium">{new Date(entry.transactionDate).toLocaleDateString()}</span></div>
+                                    <div className="space-y-1">{entry.lines.map(line => (<div key={line.id} className="flex justify-between text-sm"><span className="text-slate-600">{line.account.name} <span className="text-xs text-slate-300">({line.account.code})</span></span><div className="flex gap-4 font-mono text-xs"><span className="w-20 text-right text-emerald-600">{line.debit > 0 ? formatMoney(line.debit) : '-'}</span><span className="w-20 text-right text-slate-600">{line.credit > 0 ? formatMoney(line.credit) : '-'}</span></div></div>))}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* --- MODALS (Entries & Accounts) --- */}
-             {showEntryModal && (
-                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            {/* --- PRINTABLE REPORT TEMPLATE (Hidden unless printing) --- */}
+            {printingReport && (
+                <div className="fixed inset-0 bg-white z-[9999] overflow-auto p-12 hidden print:block">
+                    <style>{`
+                        @media print {
+                            @page { size: A4; margin: 15mm; }
+                            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                            .print-hidden { display: none !important; }
+                            .print-visible { display: block !important; }
+                        }
+                        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); width: 80%; max-width: 500px; opacity: 0.08; z-index: -1; pointer-events: none; }
+                    `}</style>
+
+                    {/* Watermark */}
+                    <div className="watermark">
+                        {logoUrl ? <img src={logoUrl} alt="Watermark" className="w-full h-auto object-contain" /> : null}
+                    </div>
+
+                    {/* Header */}
+                    <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4 mb-8">
+                        <div>
+                            {logoUrl && <img src={logoUrl} alt="Logo" className="h-16 w-auto mb-2 object-contain" />}
+                            <h1 className="text-2xl font-black text-slate-900 uppercase">{printingReport === 'balance-sheet' ? 'Statement of Financial Position' : 'Statement of Comprehensive Income'}</h1>
+                            <p className="text-sm text-slate-600 mt-1">As of {new Date().toLocaleDateString('en-GB')}</p>
+                        </div>
+                        <div className="text-right">
+                            <h2 className="text-lg font-bold text-slate-800">{orgName}</h2>
+                            <p className="text-xs text-slate-600 whitespace-pre-line">{orgAddress}</p>
+                            <p className="text-xs text-slate-600 mt-1">{orgContact}</p>
+                        </div>
+                    </div>
+
+                    {/* Report Content */}
+                    <div className="min-h-[500px]">
+                        {printingReport === 'balance-sheet' ? (
+                            <div className="grid grid-cols-2 gap-8">
+                                <div>
+                                    <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">ASSETS</h3>
+                                    {accounts.filter(a => a.type === 'ASSET' && a.active).map(a => (
+                                        <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                    ))}
+                                    <div className="flex justify-between border-t-2 border-slate-800 pt-2 mt-4 font-bold"><span className="uppercase">Total Assets</span><span>{formatMoney(totalAssets)}</span></div>
+                                </div>
+                                <div className="space-y-8">
+                                    <div>
+                                        <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">LIABILITIES</h3>
+                                        {accounts.filter(a => a.type === 'LIABILITY' && a.active).map(a => (
+                                            <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                        ))}
+                                        <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold text-sm"><span>Total Liabilities</span><span>{formatMoney(totalLiabilities)}</span></div>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">EQUITY</h3>
+                                        {accounts.filter(a => a.type === 'EQUITY' && a.active).map(a => (
+                                            <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                        ))}
+                                        <div className="flex justify-between py-1 text-sm"><span className="text-slate-700">Net Income</span><span className="font-mono">{formatMoney(getNetIncome())}</span></div>
+                                        <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold text-sm"><span>Total Equity</span><span>{formatMoney(totalEquity)}</span></div>
+                                    </div>
+                                    <div className="flex justify-between border-t-2 border-slate-800 pt-2 font-bold"><span className="uppercase">Total Liab. & Equity</span><span>{formatMoney(totalLiabilities + totalEquity)}</span></div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="max-w-2xl mx-auto">
+                                <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">REVENUE</h3>
+                                {accounts.filter(a => a.type === 'INCOME' && a.active).map(a => (
+                                    <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                ))}
+                                <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 mb-8 font-bold"><span>Total Revenue</span><span>{formatMoney(getTotal('INCOME'))}</span></div>
+
+                                <h3 className="font-bold text-slate-800 border-b border-slate-300 pb-2 mb-4">EXPENSES</h3>
+                                {accounts.filter(a => a.type === 'EXPENSE' && a.active).map(a => (
+                                    <div key={a.code} className="flex justify-between py-1 text-sm"><span className="text-slate-700">{a.name}</span><span className="font-mono">{formatMoney(a.balance)}</span></div>
+                                ))}
+                                <div className="flex justify-between border-t border-slate-300 pt-2 mt-2 font-bold"><span>Total Expenses</span><span>{formatMoney(getTotal('EXPENSE'))}</span></div>
+
+                                <div className="flex justify-between border-t-4 double border-slate-800 pt-4 mt-8 text-xl font-bold"><span>NET INCOME</span><span>{formatMoney(getNetIncome())}</span></div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Signatories Footer */}
+                    <div className="mt-20 grid grid-cols-2 gap-20">
+                        <div className="border-t border-slate-400 pt-2">
+                            <p className="font-bold text-slate-800 text-sm">Prepared By:</p>
+                            <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
+                        </div>
+                        <div className="border-t border-slate-400 pt-2">
+                            <p className="font-bold text-slate-800 text-sm">Approved By:</p>
+                            <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
+                        </div>
+                    </div>
+                    <div className="text-center mt-12 text-[10px] text-slate-400 uppercase tracking-widest">
+                        System Generated Document • {new Date().toISOString()} • {orgName}
+                    </div>
+                </div>
+            )}
+
+            {/* Modals */}
+            {showEntryModal && (
+                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2"><BookOpen size={20} className="text-slate-500"/> Post Manual Journal Entry</h3>
@@ -467,47 +498,15 @@ export default function AccountingReports() {
                         </div>
                         <form onSubmit={submitJournalEntry} className="p-6 space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
-                                    <input type="date" required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.date} onChange={e => setEntryForm({...entryForm, date: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reference No</label>
-                                    <input type="text" required placeholder="e.g. INV-001" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.reference} onChange={e => setEntryForm({...entryForm, reference: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                                    <input type="text" required placeholder="e.g. Purchase of Office Desk" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.description} onChange={e => setEntryForm({...entryForm, description: e.target.value})} />
-                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label><input type="date" required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.date} onChange={e => setEntryForm({...entryForm, date: e.target.value})} /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reference No</label><input type="text" required placeholder="e.g. INV-001" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.reference} onChange={e => setEntryForm({...entryForm, reference: e.target.value})} /></div>
+                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label><input type="text" required placeholder="e.g. Purchase of Office Desk" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={entryForm.description} onChange={e => setEntryForm({...entryForm, description: e.target.value})} /></div>
                             </div>
                             <div className="border rounded-xl overflow-hidden shadow-sm">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-bold border-b">
-                                        <tr><th className="p-3 pl-4">Account</th><th className="p-3 w-32 text-right">Debit</th><th className="p-3 w-32 text-right">Credit</th><th className="p-3 w-10"></th></tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {entryForm.lines.map((line, i) => (
-                                            <tr key={i} className="hover:bg-slate-50">
-                                                <td className="p-2 pl-4">
-                                                    <select required className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={line.accountCode} onChange={e => handleEntryChange(i, 'accountCode', e.target.value)}>
-                                                        <option value="">-- Select Account --</option>
-                                                        {accounts.filter(a => a.active).map(a => <option key={a.code} value={a.code}>{a.code} - {a.name}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td className="p-2"><input type="number" min="0" step="0.01" className="w-full p-2 border rounded text-right focus:ring-2 focus:ring-indigo-500 outline-none" value={line.debit} onChange={e => handleEntryChange(i, 'debit', e.target.value)} /></td>
-                                                <td className="p-2"><input type="number" min="0" step="0.01" className="w-full p-2 border rounded text-right focus:ring-2 focus:ring-indigo-500 outline-none" value={line.credit} onChange={e => handleEntryChange(i, 'credit', e.target.value)} /></td>
-                                                <td className="p-2 text-center"><button type="button" onClick={() => removeEntryLine(i)} className="text-slate-400 hover:text-red-500 transition"><Trash2 size={16}/></button></td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="bg-slate-50 font-bold border-t">
-                                        <tr>
-                                            <td className="p-3 text-right">Totals:</td>
-                                            <td className="p-3 text-right text-slate-800">{entryTotalDebit.toFixed(2)}</td>
-                                            <td className="p-3 text-right text-slate-800">{entryTotalCredit.toFixed(2)}</td>
-                                            <td></td>
-                                        </tr>
-                                    </tfoot>
+                                    <thead className="bg-slate-50 text-slate-500 font-bold border-b"><tr><th className="p-3 pl-4">Account</th><th className="p-3 w-32 text-right">Debit</th><th className="p-3 w-32 text-right">Credit</th><th className="p-3 w-10"></th></tr></thead>
+                                    <tbody className="divide-y">{entryForm.lines.map((line, i) => (<tr key={i} className="hover:bg-slate-50"><td className="p-2 pl-4"><select required className="w-full p-2 border rounded bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={line.accountCode} onChange={e => handleEntryChange(i, 'accountCode', e.target.value)}><option value="">-- Select Account --</option>{accounts.filter(a => a.active).map(a => <option key={a.code} value={a.code}>{a.code} - {a.name}</option>)}</select></td><td className="p-2"><input type="number" min="0" step="0.01" className="w-full p-2 border rounded text-right focus:ring-2 focus:ring-indigo-500 outline-none" value={line.debit} onChange={e => handleEntryChange(i, 'debit', e.target.value)} /></td><td className="p-2"><input type="number" min="0" step="0.01" className="w-full p-2 border rounded text-right focus:ring-2 focus:ring-indigo-500 outline-none" value={line.credit} onChange={e => handleEntryChange(i, 'credit', e.target.value)} /></td><td className="p-2 text-center"><button type="button" onClick={() => removeEntryLine(i)} className="text-slate-400 hover:text-red-500 transition"><Trash2 size={16}/></button></td></tr>))}</tbody>
+                                    <tfoot className="bg-slate-50 font-bold border-t"><tr><td className="p-3 text-right">Totals:</td><td className="p-3 text-right text-slate-800">{entryTotalDebit.toFixed(2)}</td><td className="p-3 text-right text-slate-800">{entryTotalCredit.toFixed(2)}</td><td></td></tr></tfoot>
                                 </table>
                             </div>
                             <button type="button" onClick={addEntryLine} className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"><Plus size={14}/> Add Line</button>
@@ -521,31 +520,16 @@ export default function AccountingReports() {
             )}
 
             {showAddModal && (
-                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm print:hidden">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <h3 className="font-bold text-slate-800">Add New Ledger Account</h3>
                             <button onClick={() => setShowAddModal(false)}><X size={20} className="text-slate-400 hover:text-red-500"/></button>
                         </div>
                         <form onSubmit={handleCreateAccount} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Code</label>
-                                <input type="text" required placeholder="e.g. 1100" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.code} onChange={e => setNewAccount({...newAccount, code: e.target.value})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Name</label>
-                                <input type="text" required placeholder="e.g. Inventory / Steel Doors" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.name} onChange={e => setNewAccount({...newAccount, name: e.target.value})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Type</label>
-                                <select className="w-full p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.type} onChange={e => setNewAccount({...newAccount, type: e.target.value})}>
-                                    <option value="ASSET">Asset (Resources)</option>
-                                    <option value="LIABILITY">Liability (Debts)</option>
-                                    <option value="EQUITY">Equity (Capital)</option>
-                                    <option value="INCOME">Income (Revenue)</option>
-                                    <option value="EXPENSE">Expense (Costs)</option>
-                                </select>
-                            </div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Code</label><input type="text" required placeholder="e.g. 1100" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.code} onChange={e => setNewAccount({...newAccount, code: e.target.value})} /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Name</label><input type="text" required placeholder="e.g. Inventory / Steel Doors" className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.name} onChange={e => setNewAccount({...newAccount, name: e.target.value})} /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Account Type</label><select className="w-full p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={newAccount.type} onChange={e => setNewAccount({...newAccount, type: e.target.value})}><option value="ASSET">Asset (Resources)</option><option value="LIABILITY">Liability (Debts)</option><option value="EQUITY">Equity (Capital)</option><option value="INCOME">Income (Revenue)</option><option value="EXPENSE">Expense (Costs)</option></select></div>
                             <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 flex justify-center gap-2 transition"><Save size={18} /> Create Account</button>
                         </form>
                     </div>
