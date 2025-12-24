@@ -88,7 +88,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
         try {
             const res = await api.get('/api/members/active');
             if (res.data.success) {
-                const others = res.data.data.filter(m => String(m.id) !== String(user?.memberId));
+                const others = res.data.data.filter(m => String(m.id) !== String(user?.Id));
                 setMembers(others);
             }
         } catch (e) { console.error(e); }

@@ -169,15 +169,11 @@ public class SavingsController {
     @GetMapping("/my-balance")
     public ResponseEntity<Map<String, Object>> getMyBalance() {
         try {
-            // 1. Get Logged-in User
-            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            if (!(principal instanceof User)) {
-                throw new RuntimeException("User not authenticated");
-            }
-            User user = (User) principal;
+            // 1. SAFER: Get Email instead of casting Principal object
+            String email = SecurityContextHolder.getContext().getAuthentication().getName();
 
             // 2. Find Member Profile
-            Member member = memberRepository.findByEmail(user.getEmail())
+            Member member = memberRepository.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("Member profile not found for this user"));
 
             // 3. Get Accounts
@@ -188,7 +184,7 @@ public class SavingsController {
                     .map(SavingsAccountDTO::getBalance)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             
-            BigDecimal totalInterestEarned = savingsService.getMemberAccounts(member.getId()).stream()
+            BigDecimal totalInterestEarned = accounts.stream()
                     .map(SavingsAccountDTO::getAccruedInterest)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -201,7 +197,7 @@ public class SavingsController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            e.printStackTrace(); // Log it
+            e.printStackTrace(); 
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         }
     }

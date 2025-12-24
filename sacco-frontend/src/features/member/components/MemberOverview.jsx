@@ -20,10 +20,10 @@ export default function MemberOverview({ user }) {
                 const notifRes = await api.get('/api/notifications');
                 if (notifRes.data.success) setNotifications(notifRes.data.data.slice(0, 5));
 
-                // 3. Get Loans (Requires memberId - typically attached to User or fetched separately)
-                // Assuming user object has memberId, or we rely on the backend finding it via context
-                if (user?.memberId) {
-                    const loanRes = await api.get(`/api/loans/member/${user.memberId}`);
+                // 3. Get Loans (Requires Id - typically attached to User or fetched separately)
+                // Assuming user object has Id, or we rely on the backend finding it via context
+                if (user?.Id) {
+                    const loanRes = await api.get(`/api/loans/member/${user.Id}`);
                     if (loanRes.data.success) setLoans(loanRes.data.data);
                 }
 
