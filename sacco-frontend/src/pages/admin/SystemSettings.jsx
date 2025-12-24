@@ -6,7 +6,7 @@ import {
     Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw
 } from 'lucide-react';
 
-// Import Sub-Components (Ensure these files exist in your project structure)
+// Import Sub-Components
 import LoanProducts from '../../features/loans/components/LoanProducts';
 import SavingsProducts from '../../features/savings/components/SavingsProducts';
 import AccountingConfig from '../../features/finance/components/AccountingConfig';
@@ -26,7 +26,7 @@ export default function SystemSettings() {
     const [recalculating, setRecalculating] = useState(false);
     const [recalculateMessage, setRecalculateMessage] = useState('');
 
-    // Base URL for image display - matches the API base URL
+    // Base URL for image display
     const BASE_URL = "http://localhost:8082/uploads/settings/";
 
     useEffect(() => {
@@ -110,6 +110,7 @@ export default function SystemSettings() {
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Configuration...</div>;
 
     // Categorize Settings for General Tab
+    // Updated: SACCO_ADDRESS, SACCO_PHONE etc will automatically fall into this category
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
 
@@ -132,7 +133,6 @@ export default function SystemSettings() {
         s.key === 'SHARE_VALUE'
     );
 
-    // --- RENDER ---
     return (
         <div className="min-h-screen bg-slate-50 p-4 sm:p-8 font-sans flex justify-center">
             <div className="max-w-6xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -156,40 +156,22 @@ export default function SystemSettings() {
 
                 {/* Navigation Tabs */}
                 <div className="bg-slate-100 p-2 flex gap-2 overflow-x-auto border-b border-slate-200">
-                    <button
-                        onClick={() => setActiveTab('general')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('general')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Settings size={16}/> General & Branding
                     </button>
-                    <button
-                        onClick={() => setActiveTab('parameters')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'parameters' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('parameters')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'parameters' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Sliders size={16}/> System Parameters
                     </button>
-                    <button
-                        onClick={() => setActiveTab('products')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('products')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Package size={16}/> Loan & Savings Products
                     </button>
-                    <button
-                        onClick={() => setActiveTab('deposit-products')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'deposit-products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('deposit-products')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'deposit-products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <PiggyBank size={16}/> Deposit Products
                     </button>
-                    <button
-                        onClick={() => setActiveTab('accounting')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('accounting')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Link size={16}/> Accounting Rules
                     </button>
-                    <button
-                        onClick={() => setActiveTab('maintenance')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('maintenance')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Wrench size={16}/> Maintenance
                     </button>
                 </div>
@@ -239,6 +221,14 @@ export default function SystemSettings() {
                                                         <input type="color" value={setting.value || '#000000'} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-12 h-12 rounded cursor-pointer border-0 p-0" />
                                                         <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
                                                     </div>
+                                                ) : setting.key.includes('ADDRESS') ? (
+                                                    // NEW: Handle Address as TextArea
+                                                    <textarea 
+                                                        value={setting.value} 
+                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)} 
+                                                        rows="3"
+                                                        className="w-full p-2 border rounded font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+                                                    />
                                                 ) : (
                                                     <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" />
                                                 )
@@ -264,9 +254,7 @@ export default function SystemSettings() {
                                                 value={setting.value}
                                                 onChange={(e) => handleValueChange(setting.key, e.target.value)}
                                                 className="w-full p-2 border border-indigo-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                                                placeholder={setting.description}
                                             />
-                                            <p className="text-xs text-indigo-400 mt-2">{setting.description}</p>
                                         </div>
                                     ))}
                                     {bankSettings.length === 0 && <p className="text-slate-400 italic text-sm">No bank details configured. Restart backend to initialize.</p>}
@@ -337,30 +325,8 @@ export default function SystemSettings() {
                                                     </span>
                                                 </div>
                                             )}
-
-                                            <p className="text-xs text-purple-500 mt-2">
-                                                {setting.key === 'REGISTRATION_FEE' && 'One-time fee paid when joining the SACCO'}
-                                                {setting.key === 'MIN_MONTHLY_CONTRIBUTION' && 'Minimum monthly savings contribution required'}
-                                                {setting.key === 'LOAN_APPLICATION_FEE' && 'Fee paid to start a loan application (non-refundable)'}
-                                                {setting.key === 'LOAN_INTEREST_RATE' && 'Annual interest rate applied to loans'}
-                                                {setting.key === 'LOAN_GRACE_PERIOD_WEEKS' && 'Grace period before first repayment is due'}
-                                                {setting.key === 'LOAN_LIMIT_MULTIPLIER' && 'Maximum loan = savings × this multiplier'}
-                                                {setting.key === 'LOAN_VOTING_METHOD' && 'How loan applications are approved'}
-                                                {setting.key === 'MIN_SAVINGS_FOR_LOAN' && 'Minimum savings balance required to apply for a loan'}
-                                                {setting.key === 'MIN_MONTHS_MEMBERSHIP' && 'Minimum membership duration (in months) to apply for a loan'}
-                                                {setting.key === 'MIN_SHARE_CAPITAL' && 'Minimum share capital required to apply for a loan'}
-                                                {setting.key === 'SHARE_VALUE' && 'Price per share for share capital contributions (use Maintenance tab to recalculate existing shares after changing)'}
-                                                {setting.key === 'MIN_SAVINGS_TO_GUARANTEE' && 'Minimum savings required to be a guarantor'}
-                                                {setting.key === 'MIN_MONTHS_TO_GUARANTEE' && 'Minimum membership duration to be a guarantor'}
-                                                {setting.key === 'MAX_GUARANTOR_LIMIT_RATIO' && 'Maximum guarantee exposure = savings × this ratio'}
-                                            </p>
                                         </div>
                                     ))}
-                                    {operationalSettings.length === 0 && (
-                                        <div className="col-span-2 p-6 text-center text-slate-400 italic text-sm bg-slate-50 rounded-lg border border-slate-200">
-                                            No operational parameters configured. Restart backend to initialize default values.
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
@@ -377,7 +343,7 @@ export default function SystemSettings() {
                         </div>
                     )}
 
-                    {/* VIEW 3: PRODUCTS */}
+                    {/* OTHER TABS (PRODUCTS, ETC) */}
                     {activeTab === 'products' && (
                         <div className="space-y-12 animate-in fade-in">
                             <div>
@@ -386,8 +352,6 @@ export default function SystemSettings() {
                                 </h3>
                                 <LoanProducts />
                             </div>
-
-
                             <div className="border-t pt-8">
                                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                                     <PiggyBank size={20} className="text-emerald-600"/> Savings Products
@@ -396,16 +360,10 @@ export default function SystemSettings() {
                             </div>
                         </div>
                     )}
-
-                    {/* VIEW 4: DEPOSIT PRODUCTS */}
-                    {activeTab === 'deposit-products' && (
-                        <DepositProductsManager />
-                    )}
-
-                    {/* VIEW 5: ACCOUNTING */}
-                    {activeTab === 'accounting' && (
-                        <AccountingConfig />
-                    )}
+                    
+                    {activeTab === 'deposit-products' && <DepositProductsManager />}
+                    
+                    {activeTab === 'accounting' && <AccountingConfig />}
 
                     {/* VIEW 6: MAINTENANCE TOOLS */}
                     {activeTab === 'maintenance' && (
@@ -427,14 +385,8 @@ export default function SystemSettings() {
                                         <div className="flex-1">
                                             <h4 className="font-bold text-slate-800 mb-2">Recalculate Share Capital</h4>
                                             <p className="text-sm text-slate-600 mb-4">
-                                                Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong> system setting. 
-                                                Use this when:
+                                                Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong> system setting.
                                             </p>
-                                            <ul className="text-sm text-slate-600 mb-4 ml-4 list-disc space-y-1">
-                                                <li>Share value has been updated in System Parameters</li>
-                                                <li>Share counts appear incorrect or inconsistent</li>
-                                                <li>After migrating data from another system</li>
-                                            </ul>
                                             
                                             {recalculateMessage && (
                                                 <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
@@ -447,15 +399,7 @@ export default function SystemSettings() {
                                                 disabled={recalculating}
                                                 className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
                                             >
-                                                {recalculating ? (
-                                                    <>
-                                                        <RefreshCw size={18} className="animate-spin"/> Recalculating...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <RefreshCw size={18}/> Recalculate All Shares
-                                                    </>
-                                                )}
+                                                {recalculating ? "Recalculating..." : "Recalculate All Shares"}
                                             </button>
                                         </div>
                                     </div>

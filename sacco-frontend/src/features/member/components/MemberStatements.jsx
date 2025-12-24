@@ -2,26 +2,26 @@ import React, { useState, useRef } from 'react';
 import api from '../../../api';
 import QRCode from 'react-qr-code'; 
 import { Printer, Calendar, Search, ShieldCheck, FileX } from 'lucide-react';
-import { useSettings } from '../../../context/SettingsContext'; // ✅ Import Global Settings
+import { useSettings } from '../../../context/SettingsContext';
 
 export default function MemberStatements({ user }) {
     const [statement, setStatement] = useState(null);
     const [transactions, setTransactions] = useState([]); 
     const [loading, setLoading] = useState(false);
     
-    // ✅ USE SETTINGS CONTEXT (Replaces manual API fetch)
+    // 1. ✅ Access Global Settings
     const { settings, getImageUrl } = useSettings();
     
-    // 1. Get Logo URL dynamically
+    // 2. ✅ Construct Dynamic Data
     const logoUrl = getImageUrl(settings.SACCO_LOGO);
-
-    // 2. Get Organization Details (with fallbacks)
-    const orgName = settings.SACCO_NAME || "Betterlink Ventures Limited";
-    const orgAddress = settings.SACCO_ADDRESS || "P.O Box 12345, Nairobi, Kenya";
-    // Construct contact string dynamically
-    const orgContact = (settings.SACCO_EMAIL || settings.SACCO_PHONE) 
-        ? `${settings.SACCO_EMAIL || ''} | ${settings.SACCO_PHONE || ''}`
-        : "info@sacco.com | +254 700 000 000";
+    const orgName = settings.SACCO_NAME || "Sacco System";
+    const orgAddress = settings.SACCO_ADDRESS || "Nairobi, Kenya";
+    const orgWebsite = settings.SACCO_WEBSITE || "";
+    
+    // Smartly join email and phone only if they exist
+    const orgContact = [settings.SACCO_EMAIL, settings.SACCO_PHONE]
+        .filter(Boolean) // Removes empty/null/undefined
+        .join(' | ');
 
     const [config, setConfig] = useState({
         startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], 
@@ -85,7 +85,7 @@ export default function MemberStatements({ user }) {
     const totals = calculateTotals();
 
     const qrPayload = statement ? JSON.stringify({
-        org: orgName, // ✅ Dynamic Name
+        org: orgName,
         ref: docMeta.ref,
         member: user?.memberNumber,
         date: docMeta.generatedAt,
@@ -167,13 +167,23 @@ export default function MemberStatements({ user }) {
                             .money { font-family: 'Consolas', monospace; font-weight: 600; text-align: right; }
                             .credit { color: #059669 !important; }
                             .debit { color: #dc2626 !important; }
+                            
+                            /* ✅ DIAGONAL & LARGE WATERMARK */
                             .watermark {
-                                position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%);
-                                width: 50%; opacity: 0.08; z-index: 0; pointer-events: none; filter: grayscale(100%);
+                                position: absolute; 
+                                top: 50%; 
+                                left: 50%; 
+                                /* Centered + Rotated 30 degrees */
+                                transform: translate(-50%, -50%) rotate(-30deg);
+                                width: 80%; /* Large width */
+                                max-width: 600px;
+                                opacity: 0.10; 
+                                z-index: 50; 
+                                pointer-events: none; 
                             }
                         `}</style>
 
-                        {/* ✅ DYNAMIC WATERMARK (Using getImageUrl) */}
+                        {/* WATERMARK */}
                         <div className="watermark">
                              {logoUrl ? (
                                 <img src={logoUrl} alt="Watermark" className="w-full h-auto object-contain" />
@@ -194,8 +204,13 @@ export default function MemberStatements({ user }) {
                             {/* ✅ DYNAMIC SYSTEM SETTINGS (Right Aligned) */}
                             <div className="text-right">
                                 <h2 className="text-lg font-bold text-emerald-700">{orgName}</h2>
-                                <p className="text-xs text-slate-500">{orgAddress}</p>
-                                <p className="text-xs text-slate-500">{orgContact}</p>
+                                <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{orgAddress}</p>
+                                <p className="text-xs text-slate-500 mt-1">{orgContact}</p>
+                                {orgWebsite && (
+                                    <p className="text-xs text-blue-600 mt-1 underline decoration-blue-200">
+                                        {orgWebsite}
+                                    </p>
+                                )}
                             </div>
                         </div>
 
@@ -210,13 +225,15 @@ export default function MemberStatements({ user }) {
                                     <p className="text-xs text-slate-600"><span className="font-bold text-slate-400 w-20 inline-block">Phone:</span> {user?.phoneNumber || 'N/A'}</p>
                                 </div>
                             </div>
-                            {/* ✅ QR CODE (Centered as per your design) */}
+                            
+                            {/* QR CODE */}
                             <div className="absolute top-0 left-1/2 -translate-x-1/2 text-center">
                                 <div className="bg-white p-1 border border-slate-200 inline-block">
                                     <QRCode value={qrPayload} size={80} level="M" />
                                 </div>
                                 <span className="block text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Official Seal</span>
                             </div>
+
                             <div className="w-1/2 pl-4 text-right">
                                 <div className="ml-auto w-2/3">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-1">Document Details</h3>
@@ -293,7 +310,10 @@ export default function MemberStatements({ user }) {
 
                         {/* PRINT FOOTER */}
                         <div className="absolute bottom-8 left-0 w-full text-center">
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">System Generated Document • {docMeta.ref} • {orgName}</p>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">
+                                System Generated Document • {docMeta.ref} • {orgName}
+                                {orgWebsite && <span> • {orgWebsite}</span>}
+                            </p>
                         </div>
 
                     </div>

@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import static java.util.Map.entry; // Import for entry()
+import static java.util.Map.entry;
 
 @Service
 @RequiredArgsConstructor
@@ -27,7 +27,6 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // ✅ FIXED: Used Map.ofEntries to support > 10 items
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
@@ -45,9 +44,13 @@ public class SystemSettingService {
             entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
             // Share Capital
             entry("SHARE_VALUE", "100"),
-            // Branding
+            // Branding & Contact Details
             entry("SACCO_NAME", "Secure Sacco"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
+            entry("SACCO_ADDRESS", "P.O. Box 12345-00100, Nairobi, Kenya"), // NEW
+            entry("SACCO_PHONE", "+254 700 000 000"), // NEW
+            entry("SACCO_EMAIL", "info@securesacco.com"), // NEW
+            entry("SACCO_WEBSITE", "https://www.securesacco.com"), // NEW
             entry("SACCO_LOGO", ""),
             entry("SACCO_FAVICON", ""),
             entry("BRAND_COLOR_PRIMARY", "#059669"),
@@ -64,7 +67,12 @@ public class SystemSettingService {
     public void initDefaults() {
         DEFAULTS.forEach((key, value) -> {
             if (repository.findByKey(key).isEmpty()) {
-                String type = key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") ? "STRING" : "NUMBER";
+                // Determine data type for the frontend
+                String type = "NUMBER";
+                if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME")) {
+                    type = "STRING";
+                }
+                
                 repository.save(SystemSetting.builder()
                         .key(key)
                         .value(value)
@@ -123,9 +131,6 @@ public class SystemSettingService {
                 .orElse("0"));
     }
 
-    /**
-     * Get setting as double with default value
-     */
     public double getDouble(String key, double defaultValue) {
         return repository.findByKey(key)
                 .map(s -> {
@@ -138,6 +143,3 @@ public class SystemSettingService {
                 .orElse(defaultValue);
     }
 }
-
-
-

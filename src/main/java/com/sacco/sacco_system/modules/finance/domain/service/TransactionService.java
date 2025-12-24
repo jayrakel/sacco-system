@@ -1,6 +1,5 @@
 package com.sacco.sacco_system.modules.finance.domain.service;
 
-import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
@@ -13,6 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
@@ -25,8 +26,16 @@ public class TransactionService {
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
 
-    public List<Transaction> getAllTransactions() {
-        // Return latest transactions first
+    // ✅ UPDATED: Now accepts optional date range for system-wide reporting
+    public List<Transaction> getAllTransactions(LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null) {
+            // Fetch transactions within the range
+            return transactionRepository.findByTransactionDateBetweenOrderByTransactionDateDesc(
+                    startDate.atStartOfDay(),
+                    endDate.atTime(LocalTime.MAX)
+            );
+        }
+        // Default: Return all transactions sorted by latest
         return transactionRepository.findAll(Sort.by(Sort.Direction.DESC, "transactionDate"));
     }
 
@@ -89,7 +98,8 @@ public class TransactionService {
     }
 
     public ByteArrayInputStream generateCsvStatement() {
-        List<Transaction> transactions = getAllTransactions();
+        // Generate CSV for all transactions (could be optimized to use filters later)
+        List<Transaction> transactions = getAllTransactions(null, null); 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
         StringBuilder csv = new StringBuilder();
