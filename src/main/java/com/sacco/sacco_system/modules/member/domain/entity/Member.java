@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayList;
 
 @Entity
 @Table(name = "members")
@@ -93,9 +94,28 @@ public class Member {
     @ToString.Exclude
     private List<Transaction> transactions;
 
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Beneficiary> beneficiaries = new ArrayList<>();
+
+    @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
+    private EmploymentDetails employmentDetails;
+
+    // Helper method to add beneficiary (Best Practice)
+    public void addBeneficiary(Beneficiary beneficiary) {
+        beneficiaries.add(beneficiary);
+        beneficiary.setMember(this);
+    }
+
+    public void setEmploymentDetails(EmploymentDetails details) {
+        this.employmentDetails = details;
+        if (details != null) {
+            details.setMember(this);
+        }
+    }
+
     // ---------------------------------------------------------
 
-    // âœ… RENAMED: joinDate -> registrationDate (Matches MemberService)
+    // RENAMED: joinDate -> registrationDate (Matches MemberService)
     private LocalDateTime registrationDate;
 
     private LocalDateTime createdAt;

@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.member.api.dto;
-import com.sacco.sacco_system.modules.member.api.dto.MemberResponse;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,7 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime; // âœ… Added Import
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -27,16 +27,18 @@ public class MemberDTO {
     private String kraPin;
     private String address;
     private LocalDate dateOfBirth;
+    
+    // Old simple Next of Kin (Keep for backward compatibility if needed, or deprecate)
     private String nextOfKinName;
     private String nextOfKinPhone;
     private String nextOfKinRelation;
+
     private String status;
     private BigDecimal totalShares;
     private BigDecimal totalSavings;
-
-    // âœ… ADDED THIS FIELD
     private LocalDateTime registrationDate;
+
+    // ✅ NEW FIELDS
+    private List<BeneficiaryDTO> beneficiaries;
+    private EmploymentDetailsDTO employmentDetails;
 }
-
-
-

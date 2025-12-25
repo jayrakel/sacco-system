@@ -28,6 +28,7 @@ import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
+import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.notification.domain.entity.Notification;
@@ -213,46 +214,63 @@ public class LoanService {
         return result;
     }
 
+    // ========================================================================
+    // ✅ UPDATED: APPLY FOR LOAN (WITH 1/3RD RULE)
+    // ========================================================================
     public LoanDTO initiateApplication(UUID memberId, UUID productId, BigDecimal amount, Integer duration, String unit) {
         Member member = memberRepository.findById(memberId).orElseThrow(() -> new RuntimeException("Member not found"));
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
 
+        // 1. Check Product Limit
         if (amount.compareTo(product.getMaxLimit()) > 0)
             throw new RuntimeException("Amount exceeds product limit of " + product.getMaxLimit());
 
+        // 2. Check General Limit (Savings Multiplier + Salary Limit + Existing Debt)
         Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
         BigDecimal availableLimit = (BigDecimal) limitDetails.get("availableLimit");
 
         if (amount.compareTo(availableLimit) > 0) {
-            StringBuilder errorMsg = new StringBuilder("Amount exceeds your available limit. ");
-            errorMsg.append("Available: KES ").append(availableLimit).append(". ");
-
-            BigDecimal pendingDisbursement = (BigDecimal) limitDetails.get("pendingDisbursement");
-            BigDecimal underReview = (BigDecimal) limitDetails.get("underReview");
-
-            if (pendingDisbursement.compareTo(BigDecimal.ZERO) > 0) {
-                errorMsg.append("You have KES ").append(pendingDisbursement)
-                        .append(" in loans pending disbursement. ");
+            String error = "Amount exceeds your available limit of KES " + availableLimit;
+            BigDecimal salaryLimit = (BigDecimal) limitDetails.get("salaryBasedLimit");
+            BigDecimal savingsLimit = (BigDecimal) limitDetails.get("savingsBasedLimit");
+            
+            if (salaryLimit != null && salaryLimit.compareTo(savingsLimit) < 0) {
+                error += ". Limit is restricted by your Net Salary (1/3rd Rule).";
+            } else {
+                error += ". Limit is restricted by your Total Savings (Multiplier).";
             }
-            if (underReview.compareTo(BigDecimal.ZERO) > 0) {
-                errorMsg.append("You have KES ").append(underReview)
-                        .append(" in loans under review. ");
-            }
-
-            throw new RuntimeException(errorMsg.toString());
+            throw new RuntimeException(error);
         }
 
         if ((boolean) limitDetails.get("hasDefaults")) {
             throw new RuntimeException("Cannot apply for loan while having defaulted or written-off loans. Please clear your defaults first.");
         }
         
+        // 3. Calculate Repayment
         BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
                 amount,
                 product.getInterestRate(),
                 duration,
                 Loan.DurationUnit.valueOf(unit)
         );
+        
+        // 4. ✅ CHECK: Ability to Pay (1/3rd Rule)
+        BigDecimal monthlyRepayment = weeklyRepayment.multiply(BigDecimal.valueOf(4.33));
+        EmploymentDetails emp = member.getEmploymentDetails();
+        if (emp != null && emp.getNetMonthlyIncome() != null) {
+            BigDecimal netIncome = emp.getNetMonthlyIncome();
+            double maxDebtRatio = systemSettingService.getDouble("MAX_DEBT_RATIO", 0.66);
+            BigDecimal maxAllowableRepayment = netIncome.multiply(BigDecimal.valueOf(maxDebtRatio));
 
+            if (monthlyRepayment.compareTo(maxAllowableRepayment) > 0) {
+                throw new RuntimeException(String.format(
+                    "Loan declined by 1/3rd Rule. Estimated monthly repayment (KES %.2f) exceeds 2/3rds of your net income (KES %.2f). Please extend the duration or reduce the amount.", 
+                    monthlyRepayment, maxAllowableRepayment
+                ));
+            }
+        } 
+
+        // 5. Create Application
         Loan loan = Loan.builder()
                 .loanNumber("LN" + System.currentTimeMillis())
                 .member(member)
@@ -282,16 +300,25 @@ public class LoanService {
             throw new RuntimeException("New amount exceeds limit of KES " + memberLimit);
         }
 
-        loan.setPrincipalAmount(amount);
-        loan.setDuration(duration);
-        loan.setDurationUnit(Loan.DurationUnit.valueOf(unit));
-
         BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
                 amount,
                 loan.getProduct().getInterestRate(),
                 duration,
                 Loan.DurationUnit.valueOf(unit)
         );
+
+        EmploymentDetails emp = loan.getMember().getEmploymentDetails();
+        if (emp != null && emp.getNetMonthlyIncome() != null) {
+             BigDecimal monthly = weeklyRepayment.multiply(BigDecimal.valueOf(4.33));
+             BigDecimal max = emp.getNetMonthlyIncome().multiply(BigDecimal.valueOf(0.66));
+             if (monthly.compareTo(max) > 0) {
+                 throw new RuntimeException("New repayment exceeds income ability (1/3rd rule).");
+             }
+        }
+
+        loan.setPrincipalAmount(amount);
+        loan.setDuration(duration);
+        loan.setDurationUnit(Loan.DurationUnit.valueOf(unit));
         loan.setWeeklyRepaymentAmount(weeklyRepayment);
         return convertToDTO(loanRepository.save(loan));
     }
@@ -342,7 +369,6 @@ public class LoanService {
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
         loanRepository.save(loan);
 
-        // Notify Applicant (Info Only)
         userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
             notificationService.notifyUser(
                     user.getId(),
@@ -352,7 +378,6 @@ public class LoanService {
             );
         });
 
-        // Notify Each Guarantor (Action Required)
         for (Guarantor g : loan.getGuarantors()) {
             if (g.getMember().getEmail() != null) {
                 String msg = String.format("Request from %s %s: Please guarantee loan %s for KES %s. Your liability: KES %s",
@@ -373,7 +398,6 @@ public class LoanService {
     }
 
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
-        System.out.println("🔔 [LoanService] Adding guarantor request...");
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
         Member applicant = loan.getMember();
@@ -398,7 +422,6 @@ public class LoanService {
 
         Guarantor saved = guarantorRepository.save(g);
         
-        // 🔔 SEND NOTIFICATION TO GUARANTOR
         try {
             String title = "Guarantor Request";
             String message = String.format("%s %s has requested you to guarantee their loan of KES %s with a guarantee amount of KES %s",
@@ -455,7 +478,6 @@ public class LoanService {
         g.setDateResponded(LocalDate.now());
         guarantorRepository.save(g);
 
-        // 🔔 NOTIFY APPLICANT OF GUARANTOR RESPONSE
         try {
             String statusText = accepted ? "accepted" : "declined";
             String title = "Guarantor " + (accepted ? "Approved" : "Declined");
@@ -486,7 +508,6 @@ public class LoanService {
             if (declined == 0) {
                 loan.setStatus(Loan.LoanStatus.APPLICATION_FEE_PENDING);
                 
-                // Notify member to pay processing fee
                 userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
                     notificationService.notifyUser(
                         user.getId(), 
@@ -496,7 +517,6 @@ public class LoanService {
                     );
                 });
             } else {
-                // Some declined - notify member
                 userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
                     notificationService.notifyUser(
                         user.getId(), 
@@ -510,26 +530,41 @@ public class LoanService {
         }
     }
 
-    public void payApplicationFee(UUID loanId, String refCode) {
+    public void payApplicationFee(UUID loanId, String paymentMethod, String refCode) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
         if(loan.getStatus() != Loan.LoanStatus.APPLICATION_FEE_PENDING)
-            throw new RuntimeException("Loan must be in APPLICATION_FEE_PENDING status. Current status: " + loan.getStatus());
+            throw new RuntimeException("Loan must be in APPLICATION_FEE_PENDING status. Current: " + loan.getStatus());
 
         BigDecimal fee = loan.getProduct().getProcessingFee();
         if (fee == null) fee = BigDecimal.ZERO;
+
+        Transaction.PaymentMethod method = Transaction.PaymentMethod.CASH;
+        if(paymentMethod != null) {
+            try {
+                method = Transaction.PaymentMethod.valueOf(paymentMethod.toUpperCase());
+            } catch (Exception e) {}
+        }
+
+        String sourceGlAccount = getDebitAccountForPayment(method.toString());
 
         Transaction tx = Transaction.builder()
                 .member(loan.getMember())
                 .amount(fee)
                 .type(Transaction.TransactionType.PROCESSING_FEE)
-                .paymentMethod(Transaction.PaymentMethod.MPESA)
+                .paymentMethod(method)
                 .referenceCode(refCode)
                 .description("Loan processing fee - " + loan.getLoanNumber())
                 .build();
         transactionRepository.save(tx);
 
-        accountingService.postMemberFee(loan.getMember(), fee, "PROCESSING_FEE");
+        accountingService.postEvent(
+            "PROCESSING_FEE", 
+            "Loan processing fee - " + loan.getLoanNumber(), 
+            refCode, 
+            fee, 
+            sourceGlAccount
+        );
 
         loan.setApplicationFeePaid(true);
         loan.setStatus(Loan.LoanStatus.SUBMITTED);
@@ -537,9 +572,21 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
+    private String getDebitAccountForPayment(String paymentMethod) {
+        if (paymentMethod == null) return "1001"; // Default Cash
+        
+        switch (paymentMethod.toUpperCase()) {
+            case "MPESA": return "1002"; // M-Pesa Control Account
+            case "BANK": return "1010";  // Default Bank (e.g. Equity)
+            case "CASH": return "1001";  // Teller Cash
+            default: return "1001";
+        }
+    }
+
     // ========================================================================
-    // 3. WORKFLOW & APPROVALS (OFFICER -> SECRETARY -> CHAIRPERSON -> ADMIN)
+    // 3. WORKFLOW & APPROVALS (OFFICER -> SECRETARY -> CHAIRPERSON -> SECRETARY -> TREASURER)
     // ========================================================================
+    
     public LoanDTO officerReview(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         if (loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
@@ -554,6 +601,8 @@ public class LoanService {
         if (loan.getStatus() != Loan.LoanStatus.LOAN_OFFICER_REVIEW && loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
             throw new RuntimeException("Loan must be reviewed before approval.");
         }
+        
+        // 1. Officer Approves -> Sends to Secretary for Tabling
         loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
         loanRepository.save(loan);
 
@@ -565,8 +614,7 @@ public class LoanService {
                     "New Loan Tabled",
                     String.format("Loan %s for %s has been approved by the Loan Officer and is ready for tabling.",
                             loan.getLoanNumber(), loan.getMember().getFirstName()),
-                    true,  // Send email
-                    false  // Don't send SMS
+                    true, false
             );
         }
     }
@@ -578,11 +626,24 @@ public class LoanService {
             throw new RuntimeException("Loan is not ready for tabling.");
         }
 
+        // 2. Secretary Tables Loan -> Sends to Chairperson (ON_AGENDA)
         loan.setMeetingDate(meetingDate);
         loan.setStatus(Loan.LoanStatus.ON_AGENDA);
         loanRepository.save(loan);
 
-        // 1. Notify Applicant via email
+        // Notify Chairperson
+        List<User> chairpeople = userRepository.findByRole(User.Role.CHAIRPERSON);
+        for (User chair : chairpeople) {
+            notificationService.notifyUser(
+                    chair.getId(),
+                    "New Agenda Item",
+                    String.format("Loan Ref %s has been tabled for the meeting on %s.",
+                            loan.getLoanNumber(), meetingDate),
+                    true, false
+            );
+        }
+        
+        // Notify Member
         userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
             notificationService.notifyUser(
                     user.getId(),
@@ -591,22 +652,6 @@ public class LoanService {
                     true, false
             );
         });
-
-        // 2. Notify Chairperson & Treasurer
-        List<User.Role> committeeRoles = List.of(User.Role.CHAIRPERSON, User.Role.TREASURER);
-
-        for (User.Role role : committeeRoles) {
-            List<User> officials = userRepository.findByRole(role);
-            for (User official : officials) {
-                notificationService.notifyUser(
-                        official.getId(),
-                        "New Agenda Item",
-                        String.format("Loan Ref %s (Applicant: %s) has been tabled for the meeting on %s.",
-                                loan.getLoanNumber(), loan.getMember().getFirstName(), meetingDate),
-                        true, false
-                );
-            }
-        }
     }
 
     public void openVoting(UUID loanId) {
@@ -616,6 +661,12 @@ public class LoanService {
             throw new RuntimeException("Loan must be tabled on the agenda before voting can start.");
         }
 
+        // ✅ CHECK: Prevent opening voting before the meeting date
+        if (loan.getMeetingDate() != null && LocalDate.now().isBefore(loan.getMeetingDate())) {
+            throw new RuntimeException("Cannot open voting yet. Meeting date is " + loan.getMeetingDate());
+        }
+
+        // 3. Chairperson Opens Voting (When Meeting is Due)
         loan.setVotingOpen(true);
         loan.setStatus(Loan.LoanStatus.VOTING_OPEN);
         if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new java.util.ArrayList<>());
@@ -623,7 +674,6 @@ public class LoanService {
         loanRepository.save(loan);
     }
 
-    // 2. CAST VOTE (Strict Rules - UPDATED)
     public void castVote(UUID loanId, boolean voteYes, UUID voterId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -635,26 +685,20 @@ public class LoanService {
         User voter = userRepository.findById(voterId)
                 .orElseThrow(() -> new RuntimeException("Voter not found"));
 
-        // ✅ CHECK: Match by Email (Member Account Only)
-        // If the Chairperson is logged in as Admin (admin@sacco.com), this will fail (return null)
-        // They must log in as Member (jay@gmail.com) for this to succeed.
         Member voterMember = memberRepository.findByEmail(voter.getEmail()).orElse(null);
 
         if (voterMember == null) {
             throw new RuntimeException("No member profile found for this account. Please log in to your Member account to vote.");
         }
 
-        // ✅ RULE 1: Prevent Double Voting
         if (loan.getVotedUserIds() != null && loan.getVotedUserIds().contains(voterId)) {
             throw new RuntimeException("You have already voted on this loan.");
         }
 
-        // ✅ RULE 2: Conflict of Interest (Self-Voting Blocked)
         if (loan.getMember().getId().equals(voterMember.getId())) {
             throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
         }
 
-        // Record Vote
         if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
         else loan.setVotesNo(loan.getVotesNo() + 1);
 
@@ -684,21 +728,15 @@ public class LoanService {
     public void finalizeVote(UUID loanId, Boolean manualApproved, String comments) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        if (!loan.isVotingOpen() && loan.getStatus() != Loan.LoanStatus.VOTING_OPEN) {
-            if (loan.getStatus() != Loan.LoanStatus.VOTING_CLOSED) {
-                throw new RuntimeException("Voting is not currently active for this loan.");
-            }
-        }
-
         loan.setVotingOpen(false);
         loan.setStatus(Loan.LoanStatus.VOTING_CLOSED);
         loanRepository.save(loan); 
 
         if (manualApproved != null) {
             if (manualApproved) {
-                approveLoanInternal(loan, "Committee Decision: " + comments);
+                approveLoanInternal(loan, "Committee Manual Decision: " + comments);
             } else {
-                rejectLoanInternal(loan, "Committee Decision: " + comments);
+                rejectLoanInternal(loan, "Committee Manual Decision: " + comments);
             }
             return;
         }
@@ -711,12 +749,13 @@ public class LoanService {
 
             if (totalVotes == 0) {
                 loan.setStatus(Loan.LoanStatus.SECRETARY_DECISION);
-                loan.setSecretaryComments("Voting closed with 0 votes. Manual decision required.");
+                loan.setSecretaryComments("Voting closed with 0 votes. Secretary decision required.");
                 loanRepository.save(loan);
                 return;
             }
 
             if (loan.getVotesYes() > loan.getVotesNo()) {
+                // ✅ VOTE PASSED -> Goes to Secretary for Final Ratification
                 approveLoanInternal(loan, "Passed automatic voting (Simple Majority). " + resultDetails);
             } else {
                 rejectLoanInternal(loan, "Failed automatic voting. " + resultDetails);
@@ -727,28 +766,18 @@ public class LoanService {
         }
     }
 
+    // ✅ UPDATED: Sends to Secretary instead of Admin
     private void approveLoanInternal(Loan loan, String note) {
-        loan.setStatus(Loan.LoanStatus.ADMIN_APPROVED); 
+        loan.setStatus(Loan.LoanStatus.SECRETARY_DECISION); // Was ADMIN_APPROVED
         loan.setSecretaryComments(note);
         loanRepository.save(loan);
 
-        // Notify Member
-        userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
+        List<User> secretaries = userRepository.findByRole(User.Role.SECRETARY);
+        for (User secretary : secretaries) {
             notificationService.notifyUser(
-                    user.getId(),
-                    "Loan Voted Successfully",
-                    "Your loan has passed the committee vote! It is now pending final Admin approval.",
-                    true, false
-            );
-        });
-
-        // Notify ADMIN
-        List<User> admins = userRepository.findByRole(User.Role.ADMIN);
-        for (User admin : admins) {
-            notificationService.notifyUser(
-                    admin.getId(),
-                    "Final Approval Required",
-                    String.format("Loan %s has passed voting and requires your final sign-off.", loan.getLoanNumber()),
+                    secretary.getId(),
+                    "Voting Passed - Action Required",
+                    String.format("Loan %s has passed voting. Please perform final approval for disbursement.", loan.getLoanNumber()),
                     true, false
             );
         }
@@ -758,8 +787,7 @@ public class LoanService {
         loan.setStatus(Loan.LoanStatus.REJECTED);
         loan.setRejectionReason(reason);
         loanRepository.save(loan);
-
-        // Notify Member
+        
         userRepository.findByEmail(loan.getMember().getEmail()).ifPresent(user -> {
             notificationService.notifyUser(
                     user.getId(),
@@ -771,16 +799,16 @@ public class LoanService {
     }
 
     // ========================================================================
-    // CORRECTED ADMIN APPROVAL
+    // ✅ RENAMED: Secretary Final Approval (Was adminApprove)
     // ========================================================================
-    public void adminApprove(UUID loanId) {
+    public void secretaryFinalApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        if (loan.getStatus() != Loan.LoanStatus.ADMIN_APPROVED &&
-                loan.getStatus() != Loan.LoanStatus.SECRETARY_DECISION) {
-            throw new RuntimeException("Loan is not in the correct state for Final Approval. Current: " + loan.getStatus());
+        if (loan.getStatus() != Loan.LoanStatus.SECRETARY_DECISION) {
+            throw new RuntimeException("Loan is not awaiting final approval. Current status: " + loan.getStatus());
         }
 
+        // 4. Secretary Approves -> Sends to Treasurer
         loan.setStatus(Loan.LoanStatus.TREASURER_DISBURSEMENT);
         loan.setApprovalDate(LocalDate.now());
         loanRepository.save(loan);

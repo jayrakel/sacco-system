@@ -33,5 +33,8 @@ public class CreateDepositRequest {
 
     private String paymentReference;  // External reference
 
+    // ✅ ADDED: Capture the specific bank GL Code (e.g., "1010" for Equity)
+    private String bankAccountCode; 
+
     private String notes;
 }

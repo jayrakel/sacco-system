@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'; // ✅ Added useSearchParams, Link
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import api from '../api';
 
@@ -9,7 +9,7 @@ import {
     TrendingUp, CreditCard, UserPlus, FileText,
     Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
     PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
-    Briefcase, Calendar, Filter
+    Briefcase, Calendar, Filter, UserCog, Key
 } from 'lucide-react';
 
 // Components
@@ -29,20 +29,17 @@ import ShareCapitalCard from '../components/ShareCapitalCard';
 
 export default function AdminDashboard() {
     const [user, setUser] = useState(null);
-    
-    // ✅ 1. REPLACE STATE WITH URL SEARCH PARAMS
     const [searchParams] = useSearchParams();
-    const activeTab = searchParams.get('tab') || 'overview'; // Default to 'overview'
+    const activeTab = searchParams.get('tab') || 'overview';
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
     }, []);
 
-    // ✅ 2. UPDATE TAB BUTTON TO USE REAL LINKS
     const TabButton = ({ id, label, icon: Icon }) => (
         <Link
-            to={`?tab=${id}`} // Updates URL like /admin?tab=finance
+            to={`?tab=${id}`}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 border whitespace-nowrap ${
                 activeTab === id
                 ? 'bg-indigo-900 text-white shadow-md border-indigo-900'
@@ -76,6 +73,7 @@ export default function AdminDashboard() {
             case 'assets': return <AssetManager />;
             case 'reports': return <ReportsDashboard />;
             case 'members': return <MembersTab />;
+            case 'users': return <SystemUsersTab />; // ✅ NEW USERS TAB
             case 'register':
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-1 animate-in zoom-in-95">
@@ -106,8 +104,9 @@ export default function AdminDashboard() {
                         <TabButton id="assets" label="Assets" icon={Briefcase} />
                         <TabButton id="loans" label="Loans & Credit" icon={CreditCard} />
                         <TabButton id="reports" label="Reports" icon={FileBarChart} />
-                        <TabButton id="members" label="Members" icon={Users} />
+                        <TabButton id="members" label="Sacco Members" icon={Users} />
                         <div className="w-px bg-slate-300 mx-1 h-6 self-center"></div>
+                        <TabButton id="users" label="System Users" icon={UserCog} /> {/* ✅ NEW BUTTON */}
                         <TabButton id="register" label="Register New" icon={UserPlus} />
                         <TabButton id="settings" label="Configuration" icon={Settings} />
                         <TabButton id="audit" label="Audit & Security" icon={ShieldCheck} />
@@ -129,77 +128,36 @@ function OverviewTab() {
     const [stats, setStats] = useState({ totalMembers: 0, totalSavings: 0, totalLoansIssued: 0, netIncome: 0 });
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
-    
-    // ✅ 3. USE NAVIGATE FOR INTERNAL ACTIONS
     const navigate = useNavigate(); 
-
-    // Date Range State
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
     });
 
-    useEffect(() => {
-        loadDashboard();
-    }, []); // Initial load only
+    useEffect(() => { loadDashboard(); }, []); 
 
     const loadDashboard = async () => {
         try {
-            console.log('📊 Loading Admin Dashboard...');
-
-            // 1. Fetch Summary Stats (Always Today)
-            console.log('🔄 Fetching /api/reports/today...');
             const todayRes = await api.get('/api/reports/today');
-            console.log('✅ Today report response:', todayRes.data);
-
-            if (todayRes.data.success) {
-                console.log('📈 Stats loaded:', todayRes.data.data);
-                setStats(todayRes.data.data);
-            } else {
-                console.warn('⚠️ Today report unsuccessful:', todayRes.data);
-            }
-
-            // 2. Fetch Chart Data
-            console.log('📊 Fetching chart data...');
+            if (todayRes.data.success) setStats(todayRes.data.data);
             fetchChartData();
-
             setLoading(false);
-            console.log('✅ Dashboard loaded successfully');
-        } catch (e) {
-            console.error("❌ Dashboard Load Failed:");
-            console.error('Full error:', e);
-            setLoading(false);
-        }
+        } catch (e) { setLoading(false); }
     };
 
-    // Fetch Chart Data with Custom Dates
     const fetchChartData = async () => {
         try {
-            console.log(`🔄 Fetching chart data from ${dateRange.start} to ${dateRange.end}...`);
             const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
-            
-            if (chartRes.data.success && chartRes.data.data.length > 0) {
-                setChartData(chartRes.data.data);
-            } else {
-                setChartData([]); // Empty state if no data
-            }
-        } catch (e) {
-            console.error("❌ Chart Data Failed:", e);
-        }
+            if (chartRes.data.success) setChartData(chartRes.data.data);
+        } catch (e) {}
     };
 
     const handleGenerateReport = async () => {
         if(!window.confirm("Generate End-of-Day Financial Report?")) return;
-        try {
-            await api.post('/api/reports/generate');
-            alert("✅ Report Generated successfully! Check Reports tab.");
-            navigate('?tab=reports'); // ✅ Link navigation
-        } catch (e) { alert("Report Generation Failed"); }
+        try { await api.post('/api/reports/generate'); alert("✅ Report Generated!"); navigate('?tab=reports'); } catch (e) {}
     };
 
-    const handleSystemDiag = () => {
-        alert("System Status: Operational\nDatabase: Connected\nEmail Service: Active");
-    };
+    const handleSystemDiag = () => { alert("System Status: Operational\nDatabase: Connected\nEmail Service: Active"); };
 
     const StatCard = ({ label, value, icon: Icon, color, subtext }) => (
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all group">
@@ -207,7 +165,6 @@ function OverviewTab() {
                 <div className={`p-3 rounded-xl ${color} text-white shadow-sm group-hover:scale-110 transition-transform`}>
                     <Icon size={22} />
                 </div>
-                <span className="bg-slate-50 text-slate-400 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wide">Today</span>
             </div>
             <div>
                 <h3 className="text-2xl font-bold text-slate-800 tracking-tight mb-1">
@@ -223,129 +180,55 @@ function OverviewTab() {
 
     return (
         <div className="space-y-6 animate-in fade-in">
-
-            {/* STATS GRID */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <StatCard label="Total Savings" value={stats.totalSavings} icon={Wallet} color="bg-emerald-600" subtext="Member Deposits" />
                 <StatCard label="Net Income" value={stats.netIncome} icon={TrendingUp} color="bg-indigo-600" subtext="Fees + Interest - Expenses" />
                 <StatCard label="Active Members" value={stats.totalMembers} icon={Users} color="bg-blue-600" subtext="Registered & Verified" />
                 <StatCard label="Loans Issued" value={stats.totalLoansIssued} icon={CreditCard} color="bg-purple-600" subtext="Total Disbursed" />
-                
-                {/* Share Capital Card */}
                 <ShareCapitalCard />
             </div>
-
-            {/* CHART ROW */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* DYNAMIC CHART WITH CUSTOM DATE FILTER */}
+            
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
-
-                    {/* Header with Title & Custom Date Picker */}
                     <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-4">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
-                            <Activity size={20} className="text-emerald-600"/>
-                            Performance
+                            <Activity size={20} className="text-emerald-600"/> Performance
                         </h3>
-
-                        {/* DATE RANGE FILTER UI */}
                         <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-                            <div className="flex items-center gap-1 px-2">
-                                <Calendar size={14} className="text-slate-400"/>
-                                <input
-                                    type="date"
-                                    value={dateRange.start}
-                                    onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                                    className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer"
-                                />
-                            </div>
+                            <input type="date" value={dateRange.start} onChange={(e) => setDateRange({...dateRange, start: e.target.value})} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer" />
                             <span className="text-slate-300">|</span>
-                            <div className="flex items-center gap-1 px-2">
-                                <input
-                                    type="date"
-                                    value={dateRange.end}
-                                    onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                                    className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer"
-                                />
-                            </div>
-                            <button
-                                onClick={fetchChartData}
-                                className="bg-slate-900 text-white p-1.5 rounded-md hover:bg-slate-800 transition"
-                                title="Apply Filter"
-                            >
-                                <Filter size={14} />
-                            </button>
+                            <input type="date" value={dateRange.end} onChange={(e) => setDateRange({...dateRange, end: e.target.value})} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-24 cursor-pointer" />
+                            <button onClick={fetchChartData} className="bg-slate-900 text-white p-1.5 rounded-md hover:bg-slate-800 transition"><Filter size={14} /></button>
                         </div>
-
-                        {/* ✅ Button is now a Link */}
-                        <Link
-                            to="?tab=reports"
-                            className="hidden sm:flex text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition items-center gap-1 whitespace-nowrap"
-                        >
-                            View Reports <ChevronRight size={14}/>
-                        </Link>
                     </div>
-
-                    {/* The Chart */}
                     <div className="h-64 w-full">
-                        {chartData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#059669" stopOpacity={0.1}/>
-                                            <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
-                                        </linearGradient>
-                                        <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
-                                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                                    <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                    <Legend verticalAlign="top" height={36} iconType="circle" />
-                                    <Area type="monotone" dataKey="income" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" name="Income" />
-                                    <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" name="Expenses" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm italic gap-2">
-                                <Activity className="opacity-20" size={32} />
-                                No data found for this date range.
-                            </div>
-                        )}
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#059669" stopOpacity={0.1}/>
+                                        <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
+                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
+                                <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                                <Tooltip />
+                                <Area type="monotone" dataKey="income" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
-
-                {/* QUICK ACTIONS */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
                     <div className="space-y-3">
                         <button onClick={handleGenerateReport} className="w-full bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-emerald-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-emerald-600"><FileText size={16}/></div>
-                            <div>
-                                <span className="block">Generate Report</span>
-                                <span className="text-[10px] text-slate-400 font-normal">Create daily financial summary</span>
-                            </div>
+                            <div><span className="block">Generate Report</span></div>
                         </button>
-
-                        {/* ✅ Link navigation for Review Members */}
-                        <Link to="?tab=members" className="w-full bg-slate-50 hover:bg-blue-50 hover:text-blue-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-blue-200 group text-left">
-                            <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-blue-600"><Users size={16}/></div>
-                            <div>
-                                <span className="block">Review Members</span>
-                                <span className="text-[10px] text-slate-400 font-normal">Manage member accounts</span>
-                            </div>
-                        </Link>
-
                         <button onClick={handleSystemDiag} className="w-full bg-slate-50 hover:bg-amber-50 hover:text-amber-700 p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border border-slate-100 hover:border-amber-200 group text-left">
                             <div className="bg-white p-1.5 rounded-lg shadow-sm group-hover:shadow text-amber-600"><AlertCircle size={16}/></div>
-                            <div>
-                                <span className="block">System Status</span>
-                                <span className="text-[10px] text-slate-400 font-normal">Check connection health</span>
-                            </div>
+                            <div><span className="block">System Status</span></div>
                         </button>
                     </div>
                 </div>
@@ -539,21 +422,134 @@ function MembersTab() {
                         {members.map((m) => (
                             <tr key={m.id} className="hover:bg-slate-50 transition">
                                 <td className="p-4 font-mono text-slate-500 text-xs">{m.memberNumber}</td>
-                                <td className="p-4 font-bold text-slate-800 flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold border border-emerald-100">
-                                        {m.firstName.charAt(0)}{m.lastName.charAt(0)}
-                                    </div>
-                                    {m.firstName} {m.lastName}
-                                </td>
+                                <td className="p-4 font-bold text-slate-800">{m.firstName} {m.lastName}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.email}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.phoneNumber}</td>
                                 <td className="p-4"><span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-[10px] font-bold uppercase">{m.status}</span></td>
                                 <td className="p-4 text-right font-bold text-slate-800">KES {Number(m.totalSavings || 0).toLocaleString()}</td>
                             </tr>
                         ))}
-                        {members.length === 0 && (
-                            <tr><td colSpan="6" className="p-10 text-center text-slate-400 italic">No members found.</td></tr>
-                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+// ==================================================================================
+// 4. ✅ NEW: SYSTEM USERS TAB (Manage Staff & Passwords)
+// ==================================================================================
+function SystemUsersTab() {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchUsers();
+    }, []);
+
+    const fetchUsers = async () => {
+        try {
+            const res = await api.get('/api/users');
+            if(res.data.success) setUsers(res.data.data);
+        } catch (e) {
+            console.error("Failed to load users", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerify = async (userId) => {
+        if(!window.confirm("Force verify this user's email?")) return;
+        try {
+            await api.post(`/api/users/${userId}/verify`);
+            alert("User verified successfully!");
+            fetchUsers();
+        } catch (e) {
+            alert(e.response?.data?.message || "Verification Failed");
+        }
+    };
+
+    const handleResetPassword = async (userId) => {
+        const newPass = prompt("Enter new password for this user:");
+        if (!newPass || newPass.length < 6) {
+            if(newPass) alert("Password must be at least 6 characters.");
+            return;
+        }
+        
+        try {
+            await api.post(`/api/users/${userId}/reset-password`, { password: newPass });
+            alert(`Password reset successfully to: ${newPass}`);
+        } catch (e) {
+            alert(e.response?.data?.message || "Reset Failed");
+        }
+    };
+
+    if (loading) return <div className="p-10 text-center text-slate-400">Loading Users...</div>;
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/50">
+                <div>
+                    <h2 className="text-lg font-bold text-indigo-900">System Users & Staff</h2>
+                    <p className="text-slate-500 text-xs">Manage access for Admins, Officers, and Tellers.</p>
+                </div>
+                <button onClick={fetchUsers} className="text-xs font-bold text-indigo-600 hover:underline">Refresh List</button>
+            </div>
+            
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs tracking-wider border-b border-slate-100">
+                        <tr>
+                            <th className="p-4">Name</th>
+                            <th className="p-4">Role</th>
+                            <th className="p-4">Email</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {users.map((u) => (
+                            <tr key={u.id} className="hover:bg-slate-50 transition">
+                                <td className="p-4 font-bold text-slate-800">
+                                    {u.firstName} {u.lastName}
+                                </td>
+                                <td className="p-4">
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                                        u.role === 'ADMIN' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                        u.role === 'MEMBER' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        'bg-amber-50 text-amber-700 border-amber-200'
+                                    }`}>
+                                        {u.role.replace(/_/g, ' ')}
+                                    </span>
+                                </td>
+                                <td className="p-4 text-slate-500 text-xs font-mono">{u.email}</td>
+                                <td className="p-4">
+                                    {u.emailVerified ? (
+                                        <span className="text-emerald-600 text-xs font-bold flex items-center gap-1"><ShieldCheck size={12}/> Verified</span>
+                                    ) : (
+                                        <span className="text-rose-500 text-xs font-bold flex items-center gap-1"><AlertCircle size={12}/> Unverified</span>
+                                    )}
+                                </td>
+                                <td className="p-4 text-center flex justify-center gap-2">
+                                    {!u.emailVerified && (
+                                        <button 
+                                            onClick={() => handleVerify(u.id)}
+                                            className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition"
+                                            title="Force Verify Email"
+                                        >
+                                            <ShieldCheck size={16}/>
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => handleResetPassword(u.id)}
+                                        className="p-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition"
+                                        title="Reset Password"
+                                    >
+                                        <Key size={16}/>
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
             </div>

@@ -98,8 +98,9 @@ public class UserController {
      */
     @GetMapping("/role/{role}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Map<String, Object>> getUsersByRole(@PathVariable User.Role role) {
+    public ResponseEntity<Map<String, Object>> getUsersByRole(@PathVariable("role") String roleStr) {
         try {
+            User.Role role = User.Role.valueOf(roleStr.toUpperCase());
             List<UserDTO> users = userService.getUsersByRole(role);
             
             Map<String, Object> response = new HashMap<>();
@@ -199,6 +200,35 @@ public class UserController {
             response.put("success", false);
             response.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+    }
+
+    // ✅ NEW: Admin Force Verify
+    @PostMapping("/{id}/verify")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> forceVerifyUser(@PathVariable UUID id) {
+        try {
+            userService.adminVerifyUser(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "User verified successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Admin Force Password Reset
+    @PostMapping("/{id}/reset-password")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> resetUserPassword(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
+        try {
+            String newPassword = payload.get("password");
+            if (newPassword == null || newPassword.length() < 6) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Password must be at least 6 characters"));
+            }
+            
+            userService.adminResetPassword(id, newPassword);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Password reset successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 }

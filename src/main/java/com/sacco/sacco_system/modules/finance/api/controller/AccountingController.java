@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/accounting")
@@ -78,6 +79,20 @@ public class AccountingController {
                 "mappingsCount", glMappingRepository.count(),
                 "journalEntriesCount", journalRepository.count()
         ));
+    }
+
+    // ✅ NEW ENDPOINT: Get only Active Asset Accounts (Potential Banks)
+    @GetMapping("/accounts/active-banks")
+    public ResponseEntity<Map<String, Object>> getActiveBankAccounts() {
+        List<GLAccount> accounts = accountRepository.findAll(Sort.by("code"));
+        
+        // Filter for Active Assets. 
+        // Note: In a robust system, you might have a 'SUB_TYPE' = 'BANK', but 'ASSET' is a safe default for now.
+        List<GLAccount> activeBanks = accounts.stream()
+            .filter(a -> a.isActive() && "ASSET".equals(a.getType().toString())) 
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(Map.of("success", true, "data", activeBanks));
     }
 
     // --- 1. CORE ACCOUNTING ---

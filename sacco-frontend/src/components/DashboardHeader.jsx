@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../api';
-import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X, User } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import BrandedSpinner from './BrandedSpinner';
-import { useSettings } from '../context/SettingsContext'; // ✅ Import Settings Context
-import { logoutUser } from '../features/auth/services/authService'; // ✅ Import Auth Service
+import { useSettings } from '../context/SettingsContext'; 
+import { logoutUser } from '../features/auth/services/authService'; 
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     // --- STATE MANAGEMENT ---
@@ -14,23 +14,22 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     // --- HOOKS ---
-    // ✅ 1. Destructure 'settings' to get the name and favicon for the logout screen
     const { settings, getImageUrl } = useSettings();
     const navigate = useNavigate();
     const notifRef = useRef(null);
     const reqRef = useRef(null);
+    const profileRef = useRef(null); // ✅ NEW REF
 
     // --- DROPDOWN VISIBILITY ---
     const [showNotifDropdown, setShowNotifDropdown] = useState(false);
     const [showReqDropdown, setShowReqDropdown] = useState(false);
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false); // ✅ NEW STATE
     const [showArchive, setShowArchive] = useState(false);
 
     const onLogout = () => {
         setIsLoggingOut(true);
         setTimeout(() => {
             logoutUser();
-            // Use navigate to switch screens instantly without a browser reload
-            // This prevents the "double spinner" effect
             navigate('/');
         }, 1500);
     };
@@ -40,6 +39,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         function handleClickOutside(event) {
             if (notifRef.current && !notifRef.current.contains(event.target)) setShowNotifDropdown(false);
             if (reqRef.current && !reqRef.current.contains(event.target)) setShowReqDropdown(false);
+            if (profileRef.current && !profileRef.current.contains(event.target)) setShowProfileDropdown(false); // ✅ CLOSE PROFILE
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -63,39 +63,30 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                 // 3. Logo (System Settings)
                 const settingRes = await api.get('/api/settings').catch(() => ({ data: { data: [] } }));
                 const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
-
-                if (logoSetting && logoSetting.value) {
-                    setLogo(getImageUrl(logoSetting.value));
-                }
+                if (logoSetting && logoSetting.value) setLogo(getImageUrl(logoSetting.value));
 
             } catch (err) { console.error("Fetch error", err); }
         };
         fetchData();
-
-        // Optional Polling
         const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
     }, [user, getImageUrl]);
 
     // --- ACTIONS ---
-
     const handleMarkAsRead = async (id) => {
         const noteToMove = notifications.unread.find(n => n.id === id);
         if (!noteToMove) return;
-
         setNotifications(prev => ({
             ...prev,
             unread: prev.unread.filter(n => n.id !== id),
             history: [{ ...noteToMove, read: true }, ...prev.history]
         }));
-
         await api.patch(`/api/notifications/${id}/read`);
     };
 
     const respondToRequest = async (requestId, accepted) => {
         const action = accepted ? "accept" : "decline";
         if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
-
         try {
             await api.post(`/api/loans/guarantors/${requestId}/respond?accepted=${accepted}`);
             setRequests(prev => prev.filter(r => r.requestId !== requestId));
@@ -103,11 +94,8 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         } catch (err) { alert("Action failed"); }
     };
 
-    // ✅ 2. LOGOUT SCREEN: EXACT MATCH TO APP.JSX SPLASH SCREEN
     if (isLoggingOut) {
-        // Resolve the favicon URL for consistency
         const iconUrl = getImageUrl(settings?.SACCO_FAVICON);
-
         return (
             <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-50 gap-6 animate-in fade-in duration-700">
                 <BrandedSpinner iconUrl={iconUrl} size="xl" borderColor="border-white-100" />
@@ -144,7 +132,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
             {/* --- NAVBAR --- */}
             <nav className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-
+                
                 {/* LOGO AREA */}
                 <div className="flex items-center gap-3">
                     {logo ? (
@@ -164,9 +152,9 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                             <Users size={22} />
                             {requests.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}
                         </button>
-
                         {showReqDropdown && (
-                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                             <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                                {/* ... Guarantor Request List (Same as before) ... */}
                                 <div className="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
                                     <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Guarantor Requests</span>
                                     <button onClick={() => setShowReqDropdown(false)}><XCircle size={16} className="text-amber-400 hover:text-amber-600"/></button>
@@ -175,16 +163,9 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                                     {requests.length === 0 ? <div className="p-6 text-center text-slate-400 text-xs italic">No pending requests.</div> : requests.map(r => (
                                         <div key={r.requestId} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                             <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
-                                            <p className="text-xs text-slate-500 mb-3">
-                                                Requesting guarantee: <span className="font-mono font-bold text-slate-700">KES {parseInt(r.guaranteeAmount).toLocaleString()}</span>
-                                            </p>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => respondToRequest(r.requestId, true)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors">
-                                                    <Check size={14}/> Accept
-                                                </button>
-                                                <button onClick={() => respondToRequest(r.requestId, false)} className="flex-1 bg-white border border-red-200 text-red-600 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-red-50 transition-colors">
-                                                    <X size={14}/> Decline
-                                                </button>
+                                            <div className="flex gap-2 mt-2">
+                                                <button onClick={() => respondToRequest(r.requestId, true)} className="flex-1 bg-emerald-600 text-white text-xs py-1 rounded">Accept</button>
+                                                <button onClick={() => respondToRequest(r.requestId, false)} className="flex-1 bg-white border border-red-200 text-red-600 text-xs py-1 rounded">Decline</button>
                                             </div>
                                         </div>
                                     ))}
@@ -199,9 +180,8 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                             <Bell size={22} />
                             {notifications.unread.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
                         </button>
-
                         {showNotifDropdown && (
-                            <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                             <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
                                 <div className="bg-slate-50 p-3 border-b border-slate-100 flex justify-between items-center">
                                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Notifications</span>
                                     <button onClick={() => { setShowArchive(true); setShowNotifDropdown(false); }} className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1">
@@ -220,7 +200,6 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                                                     <div>
                                                         <p className={`text-sm ${!n.read ? 'font-bold text-slate-800' : 'text-slate-600'}`}>{n.title}</p>
                                                         <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                                                        <p className="text-[10px] text-slate-400 mt-2">{new Date(n.createdAt).toLocaleTimeString()} · {new Date(n.createdAt).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -231,19 +210,52 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                         )}
                     </div>
 
-                    {/* SEPARATOR */}
                     <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
 
-                    {/* USER PROFILE */}
-                    <div className="text-right hidden sm:block">
-                        <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">{user?.role || 'MEMBER'}</p>
-                        <p className="text-sm font-bold text-slate-700">{user?.firstName} {user?.lastName}</p>
-                    </div>
+                    {/* 3. ✅ NEW USER PROFILE DROPDOWN */}
+                    <div className="relative" ref={profileRef}>
+                        <button 
+                            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                            className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded-full transition border border-transparent hover:border-slate-200"
+                        >
+                            <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold overflow-hidden border border-indigo-200">
+                                {user?.profileImageUrl ? (
+                                    <img src={getImageUrl(user.profileImageUrl)} alt="Profile" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span>{user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}</span>
+                                )}
+                            </div>
+                        </button>
 
-                    {/* LOGOUT */}
-                    <button onClick={onLogout} className="bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition border border-slate-200 hover:border-red-100">
-                        <LogOut size={18}/>
-                    </button>
+                        {showProfileDropdown && (
+                            <div className="absolute right-0 mt-3 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                                {/* Header */}
+                                <div className="p-4 border-b border-slate-50 bg-slate-50/50">
+                                    <p className="text-sm font-bold text-slate-800">{user?.firstName} {user?.lastName}</p>
+                                    <p className="text-xs text-slate-500 font-medium uppercase mt-0.5">{user?.role || 'MEMBER'}</p>
+                                    <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+                                </div>
+
+                                {/* Menu Items */}
+                                <div className="p-2">
+                                    <Link 
+                                        to="/dashboard?tab=profile" 
+                                        onClick={() => setShowProfileDropdown(false)}
+                                        className="flex items-center gap-3 w-full p-2.5 rounded-lg text-sm font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition"
+                                    >
+                                        <User size={18}/> My Profile
+                                    </Link>
+                                    
+                                    <button 
+                                        onClick={onLogout}
+                                        className="flex items-center gap-3 w-full p-2.5 rounded-lg text-sm font-bold text-rose-600 hover:bg-rose-50 transition mt-1"
+                                    >
+                                        <LogOut size={18}/> Sign Out
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </nav>
         </>

@@ -69,7 +69,10 @@ public class DepositService {
         // 1. Validate allocations sum equals total
         validateAllocations(request);
 
-        // 2. Create deposit entity (Initial State)
+        // ✅ 2. Determine the Source GL Account ONCE based on Payment Method and optional Bank Code
+        String sourceAccount = getDebitAccountForPayment(request.getPaymentMethod(), request.getBankAccountCode());
+
+        // 3. Create deposit entity (Initial State)
         Deposit deposit = Deposit.builder()
                 .member(member)
                 .totalAmount(request.getTotalAmount())
@@ -78,15 +81,15 @@ public class DepositService {
                 .paymentReference(request.getPaymentReference())
                 .notes(request.getNotes())
                 .allocations(new ArrayList<>())
-                .createdAt(LocalDateTime.now()) // Ensure createdAt is set
+                .createdAt(LocalDateTime.now())
                 .build();
 
-        // 3. Process each allocation (FAIL FAST STRATEGY)
+        // 4. Process each allocation (FAIL FAST STRATEGY)
         List<DepositAllocation> allocations = new ArrayList<>();
 
         for (AllocationRequest allocationReq : request.getAllocations()) {
-            // This will throw an exception if validation fails or accounting fails
-            DepositAllocation allocation = processAllocation(member, deposit, allocationReq);
+            // ✅ Pass the determined sourceAccount to the processor
+            DepositAllocation allocation = processAllocation(member, deposit, allocationReq, sourceAccount);
             allocations.add(allocation);
         }
 
@@ -94,7 +97,7 @@ public class DepositService {
         deposit.setStatus(DepositStatus.COMPLETED);
         deposit.setProcessedAt(LocalDateTime.now());
 
-        // 4. Save deposit (Cascades allocations)
+        // 5. Save deposit (Cascades allocations)
         Deposit savedDeposit = depositRepository.save(deposit);
 
         return convertToDTO(savedDeposit);
@@ -103,7 +106,7 @@ public class DepositService {
     /**
      * Process a single allocation
      */
-    private DepositAllocation processAllocation(Member member, Deposit deposit, AllocationRequest request) {
+    private DepositAllocation processAllocation(Member member, Deposit deposit, AllocationRequest request, String sourceAccount) {
         DepositAllocation allocation = DepositAllocation.builder()
                 .deposit(deposit)
                 .destinationType(request.getDestinationType())
@@ -114,19 +117,19 @@ public class DepositService {
 
         switch (request.getDestinationType()) {
             case SAVINGS_ACCOUNT:
-                processSavingsAllocation(member, allocation, request);
+                processSavingsAllocation(member, allocation, request, sourceAccount);
                 break;
             case LOAN_REPAYMENT:
-                processLoanAllocation(member, allocation, request);
+                processLoanAllocation(member, allocation, request, sourceAccount);
                 break;
             case FINE_PAYMENT:
-                processFineAllocation(member, allocation, request);
+                processFineAllocation(member, allocation, request, sourceAccount);
                 break;
             case CONTRIBUTION_PRODUCT:
-                processContributionAllocation(member, allocation, request);
+                processContributionAllocation(member, allocation, request, sourceAccount);
                 break;
             case SHARE_CAPITAL:
-                processShareCapitalAllocation(member, allocation, request);
+                processShareCapitalAllocation(member, allocation, request, sourceAccount);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown destination type: " + request.getDestinationType());
@@ -138,7 +141,7 @@ public class DepositService {
     /**
      * Route money to savings account
      */
-    private void processSavingsAllocation(Member member, DepositAllocation allocation, AllocationRequest request) {
+    private void processSavingsAllocation(Member member, DepositAllocation allocation, AllocationRequest request, String sourceAccount) {
         if (request.getSavingsAccountId() == null) {
             throw new IllegalArgumentException("Savings account ID is required");
         }
@@ -154,15 +157,12 @@ public class DepositService {
             throw new IllegalStateException("Savings account is not active");
         }
 
-        // ✅ Determine Source Account based on Payment Method
-        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
-
-        // Deposit to savings account (Passing Source Account)
+        // Deposit to savings account using the determined Source Account
         savingsService.deposit(
             account.getAccountNumber(), 
             allocation.getAmount(), 
             "Multi-deposit allocation", 
-            sourceAccount // ✅ Fixed: Passing source account
+            sourceAccount
         );
 
         allocation.setSavingsAccount(account);
@@ -174,7 +174,7 @@ public class DepositService {
     /**
      * Route money to loan repayment
      */
-    private void processLoanAllocation(Member member, DepositAllocation allocation, AllocationRequest request) {
+    private void processLoanAllocation(Member member, DepositAllocation allocation, AllocationRequest request, String sourceAccount) {
         if (request.getLoanId() == null) {
             throw new IllegalArgumentException("Loan ID is required");
         }
@@ -190,14 +190,11 @@ public class DepositService {
             throw new IllegalStateException("Loan is not active");
         }
 
-        // ✅ Determine Source Account based on Payment Method
-        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
-
-        // Make loan repayment (Passing Source Account)
+        // Make loan repayment using the determined Source Account
         loanRepaymentService.processPayment(
             loan, 
             allocation.getAmount(), 
-            sourceAccount // ✅ Fixed: Passing source account
+            sourceAccount
         );
 
         allocation.setLoan(loan);
@@ -209,7 +206,7 @@ public class DepositService {
     /**
      * Route money to fine payment
      */
-    private void processFineAllocation(Member member, DepositAllocation allocation, AllocationRequest request) {
+    private void processFineAllocation(Member member, DepositAllocation allocation, AllocationRequest request, String sourceAccount) {
         if (request.getFineId() == null) {
             throw new IllegalArgumentException("Fine ID is required");
         }
@@ -231,16 +228,13 @@ public class DepositService {
         fine.setPaymentReference(allocation.getDeposit().getTransactionReference());
         fineRepository.save(fine);
 
-        // ✅ Determine Source Account based on Payment Method
-        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
-
-        // Create accounting entry with Source Account
+        // Create accounting entry using the determined Source Account
         accountingService.postEvent(
                 "FINE_PAYMENT",
                 "Fine payment: " + fine.getDescription(),
                 allocation.getDeposit().getTransactionReference(),
                 allocation.getAmount(),
-                sourceAccount // ✅ Fixed: Passing source account
+                sourceAccount 
         );
 
         // Create transaction record
@@ -264,7 +258,7 @@ public class DepositService {
     /**
      * Route money to contribution product
      */
-    private void processContributionAllocation(Member member, DepositAllocation allocation, AllocationRequest request) {
+    private void processContributionAllocation(Member member, DepositAllocation allocation, AllocationRequest request, String sourceAccount) {
         if (request.getDepositProductId() == null) {
             throw new IllegalArgumentException("Deposit product ID is required");
         }
@@ -287,16 +281,13 @@ public class DepositService {
         
         depositProductRepository.save(product);
 
-        // ✅ Determine Source Account
-        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
-
-        // Create accounting entry with Source Account
+        // Create accounting entry using the determined Source Account
         accountingService.postEvent(
                 "CONTRIBUTION_RECEIVED",
                 "Contribution to: " + product.getName(),
                 allocation.getDeposit().getTransactionReference(),
                 allocation.getAmount(),
-                sourceAccount // ✅ Fixed: Passing source account
+                sourceAccount
         );
 
         // Create transaction record
@@ -320,7 +311,7 @@ public class DepositService {
     /**
      * Route money to share capital
      */
-    private void processShareCapitalAllocation(Member member, DepositAllocation allocation, AllocationRequest request) {
+    private void processShareCapitalAllocation(Member member, DepositAllocation allocation, AllocationRequest request, String sourceAccount) {
         // Get configured share value from system settings
         BigDecimal shareValue = BigDecimal.valueOf(systemSettingService.getDouble("SHARE_VALUE", 100.0));
         
@@ -343,24 +334,21 @@ public class DepositService {
         // Calculate total shares owned = paidAmount / shareValue
         BigDecimal sharesOwned = shareCapital.getPaidAmount().divide(shareValue, 2, java.math.RoundingMode.DOWN);
         shareCapital.setPaidShares(sharesOwned);
-        shareCapital.setTotalShares(sharesOwned); // For now, all shares are paid
+        shareCapital.setTotalShares(sharesOwned); 
         
         shareCapitalRepository.save(shareCapital);
 
-        // Update member total shares (used for loan eligibility checks)
+        // Update member total shares
         member.setTotalShares(shareCapital.getPaidAmount());
         memberRepository.save(member);
 
-        // ✅ Determine Source Account
-        String sourceAccount = getDebitAccountForPayment(allocation.getDeposit().getPaymentMethod());
-
-        // Create accounting entry with Source Account
+        // Create accounting entry using the determined Source Account
         accountingService.postEvent(
                 "SHARE_CAPITAL_PURCHASE", 
                 "Share capital contribution",
                 allocation.getDeposit().getTransactionReference(),
                 allocation.getAmount(),
-                sourceAccount // ✅ Fixed: Passing source account
+                sourceAccount
         );
 
         // Create transaction record
@@ -409,7 +397,6 @@ public class DepositService {
             );
         }
 
-        // Validate all amounts are positive
         request.getAllocations().forEach(allocation -> {
             if (allocation.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new IllegalArgumentException("All allocation amounts must be greater than zero");
@@ -489,13 +476,19 @@ public class DepositService {
 
     /**
      * ✅ Helper method to get the correct Debit Account based on Payment Method
+     * UPDATED: Accepts optional bankAccountCode to route to specific banks
      */
-    private String getDebitAccountForPayment(String paymentMethod) {
+    private String getDebitAccountForPayment(String paymentMethod, String bankAccountCode) {
         if (paymentMethod == null) return "1001"; // Default to Cash
         
         switch (paymentMethod.toUpperCase()) {
             case "MPESA": return "1002"; // M-Pesa Paybill
-            case "BANK": return "1010";  // Default Bank (Equity). Ideally this comes from the request.
+            case "BANK": 
+                // ✅ If user provided a specific bank code, USE IT.
+                if (bankAccountCode != null && !bankAccountCode.isEmpty()) {
+                    return bankAccountCode;
+                }
+                return "1010"; // Fallback to default Bank (Equity)
             case "CASH": return "1001";  // Cash on Hand
             default: return "1001";
         }

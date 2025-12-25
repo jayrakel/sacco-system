@@ -7,6 +7,7 @@ import MemberSavings from '../features/member/components/MemberSavings';
 import MemberLoans from '../features/member/components/MemberLoans';
 import MemberActivities from '../features/member/components/MemberActivities';
 import MemberStatements from '../features/member/components/MemberStatements';
+import MemberProfile from '../features/member/components/MemberProfile'; // Kept for 'profile' param support if needed
 import api from '../api';
 
 export default function MemberDashboard() {
@@ -115,8 +116,8 @@ export default function MemberDashboard() {
                     </div>
                 )}
 
-                {/* Dashboard Tabs - Complete Link Implementation */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 pb-2 border-b border-slate-200">
+                {/* Dashboard Tabs - Adjusted for 5 items (Profile Removed) */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pb-2 border-b border-slate-200">
                     <Link 
                         to="?tab=overview" 
                         className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-emerald-200 group text-left ${
@@ -130,10 +131,7 @@ export default function MemberDashboard() {
                         }`}>
                             <CreditCard size={16}/>
                         </div>
-                        <div>
-                            <span className="block">Financial Overview</span>
-                            <span className="text-[10px] text-slate-400 font-normal">View savings & loan summary</span>
-                        </div>
+                        <span className="block truncate">Overview</span>
                     </Link>
                     
                     <Link 
@@ -149,10 +147,7 @@ export default function MemberDashboard() {
                         }`}>
                             <PiggyBank size={16}/>
                         </div>
-                        <div>
-                            <span className="block">My Savings</span>
-                            <span className="text-[10px] text-slate-400 font-normal">View your savings accounts</span>
-                        </div>
+                        <span className="block truncate">Savings</span>
                     </Link>
                     
                     <Link 
@@ -168,10 +163,7 @@ export default function MemberDashboard() {
                         }`}>
                             <HandCoins size={16}/>
                         </div>
-                        <div>
-                            <span className="block">My Loans</span>
-                            <span className="text-[10px] text-slate-400 font-normal">View your loan accounts</span>
-                        </div>
+                        <span className="block truncate">Loans</span>
                     </Link>
                     
                     <Link 
@@ -187,10 +179,7 @@ export default function MemberDashboard() {
                         }`}>
                             <FileText size={16}/>
                         </div>
-                        <div>
-                            <span className="block">Statements</span>
-                            <span className="text-[10px] text-slate-400 font-normal">View your statements</span>
-                        </div>
+                        <span className="block truncate">Statements</span>
                     </Link>
                     
                     <Link 
@@ -206,10 +195,7 @@ export default function MemberDashboard() {
                         }`}>
                             <Activity size={16}/>
                         </div>
-                        <div>
-                            <span className="block">Activities</span>
-                            <span className="text-[10px] text-slate-400 font-normal">View your recent activities</span>
-                        </div>
+                        <span className="block truncate">Activities</span>
                     </Link>
                 </div>
 
@@ -219,6 +205,8 @@ export default function MemberDashboard() {
                     {activeTab === 'loans' && <MemberLoans />}
                     {activeTab === 'statements' && <MemberStatements user={user} />}
                     {activeTab === 'activities' && <MemberActivities />}
+                    {/* Render Profile ONLY if 'profile' is active (via Header link), but no Tab for it */}
+                    {activeTab === 'profile' && <MemberProfile />} 
                 </div>
             </main>
         </div>

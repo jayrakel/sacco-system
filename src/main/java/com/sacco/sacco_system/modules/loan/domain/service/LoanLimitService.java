@@ -1,7 +1,8 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
-import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,7 @@ public class LoanLimitService {
 
     /**
      * Calculate available loan limit for a member
-     * STRICT MODE: Considers all loans including pending approvals and disbursements
+     * Returns the LOWER of Savings-Based Limit and Ability-to-Pay Limit.
      */
     public BigDecimal calculateMemberLoanLimit(Member member) {
         Map<String, Object> details = calculateMemberLoanLimitWithDetails(member);
@@ -34,86 +35,102 @@ public class LoanLimitService {
     public Map<String, Object> calculateMemberLoanLimitWithDetails(Member member) {
         Map<String, Object> result = new HashMap<>();
 
-        // 1. Get Settings (Default Multiplier is usually 3x)
+        // =================================================================================
+        // 1. SAVINGS BASED LIMIT (The "Collateral" Limit)
+        // =================================================================================
         double multiplier = systemSettingService.getDouble("LOAN_LIMIT_MULTIPLIER");
         if (multiplier <= 0) multiplier = 3.0;
 
-        // 2. Base Limit = Total Savings * Multiplier
         BigDecimal savings = member.getTotalSavings() != null ? member.getTotalSavings() : BigDecimal.ZERO;
-        BigDecimal baseLimit = savings.multiply(BigDecimal.valueOf(multiplier));
+        BigDecimal savingsBasedLimit = savings.multiply(BigDecimal.valueOf(multiplier));
 
-        // 3. Get All Loans for this member
+        // =================================================================================
+        // 2. SALARY BASED LIMIT (The "Ability to Pay" Limit - 1/3rd Rule)
+        // =================================================================================
+        BigDecimal salaryBasedLimit = BigDecimal.ZERO;
+        BigDecimal netSalary = BigDecimal.ZERO;
+        boolean hasIncomeData = false;
+
+        EmploymentDetails emp = member.getEmploymentDetails();
+        if (emp != null && emp.getNetMonthlyIncome() != null) {
+            netSalary = emp.getNetMonthlyIncome();
+            hasIncomeData = true;
+
+            // Rule: Max Monthly Deduction = 2/3 of Net Salary (Member keeps 1/3)
+            double maxDebtRatio = systemSettingService.getDouble("MAX_DEBT_RATIO", 0.66); // Default 66%
+            BigDecimal maxMonthlyRepayment = netSalary.multiply(BigDecimal.valueOf(maxDebtRatio));
+
+            // Estimate Principal: Assuming a standard max tenure (e.g. 48 months)
+            // This is an "optimistic" limit. Real validation happens at application time.
+            int estimateTenure = 48; 
+            salaryBasedLimit = maxMonthlyRepayment.multiply(BigDecimal.valueOf(estimateTenure));
+        }
+
+        // =================================================================================
+        // 3. DETERMINE GROSS LIMIT (Lower of the two)
+        // =================================================================================
+        // If no income data, fallback to Savings Limit (or could be 0 if strict)
+        BigDecimal grossLimit = hasIncomeData 
+                ? savingsBasedLimit.min(salaryBasedLimit) 
+                : savingsBasedLimit; 
+
+        // =================================================================================
+        // 4. SUBTRACT EXISTING DEBT (Strict Calculation)
+        // =================================================================================
         List<Loan> allLoans = loanRepository.findByMemberId(member.getId());
 
-        // 4. STRICT CALCULATION: Include multiple categories
-
-        // Category A: Currently Owing (DISBURSED, ACTIVE)
+        // A: Currently Owing
         BigDecimal currentDebt = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED ||
-                            l.getStatus() == Loan.LoanStatus.ACTIVE)
+                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED || l.getStatus() == Loan.LoanStatus.ACTIVE)
                 .map(l -> l.getLoanBalance() != null ? l.getLoanBalance() : l.getPrincipalAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Category B: PENDING DISBURSEMENT (Approved but not yet disbursed)
-        // These should COUNT against limit because they're already approved!
-        BigDecimal pendingDisbursement = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.TREASURER_DISBURSEMENT ||
-                            l.getStatus() == Loan.LoanStatus.ADMIN_APPROVED ||
-                            l.getStatus() == Loan.LoanStatus.SECRETARY_DECISION ||
-                            l.getStatus() == Loan.LoanStatus.VOTING_CLOSED ||
-                            l.getStatus() == Loan.LoanStatus.APPROVED) // Legacy status
+        // B: Pending / Approved but not Disbursed
+        BigDecimal pendingDebt = allLoans.stream()
+                .filter(l -> l.getStatus() == Loan.LoanStatus.ADMIN_APPROVED ||
+                             l.getStatus() == Loan.LoanStatus.TREASURER_DISBURSEMENT ||
+                             l.getStatus() == Loan.LoanStatus.SECRETARY_DECISION ||
+                             l.getStatus() == Loan.LoanStatus.VOTING_CLOSED ||
+                             l.getStatus() == Loan.LoanStatus.VOTING_OPEN ||
+                             l.getStatus() == Loan.LoanStatus.ON_AGENDA ||
+                             l.getStatus() == Loan.LoanStatus.SECRETARY_TABLED ||
+                             l.getStatus() == Loan.LoanStatus.LOAN_OFFICER_REVIEW ||
+                             l.getStatus() == Loan.LoanStatus.SUBMITTED ||
+                             l.getStatus() == Loan.LoanStatus.GUARANTORS_PENDING ||
+                             l.getStatus() == Loan.LoanStatus.APPLICATION_FEE_PENDING)
                 .map(Loan::getPrincipalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Category C: UNDER REVIEW (Should also count to prevent double applications)
-        BigDecimal underReview = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.SUBMITTED ||
-                            l.getStatus() == Loan.LoanStatus.LOAN_OFFICER_REVIEW ||
-                            l.getStatus() == Loan.LoanStatus.SECRETARY_TABLED ||
-                            l.getStatus() == Loan.LoanStatus.ON_AGENDA ||
-                            l.getStatus() == Loan.LoanStatus.VOTING_OPEN)
-                .map(Loan::getPrincipalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCommitted = currentDebt.add(pendingDebt);
+        BigDecimal availableLimit = grossLimit.subtract(totalCommitted);
 
-        // Category D: PENDING (Waiting for guarantors or fee payment)
-        BigDecimal pendingApplication = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.GUARANTORS_PENDING ||
-                            l.getStatus() == Loan.LoanStatus.APPLICATION_FEE_PENDING)
-                .map(Loan::getPrincipalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Total Committed Amount
-        BigDecimal totalCommitted = currentDebt
-                .add(pendingDisbursement)
-                .add(underReview)
-                .add(pendingApplication);
-
-        // Available Limit
-        BigDecimal availableLimit = baseLimit.subtract(totalCommitted);
-
-        // 5. Check for Defaults - BLOCK completely if defaults exist
+        // =================================================================================
+        // 5. CHECKS & BALANCES
+        // =================================================================================
         boolean hasDefaults = allLoans.stream()
-                .anyMatch(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED ||
-                             l.getStatus() == Loan.LoanStatus.WRITTEN_OFF);
+                .anyMatch(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED || l.getStatus() == Loan.LoanStatus.WRITTEN_OFF);
 
         if (hasDefaults) {
-            availableLimit = BigDecimal.ZERO; // Cannot borrow if you have a bad record
+            availableLimit = BigDecimal.ZERO;
         }
-
-        // 6. Ensure non-negative
         if (availableLimit.compareTo(BigDecimal.ZERO) < 0) {
             availableLimit = BigDecimal.ZERO;
         }
 
-        // Build detailed response
+        // Populate Result for UI
         result.put("memberSavings", savings);
         result.put("multiplier", multiplier);
-        result.put("baseLimit", baseLimit);
+        result.put("netSalary", netSalary);
+        result.put("hasIncomeData", hasIncomeData);
+        
+        result.put("savingsBasedLimit", savingsBasedLimit);
+        result.put("salaryBasedLimit", salaryBasedLimit);
+        result.put("grossLimit", grossLimit);
+        
         result.put("currentDebt", currentDebt);
-        result.put("pendingDisbursement", pendingDisbursement);
-        result.put("underReview", underReview);
-        result.put("pendingApplication", pendingApplication);
+        result.put("pendingDebt", pendingDebt);
         result.put("totalCommitted", totalCommitted);
+        
         result.put("availableLimit", availableLimit);
         result.put("hasDefaults", hasDefaults);
         result.put("canBorrow", !hasDefaults && availableLimit.compareTo(BigDecimal.ZERO) > 0);
@@ -121,14 +138,8 @@ public class LoanLimitService {
         return result;
     }
 
-    /**
-     * Quick check if member can borrow a specific amount
-     */
     public boolean canMemberBorrow(Member member, BigDecimal requestedAmount) {
         BigDecimal availableLimit = calculateMemberLoanLimit(member);
         return availableLimit.compareTo(requestedAmount) >= 0;
     }
 }
-
-
-
