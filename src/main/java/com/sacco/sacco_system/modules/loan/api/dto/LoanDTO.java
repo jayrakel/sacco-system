@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -19,22 +20,17 @@ public class LoanDTO {
     private String memberName;
     private String productName;
     private BigDecimal principalAmount;
-    private BigDecimal interestRate;
+    private BigDecimal loanBalance;
     private Integer duration;
     private String durationUnit;
-    private BigDecimal loanBalance;
     private String status;
     private LocalDate applicationDate;
-    private LocalDate approvalDate;
     private LocalDate disbursementDate;
-    private BigDecimal processingFee;
-    private BigDecimal memberSavings;
     private BigDecimal weeklyRepaymentAmount;
-
-    // âœ… NEW: Missing fields for Voting
-    private int votesYes;
-    private int votesNo;
+    
+    // Fee & Voting info
+    private boolean applicationFeePaid;
+    private BigDecimal processingFee;
+    private Integer votesYes;
+    private Integer votesNo;
 }
-
-
-

@@ -7,7 +7,8 @@ import MemberSavings from '../features/member/components/MemberSavings';
 import MemberLoans from '../features/member/components/MemberLoans';
 import MemberActivities from '../features/member/components/MemberActivities';
 import MemberStatements from '../features/member/components/MemberStatements';
-import MemberProfile from '../features/member/components/MemberProfile'; // Kept for 'profile' param support if needed
+import LoanEntryWorkflow from '../features/loans/components/LoanEntryWorkflow'; // ✅ Imported your new workflow
+import MemberProfile from '../features/member/components/MemberProfile'; 
 import api from '../api';
 
 export default function MemberDashboard() {
@@ -15,18 +16,12 @@ export default function MemberDashboard() {
     const [searchParams] = useSearchParams();
     const [votingAgenda, setVotingAgenda] = useState([]);
     
-    // Get active tab from URL or default to 'overview'
     const activeTab = searchParams.get('tab') || 'overview';
 
     useEffect(() => {
-        // 1. Load cached user first for speed
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
-
-        // 2. Fetch fresh profile from API
         fetchUserProfile();
-
-        // 3. Check for votes
         fetchVotingAgenda(); 
     }, []);
 
@@ -116,85 +111,30 @@ export default function MemberDashboard() {
                     </div>
                 )}
 
-                {/* Dashboard Tabs - Adjusted for 5 items (Profile Removed) */}
+                {/* Dashboard Tabs */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pb-2 border-b border-slate-200">
-                    <Link 
-                        to="?tab=overview" 
-                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-emerald-200 group text-left ${
-                            activeTab === 'overview' 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                            : 'bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border-slate-100'
-                        }`}
-                    >
-                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
-                            activeTab === 'overview' ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-emerald-600'
-                        }`}>
-                            <CreditCard size={16}/>
-                        </div>
+                    <Link to="?tab=overview" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-emerald-200 group text-left ${activeTab === 'overview' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border-slate-100'}`}>
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${activeTab === 'overview' ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-emerald-600'}`}><CreditCard size={16}/></div>
                         <span className="block truncate">Overview</span>
                     </Link>
                     
-                    <Link 
-                        to="?tab=savings" 
-                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-blue-200 group text-left ${
-                            activeTab === 'savings' 
-                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                            : 'bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border-slate-100'
-                        }`}
-                    >
-                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
-                            activeTab === 'savings' ? 'bg-blue-100 text-blue-600' : 'bg-white text-blue-600'
-                        }`}>
-                            <PiggyBank size={16}/>
-                        </div>
+                    <Link to="?tab=savings" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-blue-200 group text-left ${activeTab === 'savings' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border-slate-100'}`}>
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${activeTab === 'savings' ? 'bg-blue-100 text-blue-600' : 'bg-white text-blue-600'}`}><PiggyBank size={16}/></div>
                         <span className="block truncate">Savings</span>
                     </Link>
                     
-                    <Link 
-                        to="?tab=loans" 
-                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-yellow-200 group text-left ${
-                            activeTab === 'loans' 
-                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
-                            : 'bg-slate-50 hover:bg-yellow-50 hover:text-yellow-700 border-slate-100'
-                        }`}
-                    >
-                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
-                            activeTab === 'loans' ? 'bg-yellow-100 text-yellow-600' : 'bg-white text-yellow-600'
-                        }`}>
-                            <HandCoins size={16}/>
-                        </div>
+                    <Link to="?tab=loans" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-yellow-200 group text-left ${activeTab === 'loans' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-slate-50 hover:bg-yellow-50 hover:text-yellow-700 border-slate-100'}`}>
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${activeTab === 'loans' ? 'bg-yellow-100 text-yellow-600' : 'bg-white text-yellow-600'}`}><HandCoins size={16}/></div>
                         <span className="block truncate">Loans</span>
                     </Link>
                     
-                    <Link 
-                        to="?tab=statements" 
-                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-purple-200 group text-left ${
-                            activeTab === 'statements' 
-                            ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                            : 'bg-slate-50 hover:bg-purple-50 hover:text-purple-700 border-slate-100'
-                        }`}
-                    >
-                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
-                            activeTab === 'statements' ? 'bg-purple-100 text-purple-600' : 'bg-white text-purple-600'
-                        }`}>
-                            <FileText size={16}/>
-                        </div>
+                    <Link to="?tab=statements" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-purple-200 group text-left ${activeTab === 'statements' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-50 hover:bg-purple-50 hover:text-purple-700 border-slate-100'}`}>
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${activeTab === 'statements' ? 'bg-purple-100 text-purple-600' : 'bg-white text-purple-600'}`}><FileText size={16}/></div>
                         <span className="block truncate">Statements</span>
                     </Link>
                     
-                    <Link 
-                        to="?tab=activities" 
-                        className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-indigo-200 group text-left ${
-                            activeTab === 'activities' 
-                            ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
-                            : 'bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 border-slate-100'
-                        }`}
-                    >
-                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${
-                            activeTab === 'activities' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-indigo-600'
-                        }`}>
-                            <Activity size={16}/>
-                        </div>
+                    <Link to="?tab=activities" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border hover:border-indigo-200 group text-left ${activeTab === 'activities' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 border-slate-100'}`}>
+                        <div className={`p-1.5 rounded-lg shadow-sm group-hover:shadow ${activeTab === 'activities' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-indigo-600'}`}><Activity size={16}/></div>
                         <span className="block truncate">Activities</span>
                     </Link>
                 </div>
@@ -202,10 +142,20 @@ export default function MemberDashboard() {
                 <div className="min-h-[400px] mt-6">
                     {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
-                    {activeTab === 'loans' && <MemberLoans />}
+                    
+                    {/* ✅ LOANS TAB: Combined Entry Workflow and Loan History */}
+                    {activeTab === 'loans' && (
+                        <div className="space-y-8">
+                            <LoanEntryWorkflow />
+                            <div className="border-t border-slate-200 pt-8">
+                                <h3 className="text-lg font-bold mb-4 text-slate-700">My Loan History</h3>
+                                <MemberLoans />
+                            </div>
+                        </div>
+                    )}
+                    
                     {activeTab === 'statements' && <MemberStatements user={user} />}
                     {activeTab === 'activities' && <MemberActivities />}
-                    {/* Render Profile ONLY if 'profile' is active (via Header link), but no Tab for it */}
                     {activeTab === 'profile' && <MemberProfile />} 
                 </div>
             </main>
