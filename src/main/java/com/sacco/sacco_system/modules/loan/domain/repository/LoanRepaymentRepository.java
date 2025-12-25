@@ -6,7 +6,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,26 +13,19 @@ import java.util.UUID;
 @Repository
 public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, UUID> {
 
-    List<LoanRepayment> findByLoanId(UUID loanId);
-
-    List<LoanRepayment> findByStatus(LoanRepayment.RepaymentStatus status);
-
-    // âœ… FIXED: Added missing method required for Restructuring logic
-    List<LoanRepayment> findByLoanIdAndStatus(UUID loanId, LoanRepayment.RepaymentStatus status);
+    List<LoanRepayment> findByLoanIdOrderByDueDateAsc(UUID loanId);
 
     Optional<LoanRepayment> findFirstByLoanIdAndStatusOrderByDueDateAsc(UUID loanId, LoanRepayment.RepaymentStatus status);
 
-    // For fine calculation - find overdue payments
-    List<LoanRepayment> findByStatusAndDueDateBefore(LoanRepayment.RepaymentStatus status, LocalDate date);
+    /**
+     * ✅ UPDATED: Fixed 'totalPaid' to 'amountPaid' to resolve startup crash
+     */
+    @Query("SELECT SUM(lr.amountPaid) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
+    BigDecimal getTotalRepaymentsCollected();
 
-    @Query("SELECT SUM(lr.totalPaid) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
-    BigDecimal getTotalRepaidAmount();
-
-    @Query("SELECT COUNT(lr) FROM LoanRepayment lr WHERE lr.status = 'OVERDUE'")
-    long countOverdueRepayments();
+    /**
+     * ✅ UPDATED: Fixed 'amount' to 'amountDue' to match LoanRepayment.java
+     */
+    @Query("SELECT SUM(lr.amountDue) FROM LoanRepayment lr WHERE lr.status = 'PENDING'")
+    BigDecimal getTotalExpectedRepayments();
 }
-
-
-
-
-

@@ -91,6 +91,12 @@ public class SystemSettingService {
         return repository.findByKey(key).map(SystemSetting::getValue);
     }
 
+    public String getString(String key, String defaultValue) {
+    return repository.findByKey(key)
+            .map(SystemSetting::getValue)
+            .orElse(defaultValue);
+}
+
     @Transactional
     public SystemSetting createOrUpdate(String key, String value, String description) {
         return repository.findByKey(key)

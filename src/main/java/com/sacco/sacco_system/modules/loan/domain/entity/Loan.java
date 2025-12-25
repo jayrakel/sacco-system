@@ -97,6 +97,8 @@ public class Loan {
         TREASURER_DISBURSEMENT,
         DISBURSED,
         ACTIVE,
+        IN_ARREARS,      // ✅ Add this back
+        ADMIN_APPROVED,
         REJECTED,
         DEFAULTED,
         COMPLETED,

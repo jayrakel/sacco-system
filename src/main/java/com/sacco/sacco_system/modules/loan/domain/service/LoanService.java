@@ -250,4 +250,21 @@ public class LoanService {
 
         return convertToDTO(activeLoan);
     }
+    /**
+ * ✅ Added to resolve LoanController compilation errors
+ */
+public List<LoanDTO> getLoansByMember(UUID memberId) {
+    return loanRepository.findByMemberId(memberId).stream()
+            .map(this::convertToDTO)
+            .toList();
+}
+
+/**
+ * ✅ Added to resolve LoanController compilation errors
+ */
+public LoanDTO getLoanById(UUID loanId) {
+    return loanRepository.findById(loanId)
+            .map(this::convertToDTO)
+            .orElseThrow(() -> new RuntimeException("Loan not found"));
+}
 }

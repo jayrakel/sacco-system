@@ -53,6 +53,20 @@ public class NotificationService {
         }
     }
 
+    @Transactional
+    public void notifyAll(String title, String message) {
+        List<User> allUsers = userRepository.findAll();
+        allUsers.forEach(user -> {
+            try {
+                // Internal App Notification only to avoid spamming external emails
+                createNotification(user, title, message, Notification.NotificationType.INFO);
+            } catch (Exception e) {
+                log.error("Failed to notify user {}: {}", user.getId(), e.getMessage());
+            }
+        });
+        log.info("Broadcast notification sent to {} users: {}", allUsers.size(), title);
+    }
+
     /**
      * Core method to save notification to DB.
      * Used by LoanService and other internal services.
