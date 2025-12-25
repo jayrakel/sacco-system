@@ -114,4 +114,13 @@ public class Loan {
     public String getMemberName() {
         return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
     }
+    /** ✅ Added to resolve LoanAutomationService and LoanCalculatorService errors */
+public LocalDate getExpectedRepaymentDate() {
+    if (this.disbursementDate != null) {
+        return this.durationUnit == DurationUnit.WEEKS ? 
+               this.disbursementDate.plusWeeks(this.duration) : 
+               this.disbursementDate.plusMonths(this.duration);
+    }
+    return this.applicationDate != null ? this.applicationDate.plusMonths(this.duration) : LocalDate.now();
+}
 }

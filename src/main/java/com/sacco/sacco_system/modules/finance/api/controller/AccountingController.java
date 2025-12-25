@@ -174,11 +174,11 @@ public class AccountingController {
     }
 
     // ✅ ADDED: Delete Rule Endpoint
-    @DeleteMapping("/config/mappings/{id}")
-    public ResponseEntity<Map<String, Object>> deleteGlMapping(@PathVariable UUID id) {
-        glMappingRepository.deleteById(id);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Mapping Deleted"));
-    }
+   @DeleteMapping("/config/mappings/{eventName}") // Change from {id}
+public ResponseEntity<Map<String, Object>> deleteGlMapping(@PathVariable String eventName) { // Change UUID to String
+    glMappingRepository.deleteById(eventName); // Fixes incompatible types error
+    return ResponseEntity.ok(Map.of("success", true, "message", "Mapping Deleted"));
+}
 
     // --- 3. CONFIGURATION: FISCAL PERIODS ---
 

@@ -188,7 +188,7 @@ public class LoanDisbursementService {
         }
 
         // Initialize the installment records so the member sees their due dates immediately
-        repaymentService.generateRepaymentSchedule(loan, graceWeeks);
+        repaymentService.generateSchedule(loan);
         loan.setGracePeriodWeeks(graceWeeks);
         loanRepository.save(loan);
 

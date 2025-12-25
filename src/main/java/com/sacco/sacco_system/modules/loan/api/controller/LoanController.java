@@ -2,6 +2,8 @@ package com.sacco.sacco_system.modules.loan.api.controller;
 
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
+import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
@@ -23,6 +25,7 @@ public class LoanController {
 
     private final LoanService loanService;
     private final UserRepository userRepository;
+    private final LoanProductRepository loanProductRepository;
 
     // ========================================================================
     // 1. APPLICATION & GUARANTORS
@@ -146,6 +149,11 @@ public class LoanController {
                 .map(User::getId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
+
+    @GetMapping("/products")
+public ResponseEntity<List<LoanProduct>> getAllProducts() {
+    return ResponseEntity.ok(loanProductRepository.findAll());
+}
 
     /**
      * ✅ STEP 8: Final Disbursement (Treasurer)
