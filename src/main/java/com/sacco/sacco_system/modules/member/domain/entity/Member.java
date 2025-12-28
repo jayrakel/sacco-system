@@ -1,6 +1,4 @@
 package com.sacco.sacco_system.modules.member.domain.entity;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.member.domain.service.MemberService;
 
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
@@ -31,6 +29,12 @@ public class Member {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    // ✅ ADDED: Link to the authentication account to support findByUserId
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", unique = true)
+    @ToString.Exclude
+    private User user;
 
     private String profileImageUrl;
 
@@ -95,6 +99,7 @@ public class Member {
     private List<Transaction> transactions;
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private List<Beneficiary> beneficiaries = new ArrayList<>();
 
     @OneToOne(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -115,7 +120,6 @@ public class Member {
 
     // ---------------------------------------------------------
 
-    // RENAMED: joinDate -> registrationDate (Matches MemberService)
     private LocalDateTime registrationDate;
 
     private LocalDateTime createdAt;
@@ -142,6 +146,3 @@ public class Member {
         PENDING, PAID
     }
 }
-
-
-

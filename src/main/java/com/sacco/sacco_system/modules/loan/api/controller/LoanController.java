@@ -1,6 +1,5 @@
 package com.sacco.sacco_system.modules.loan.api.controller;
 
-import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
@@ -13,8 +12,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,25 +24,57 @@ public class LoanController {
     private final UserRepository userRepository;
     private final LoanProductRepository loanProductRepository;
 
-    // ========================================================================
-    // 1. APPLICATION & GUARANTORS
-    // ========================================================================
+    // --- PHASE 1: ELIGIBILITY ---
 
-    @PostMapping("/initiate-with-fee")
-    public ResponseEntity<?> initiateWithFee(@RequestParam UUID productId, @RequestParam String reference) {
+    /**
+     * Checks if the member meets prerequisites (savings, duration, no active loans)
+     */
+    @GetMapping("/eligibility/check")
+    public ResponseEntity<?> checkEligibility() {
         try {
+            UUID userId = getCurrentMemberId(); // Renamed from getCurrentUserId to match logic
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", loanService.checkEligibility(userId)
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // --- PHASE 2: FEE PAYMENT & INITIATION ---
+
+    /**
+     * Processes the application fee and creates a DRAFT loan record
+     */
+    @PostMapping("/initiate-with-fee")
+    public ResponseEntity<?> initiateWithFee(@RequestBody Map<String, Object> payload) {
+        try {
+            // Extracted from JSON body to match Axios post structure
+            UUID productId = UUID.fromString(payload.get("productId").toString());
+            String reference = payload.get("referenceCode").toString();
+
             UUID memberId = getCurrentMemberId();
             LoanDTO draft = loanService.initiateWithFee(memberId, productId, reference);
+
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
+    // --- PHASE 3: SUBMITTING DETAILS ---
+
+    /**
+     * Submits specific loan amount and duration details
+     */
     @PostMapping("/apply")
-    public ResponseEntity<?> apply(@RequestParam UUID loanId, @RequestParam BigDecimal amount,
-            @RequestParam Integer duration) {
+    public ResponseEntity<?> submitDetails(@RequestBody Map<String, Object> payload) {
         try {
+            UUID loanId = UUID.fromString(payload.get("loanId").toString());
+            BigDecimal amount = new BigDecimal(payload.get("amount").toString());
+            Integer duration = Integer.parseInt(payload.get("duration").toString());
+
             LoanDTO updatedLoan = loanService.submitApplication(loanId, amount, duration);
             return ResponseEntity.ok(Map.of("success", true, "data", updatedLoan));
         } catch (Exception e) {
@@ -53,122 +82,41 @@ public class LoanController {
         }
     }
 
-    @PostMapping("/{loanId}/guarantors")
-    public ResponseEntity<?> addGuarantor(@PathVariable UUID loanId, @RequestBody Map<String, Object> payload) {
-        try {
-            UUID guarantorMemberId = UUID.fromString(payload.get("memberId").toString());
-            BigDecimal amount = new BigDecimal(payload.get("amount").toString());
-            return ResponseEntity
-                    .ok(Map.of("success", true, "data", loanService.addGuarantor(loanId, guarantorMemberId, amount)));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    // ========================================================================
-    // 2. GOVERNANCE & REVIEW
-    // ========================================================================
-
-    @PostMapping("/{id}/submit-review")
-    public ResponseEntity<?> submitForReview(@PathVariable UUID id) {
-        try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.submitToLoanOfficer(id)));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{id}/officer-approve")
-    public ResponseEntity<?> officerApprove(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
-        try {
-            loanService.officerApprove(id, payload.get("comments"));
-            return ResponseEntity.ok(Map.of("success", true, "message", "Forwarded to Secretary"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{id}/table")
-    public ResponseEntity<?> tableLoan(@PathVariable UUID id, @RequestParam String meetingDate) {
-        try {
-            loanService.tableLoanOnAgenda(id, LocalDate.parse(meetingDate));
-            return ResponseEntity.ok(Map.of("success", true, "message", "Added to Agenda"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{id}/start-voting")
-    public ResponseEntity<?> startVoting(@PathVariable UUID id) {
-        try {
-            loanService.openVoting(id);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Voting Open"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{id}/vote")
-    public ResponseEntity<?> castVote(@PathVariable UUID id, @RequestParam boolean voteYes) {
-        try {
-            loanService.castVote(id, getCurrentMemberId(), voteYes);
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/{id}/finalize")
-    public ResponseEntity<?> finalizeVote(@PathVariable UUID id, @RequestParam(required = false) Boolean approved,
-            @RequestParam String comments) {
-        try {
-            loanService.finalizeLoanDecision(id, approved, comments);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Decision Finalized"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    // ========================================================================
-    // 3. QUERIES
-    // ========================================================================
+    // --- QUERIES ---
 
     @GetMapping("/my-loans")
     public ResponseEntity<?> getMyLoans() {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMember(getCurrentMemberId())));
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", loanService.getLoansByMember(getCurrentMemberId())
+        ));
+    }
+
+    @GetMapping("/products")
+    public ResponseEntity<?> getAllProducts() {
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", loanProductRepository.findAll()
+        ));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getLoan(@PathVariable UUID id) {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanById(id)));
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", loanService.getLoanById(id)
+        ));
     }
 
+    // --- HELPERS ---
+
+    /**
+     * Standardized helper to retrieve the UUID of the logged-in user
+     */
     private UUID getCurrentMemberId() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmailOrOfficialEmail(email)
                 .map(User::getId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-    }
-
-    @GetMapping("/products")
-public ResponseEntity<List<LoanProduct>> getAllProducts() {
-    return ResponseEntity.ok(loanProductRepository.findAll());
-}
-
-    /**
-     * ✅ STEP 8: Final Disbursement (Treasurer)
-     * Location: LoanController.java
-     */
-    @PostMapping("/{id}/disburse")
-    public ResponseEntity<?> disburse(@PathVariable UUID id, @RequestParam String reference) {
-        try {
-            LoanDTO disbursed = loanService.disburseLoan(id, reference);
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Loan activated and funds disbursed.",
-                    "data", disbursed));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
+                .orElseThrow(() -> new RuntimeException("Logged-in user not found"));
     }
 }

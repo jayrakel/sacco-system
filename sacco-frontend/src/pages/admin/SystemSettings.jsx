@@ -129,7 +129,7 @@ export default function SystemSettings() {
     // Categorize Settings
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
-    
+
     const operationalSettings = settings.filter(s =>
         s.key.includes('FEE') || s.key.includes('RATE') || s.key.includes('CONTRIBUTION') ||
         s.key.includes('INTEREST') || s.key.includes('GRACE') || s.key.includes('MULTIPLIER') ||
@@ -138,9 +138,9 @@ export default function SystemSettings() {
     );
 
     // ✅ Catch-all for new custom settings that don't fit the above filters
-    const miscSettings = settings.filter(s => 
-        !brandingSettings.includes(s) && 
-        !bankSettings.includes(s) && 
+    const miscSettings = settings.filter(s =>
+        !brandingSettings.includes(s) &&
+        !bankSettings.includes(s) &&
         !operationalSettings.includes(s)
     );
 
@@ -158,8 +158,8 @@ export default function SystemSettings() {
                         </div>
                     </div>
                     <div className="flex gap-3">
-                        <button 
-                            onClick={() => setShowAddModal(true)} 
+                        <button
+                            onClick={() => setShowAddModal(true)}
                             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded text-sm font-bold transition"
                         >
                             <Plus size={16} /> Add Setting
@@ -240,9 +240,9 @@ export default function SystemSettings() {
                                                         <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
                                                     </div>
                                                 ) : setting.key.includes('ADDRESS') ? (
-                                                    <textarea 
-                                                        value={setting.value} 
-                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)} 
+                                                    <textarea
+                                                        value={setting.value}
+                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
                                                         rows="3"
                                                         className="w-full p-2 border rounded font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none resize-y"
                                                     />
@@ -356,9 +356,9 @@ export default function SystemSettings() {
                             <div className="border-t pt-8"><h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><PiggyBank size={20} className="text-emerald-600"/> Savings Products</h3><SavingsProducts /></div>
                         </div>
                     )}
-                    
+
                     {activeTab === 'deposit-products' && <DepositProductsManager />}
-                    
+
                     {activeTab === 'accounting' && <AccountingConfig />}
 
                     {activeTab === 'maintenance' && (

@@ -26,8 +26,12 @@ public class LoanDTO {
     private String status;
     private LocalDate applicationDate;
     private LocalDate disbursementDate;
+
+    // ✅ ADDED: This resolves the builder compilation error
+    private String expectedRepaymentDate;
+
     private BigDecimal weeklyRepaymentAmount;
-    
+
     // Fee & Voting info
     private boolean applicationFeePaid;
     private BigDecimal processingFee;

@@ -12,6 +12,7 @@ import java.util.UUID;
 
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, UUID> {
+    long countByMemberIdAndStatusIn(UUID memberId, List<Loan.LoanStatus> statuses);
 
     List<Loan> findByMemberId(UUID memberId);
 
