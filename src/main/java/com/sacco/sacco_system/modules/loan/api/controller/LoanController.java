@@ -4,6 +4,7 @@ import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
+import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
@@ -26,10 +27,23 @@ public class LoanController {
     private final LoanService loanService;
     private final UserRepository userRepository;
     private final LoanProductRepository loanProductRepository;
+    private final GuarantorRepository guarantorRepository;
+
+    
 
     // ========================================================================
     // 1. APPLICATION & GUARANTORS
     // ========================================================================
+
+    @PostMapping("/products")
+    public ResponseEntity<?> createProduct(@RequestBody LoanProduct product) {
+        try {
+            LoanProduct saved = loanProductRepository.save(product);
+            return ResponseEntity.ok(Map.of("success", true, "data", saved));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
 
     @PostMapping("/initiate-with-fee")
     public ResponseEntity<?> initiateWithFee(@RequestParam UUID productId, @RequestParam String reference) {
@@ -150,10 +164,27 @@ public class LoanController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
+    // @GetMapping("/products")
+    // public ResponseEntity<List<LoanProduct>> getAllProducts() {
+    // return ResponseEntity.ok(loanProductRepository.findAll());
+    // }
     @GetMapping("/products")
-public ResponseEntity<List<LoanProduct>> getAllProducts() {
-    return ResponseEntity.ok(loanProductRepository.findAll());
-}
+    public ResponseEntity<Map<String, Object>> getAllProducts() {
+    // ✅ Wraps the list in a 'data' object so the frontend res.data.data call works
+    return ResponseEntity.ok(Map.of(
+        "success", true,
+        "data", loanProductRepository.findAll()
+    ));
+    }
+
+    @GetMapping("/guarantors/requests")
+    public ResponseEntity<?> getGuarantorRequests() {
+        UUID memberId = getCurrentMemberId();
+        return ResponseEntity.ok(Map.of(
+            "success", true, 
+            "data", guarantorRepository.findByMemberIdAndStatus(memberId, com.sacco.sacco_system.modules.loan.domain.entity.Guarantor.GuarantorStatus.PENDING)
+        ));
+    }
 
     /**
      * ✅ STEP 8: Final Disbursement (Treasurer)
@@ -170,5 +201,11 @@ public ResponseEntity<List<LoanProduct>> getAllProducts() {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
+    }
+    private UUID getCurrentMemberId() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByEmailOrOfficialEmail(email)
+                .map(User::getId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 }

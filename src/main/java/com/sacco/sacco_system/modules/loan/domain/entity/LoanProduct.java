@@ -1,5 +1,5 @@
 package com.sacco.sacco_system.modules.loan.domain.entity;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
+// import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 
 import jakarta.persistence.*;
 import lombok.*;
