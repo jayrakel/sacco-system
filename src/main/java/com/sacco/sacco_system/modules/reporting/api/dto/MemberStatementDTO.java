@@ -18,7 +18,7 @@ public class MemberStatementDTO {
     private String organizationName;
     private String organizationAddress;
     private String organizationEmail;
-    private String organizationLogoUrl; // NEW: Holds the URL/Base64 of the logo
+    private String organizationLogoUrl;
 
     // Member & Statement Metadata
     private String memberName;
@@ -26,7 +26,7 @@ public class MemberStatementDTO {
     private String memberAddress;
     private String statementReference;
     private LocalDate generatedDate;
-    
+
     // Financial Summary
     private BigDecimal openingBalance;
     private BigDecimal totalDebits;
@@ -42,7 +42,8 @@ public class MemberStatementDTO {
     @Builder
     public static class StatementTransaction {
         private LocalDate date;
-        private String reference;
+        private String reference; // ✅ Primary System Ref (PCM...)
+        private String externalReference; // ✅ Secondary User Ref (M-Pesa...)
         private String description;
         private String type;
         private BigDecimal amount;

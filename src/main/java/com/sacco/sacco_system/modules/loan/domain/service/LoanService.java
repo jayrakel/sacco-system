@@ -1,6 +1,9 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
+import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
+import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
@@ -39,13 +42,14 @@ public class LoanService {
     private final GuarantorRepository guarantorRepository;
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
+    private final TransactionRepository transactionRepository;
     private final LoanLimitService loanLimitService;
     private final RepaymentScheduleService repaymentScheduleService;
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
+    private final ReferenceCodeService referenceCodeService;
 
-    // --- PHASE 1: ELIGIBILITY & LIMITS ---
-
+    // ... (checkEligibility and getEligibleGuarantors remain unchanged) ...
     public Map<String, Object> checkEligibility(UUID userId) {
         Member member = memberRepository.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Member record not found"));
@@ -97,15 +101,12 @@ public class LoanService {
         return response;
     }
 
-    /**
-     * ✅ GATEKEEPER: Get list of members eligible to be guarantors.
-     */
     public List<Member> getEligibleGuarantors(UUID applicantId) {
         BigDecimal minSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_TO_GUARANTEE", "10000"));
         int minMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_TO_GUARANTEE", "6"));
 
         List<Member> candidates = memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream()
-                .filter(m -> !m.getId().equals(applicantId)) // Exclude self
+                .filter(m -> !m.getId().equals(applicantId))
                 .collect(Collectors.toList());
 
         List<Member> eligible = new ArrayList<>();
@@ -135,15 +136,66 @@ public class LoanService {
         return eligible;
     }
 
-    // --- PHASE 2: INITIATION & SUBMISSION ---
-
-    public LoanDTO initiateWithFee(UUID userId, UUID productId, String referenceCode) {
+    public LoanDTO initiateWithFee(UUID userId, UUID productId, String userExternalReferenceCode, String paymentMethodStr) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
 
         BigDecimal fee = product.getProcessingFee() != null ? product.getProcessingFee() : BigDecimal.ZERO;
+
         if (fee.compareTo(BigDecimal.ZERO) > 0) {
-            accountingService.postEvent("LOAN_PROCESSING_FEE", "App Fee - " + member.getMemberNumber(), referenceCode, fee);
+            // 1. Generate System Ref & Determine Payment Info
+            String systemRef = referenceCodeService.generateReferenceCode();
+            String sourceAccount = "1002"; // Default M-Pesa
+            Transaction.PaymentMethod payMethod = Transaction.PaymentMethod.MPESA;
+
+            if ("BANK".equalsIgnoreCase(paymentMethodStr)) {
+                sourceAccount = "1010";
+                payMethod = Transaction.PaymentMethod.BANK;
+            } else if ("CASH".equalsIgnoreCase(paymentMethodStr)) {
+                sourceAccount = "1001";
+                payMethod = Transaction.PaymentMethod.CASH;
+            }
+
+            // 2. Post to General Ledger (Use System Ref)
+            accountingService.postEvent(
+                    "LOAN_PROCESSING_FEE",
+                    "App Fee - " + member.getMemberNumber(),
+                    systemRef,
+                    fee,
+                    sourceAccount,
+                    null
+            );
+
+            // 3. ✅ FIX: Calculate Current Balance to preserve it
+            BigDecimal currentTotalSavings = savingsAccountRepository.findByMember_Id(member.getId())
+                    .stream()
+                    .map(SavingsAccount::getBalance)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // 4. Create Transaction Record
+            Transaction feeTransaction = Transaction.builder()
+                    .member(member)
+                    .amount(fee)
+                    .type(Transaction.TransactionType.PROCESSING_FEE)
+                    .paymentMethod(payMethod)
+                    .referenceCode(systemRef) // System Code
+                    .externalReference(userExternalReferenceCode) // User Code
+                    .description("Loan App Fee: " + product.getName())
+                    .balanceAfter(currentTotalSavings) // ✅ Preserves current balance!
+                    .transactionDate(LocalDateTime.now())
+                    .build();
+
+            transactionRepository.save(feeTransaction);
+
+            // 5. Notify Member
+            notificationService.notifyUser(
+                    member.getId(),
+                    "Payment Received",
+                    "Loan Fee Received. Receipt: " + systemRef,
+                    true,
+                    false
+            );
         }
 
         Loan loan = Loan.builder()
@@ -163,6 +215,7 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    // ... (rest of the file is identical to previous version) ...
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -194,8 +247,6 @@ public class LoanService {
 
         return convertToDTO(loanRepository.save(loan));
     }
-
-    // --- PHASE 3: GUARANTOR MANAGEMENT ---
 
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -232,12 +283,10 @@ public class LoanService {
             throw new RuntimeException("At least one guarantor is required.");
         }
 
-        // Confirm status and update timestamp if needed
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
         loanRepository.save(loan);
     }
 
-    // ✅ THIS IS THE METHOD YOU WERE MISSING
     public List<GuarantorDTO> getGuarantorsByLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         return guarantorRepository.findByLoan(loan).stream()
@@ -254,8 +303,6 @@ public class LoanService {
                 .map(this::convertToGuarantorDTO)
                 .collect(Collectors.toList());
     }
-
-    // --- QUERIES & HELPERS ---
 
     public List<LoanDTO> getLoansByMember(UUID userId) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();

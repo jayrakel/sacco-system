@@ -8,38 +8,38 @@ import {
   LayoutDashboard, FileText, TrendingUp, DollarSign, 
   AlertCircle, Users, RefreshCw, Search, Printer, 
   PieChart as PieIcon, ArrowUpRight, ShieldCheck, FileX,
-  CheckCircle, AlertTriangle
+  CheckCircle, AlertTriangle, Info
 } from 'lucide-react';
-import QRCode from 'react-qr-code'; 
+import QRCode from 'react-qr-code';
 import BrandedSpinner from '../../components/BrandedSpinner';
 import { useSettings } from '../../context/SettingsContext';
 
 const ReportsDashboard = () => {
-  const [activeTab, setActiveTab] = useState('executive'); 
-  const [activeExecView, setActiveExecView] = useState('dashboard'); 
+  const [activeTab, setActiveTab] = useState('executive');
+  const [activeExecView, setActiveExecView] = useState('dashboard');
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   // --- DATA STATES ---
-  const [reportData, setReportData] = useState(null); 
-  const [accounts, setAccounts] = useState([]);       
+  const [reportData, setReportData] = useState(null);
+  const [accounts, setAccounts] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [agingReport, setAgingReport] = useState([]);
-  
+
   // Statement Data
   const [members, setMembers] = useState([]);
   const [selectedMember, setSelectedMember] = useState('');
-  const [statementData, setStatementData] = useState(null); 
+  const [statementData, setStatementData] = useState(null);
   const [statementConfig, setStatementConfig] = useState({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
-  
+
   // Filter for Executive charts
-  const [dateRange, setDateRange] = useState('30'); 
-  const [printingExecReport, setPrintingExecReport] = useState(null); 
+  const [dateRange, setDateRange] = useState('30');
+  const [printingExecReport, setPrintingExecReport] = useState(null);
 
   // Settings
   const { settings, getImageUrl } = useSettings();
@@ -89,7 +89,7 @@ const ReportsDashboard = () => {
   const fetchAgingReport = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/reports/loan-aging'); 
+      const res = await api.get('/api/reports/loan-aging');
       if (res.data.success) setAgingReport(res.data.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -105,50 +105,91 @@ const ReportsDashboard = () => {
   const handleGenerateStatement = async () => {
     if (!selectedMember) return;
     setLoading(true);
-    setStatementData(null); 
+    setStatementData(null);
     try {
       let res;
       if (selectedMember === 'SYSTEM') {
-          res = await api.get(`/api/transactions?startDate=${statementConfig.startDate}&endDate=${statementConfig.endDate}`);
+          // ✅ SYSTEM STATEMENT: Fetch from Journal
+          res = await api.get(`/api/accounting/journal?startDate=${statementConfig.startDate}&endDate=${statementConfig.endDate}`);
+
           if (res.data.success) {
-              const rawTxs = res.data.data;
-              let bal = 0;
-              const txsWithBal = rawTxs.slice().reverse().map(t => {
-                  const isMoneyIn = t.type === 'DEPOSIT' || t.type === 'LOAN_REPAYMENT' || t.type === 'INCOME';
-                  const signedAmount = isMoneyIn ? Math.abs(t.amount) : -Math.abs(t.amount);
-                  bal += signedAmount;
+              const rawEntries = res.data.data;
+              let runningBal = 0;
+
+              // Sort ascending by date to calculate running balance correctly
+              const sortedEntries = rawEntries.sort((a, b) => new Date(a.transactionDate) - new Date(b.transactionDate));
+
+              const mappedTxs = sortedEntries.map(entry => {
+                  let moneyIn = 0;  // Debits to Bank
+                  let moneyOut = 0; // Credits to Bank
+
+                  // "Follow the Money" Logic
+                  if (entry.lines) {
+                      entry.lines.forEach(line => {
+                          const code = line.account?.code || "";
+                          // Check if it hits a Liquid Asset (10xx)
+                          if (code.startsWith('10')) {
+                              if (parseFloat(line.debit) > 0) {
+                                  moneyIn += parseFloat(line.debit);
+                              }
+                              if (parseFloat(line.credit) > 0) {
+                                  moneyOut += parseFloat(line.credit);
+                              }
+                          }
+                      });
+                  }
+
+                  // If purely non-cash, we ignore it for the Cash Flow view
+                  if (moneyIn === 0 && moneyOut === 0) return null;
+
+                  runningBal = runningBal + moneyIn - moneyOut;
+
                   return {
-                      date: t.transactionDate,
-                      description: `${t.description} (${t.member ? t.member.firstName + ' ' + t.member.lastName : 'System'})`,
-                      reference: t.referenceCode || t.transactionId,
-                      type: t.type,
-                      amount: signedAmount,
-                      runningBalance: bal
+                      date: entry.transactionDate,
+                      description: entry.description,
+                      reference: entry.referenceNo || `JRN-${entry.id.substring(0,8)}`,
+                      externalReference: null,
+                      type: 'JOURNAL_ENTRY',
+                      moneyIn: moneyIn,
+                      moneyOut: moneyOut,
+                      runningBalance: runningBal // ✅ Correctly calculated
                   };
-              }).reverse(); 
+              }).filter(Boolean); // Remove nulls (non-cash entries)
+
+              // Reverse for display (Newest First)
+              const displayTxs = [...mappedTxs].reverse();
 
               setStatementData({
-                  memberName: "System General Ledger",
+                  memberName: "System General Ledger (Cash Flow)",
                   memberNumber: "SYS-MASTER",
                   memberAddress: orgAddress,
                   generatedDate: new Date().toISOString(),
                   statementReference: "SYS-" + Date.now().toString().slice(-6),
-                  transactions: txsWithBal,
-                  openingBalance: 0,
-                  closingBalance: bal,
-                  totalCredits: txsWithBal.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0),
-                  totalDebits: Math.abs(txsWithBal.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0))
+                  transactions: displayTxs,
+                  openingBalance: 0, // Assumption: Start from 0 for period or fetch prev balance
+                  closingBalance: runningBal,
+                  totalCredits: displayTxs.reduce((s, t) => s + t.moneyIn, 0),
+                  totalDebits: displayTxs.reduce((s, t) => s + t.moneyOut, 0)
               });
           }
       } else {
+          // MEMBER STATEMENT
           res = await api.get(`/api/reports/member-statement/${selectedMember}?startDate=${statementConfig.startDate}&endDate=${statementConfig.endDate}`);
-          if (res.data.success) setStatementData(res.data.data);
+          if (res.data.success) {
+             const data = res.data.data;
+             data.transactions = data.transactions.map(t => ({
+                 ...t,
+                 moneyIn: t.amount > 0 ? t.amount : 0,
+                 moneyOut: t.amount < 0 ? Math.abs(t.amount) : 0
+             }));
+             setStatementData(data);
+          }
       }
-    } catch (e) { 
+    } catch (e) {
         console.error(e);
-        alert("Failed to fetch statement"); 
-    } finally { 
-        setLoading(false); 
+        alert("Failed to fetch statement");
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -156,8 +197,8 @@ const ReportsDashboard = () => {
     setRefreshing(true);
     try {
       await api.post('/api/reports/generate');
-      await fetchExecutiveData(); 
-    } catch (error) { console.error(error); } 
+      await fetchExecutiveData();
+    } catch (error) { console.error(error); }
     finally { setRefreshing(false); }
   };
 
@@ -170,7 +211,7 @@ const ReportsDashboard = () => {
   };
 
   const formatCurrency = (val) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(val || 0);
-  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-GB'); 
+  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-GB');
 
   // --- ACCOUNTING CALCULATIONS ---
   const getTotal = (type) => accounts
@@ -181,12 +222,11 @@ const ReportsDashboard = () => {
 
   const totalAssets = getTotal('ASSET');
   const totalLiabilities = getTotal('LIABILITY');
-  const totalEquity = getTotal('EQUITY') + getNetIncome(); 
+  const totalEquity = getTotal('EQUITY') + getNetIncome();
   const balanceDifference = totalAssets - (totalLiabilities + totalEquity);
   const isBalanced = Math.abs(balanceDifference) < 1.0;
 
-  // --- RENDERERS ---
-
+  // --- RENDERERS --- (Standard renderers remain unchanged)
   const renderKPIs = () => (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
       <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-6 rounded-xl shadow-lg relative overflow-hidden group hover:scale-[1.02] transition-transform">
@@ -374,22 +414,21 @@ const ReportsDashboard = () => {
     </div>
   );
 
-  // --- EXECUTIVE PRINTABLE REPORT RENDERER ---
   const renderPrintableExecReport = () => (
       <div id="printable-area" className="fixed inset-0 bg-white z-[9999] overflow-auto hidden print:block">
           <style>{`
               @media print {
-                  @page { size: A4; margin: 15mm 15mm 25mm 15mm; } 
+                  @page { size: A4; margin: 15mm 15mm 25mm 15mm; }
                   html, body { overflow: visible !important; height: auto !important; margin: 0 !important; padding: 0 !important; }
-                  body * { visibility: hidden; } 
+                  body * { visibility: hidden; }
                   #printable-area, #printable-area * { visibility: visible; }
                   #printable-area {
                       position: absolute; left: 0; top: 0; width: 100%; height: auto;
-                      margin: 0; padding: 0; background: transparent; /* Transparent so footer shows */
+                      margin: 0; padding: 0; background: transparent;
                       display: block !important; overflow: visible !important;
                   }
                   .print-footer {
-                      position: fixed; bottom: 0; left: 0; width: 100%; 
+                      position: fixed; bottom: 0; left: 0; width: 100%;
                       text-align: center; font-size: 10px; color: #475569; font-weight: bold;
                       text-transform: uppercase; letter-spacing: 0.1em;
                       padding-bottom: 5mm; background-color: white; z-index: 10000;
@@ -474,15 +513,15 @@ const ReportsDashboard = () => {
                   <p className="text-xs text-slate-500 mt-8">Signature & Date</p>
               </div>
           </div>
-          
-          {/* Repeating Footer - Positioned Fixed */}
+
+          {/* Repeating Footer */}
           <div className="print-footer">
               SYSTEM GENERATED DOCUMENT • {new Date().toISOString()} • BETTERLINK VENTURES LIMITED
           </div>
       </div>
   );
 
-  // --- BANK GRADE STATEMENT RENDERER ---
+  // --- BANK GRADE STATEMENT RENDERER (UPDATED) ---
   const renderBankStatement = () => {
     if (!statementData) return null;
 
@@ -498,62 +537,34 @@ const ReportsDashboard = () => {
       <div className="bg-gray-100 p-8 print:p-0 print:bg-white overflow-auto flex justify-center print:block">
         <style>{`
           @media print {
-            /* 1. Global Reset & Page Margin for Footer */
-            /* Margin bottom 25mm reserves space for the fixed footer */
-            @page { size: A4; margin: 15mm 15mm 25mm 15mm; } 
-            
+            @page { size: A4; margin: 15mm 15mm 25mm 15mm; }
             html, body { overflow: visible !important; height: auto !important; margin: 0 !important; padding: 0 !important; }
-            body * { visibility: hidden; } /* Hide entire UI */
-
-            /* 2. Target Specific Container */
+            body * { visibility: hidden; }
             #printable-area, #printable-area * { visibility: visible; }
-            
             #printable-area {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%; /* Fit width */
-                height: auto;
-                margin: 0;
-                padding: 0; 
-                background: transparent; /* Critical: Transparent so footer shows */
-                display: block !important;
-                overflow: visible !important;
+                position: absolute; left: 0; top: 0; width: 100%; height: auto;
+                margin: 0; padding: 0; background: transparent;
+                display: block !important; overflow: visible !important;
             }
-            
-            /* 3. Sticky Footer Logic */
             .print-footer {
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                width: 100%;
-                text-align: center;
-                font-size: 10px;
-                color: #475569;
-                font-weight: bold;
-                text-transform: uppercase;
-                letter-spacing: 0.1em;
-                /* Padding to pull it off the very edge */
-                padding-bottom: 5mm; 
-                background-color: white;
-                z-index: 10000;
+                position: fixed; bottom: 0; left: 0; width: 100%; text-align: center;
+                font-size: 10px; color: #475569; font-weight: bold; text-transform: uppercase;
+                letter-spacing: 0.1em; padding-bottom: 5mm; background-color: white; z-index: 10000;
             }
           }
-          
-          /* Common Styles */
           .stmt-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
           .stmt-table th { background: #0f172a !important; color: white !important; padding: 8px; text-align: left; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; -webkit-print-color-adjust: exact; }
           .stmt-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; word-wrap: break-word; }
           .stmt-table tr:nth-child(even) { background: #f8fafc !important; -webkit-print-color-adjust: exact; }
-          .money { font-family: 'Consolas', monospace; font-weight: 600; text-align: right; }
+          /* ✅ CSS FIX: Prevent number wrapping */
+          .money { font-family: 'Consolas', monospace; font-weight: 600; text-align: right; white-space: nowrap; }
           .credit { color: #059669 !important; }
           .debit { color: #dc2626 !important; }
           .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); width: 70%; opacity: 0.06; z-index: 0; pointer-events: none; }
         `}</style>
 
-        {/* Added ID #printable-area for strict targeting */}
         <div id="printable-area" className="bg-white shadow-2xl relative text-slate-800 print:shadow-none print:w-full" style={{ maxWidth: '210mm', minHeight: '297mm', padding: '10mm', margin: '0 auto' }}>
-          
+
           <div className="watermark">
                {logoUrl ? <img src={logoUrl} alt="Watermark" className="w-full h-auto object-contain" /> : <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full text-slate-300"><path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .75c.75-.456 1-.75 1.75-.75S7 18.75 7 19.5c0 .673.35 1.295.908 1.636.55.336 1.173.23 1.592-.093l2.875-2.156 3.15 2.362c.484.364 1.16.42 1.713.045A2.76 2.76 0 0019 19c0-.23-.03-.455-.087-.67H19a1 1 0 001-1v-8a1 1 0 00-1-1h-.062a4.01 4.01 0 00-.832-1.854l-1.92-2.194A6.035 6.035 0 0011.25 4.53zM10.5 7.5a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zm-3 0a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" /></svg>}
           </div>
@@ -601,18 +612,39 @@ const ReportsDashboard = () => {
 
           <div className="relative z-10 mb-8 min-h-[400px]">
             <table className="stmt-table">
-              <thead><tr><th width="12%">Date</th><th width="48%">Description & Ref</th><th width="13%" className="money">Debit</th><th width="13%" className="money">Credit</th><th width="14%" className="money">Balance</th></tr></thead>
+              {/* ✅ FIXED: Column Headers */}
+              <thead><tr><th width="12%">Date</th><th width="48%">Description & Ref</th><th width="13%" className="money">{selectedMember === 'SYSTEM' ? 'Value' : 'Debit'}</th><th width="13%" className="money">{selectedMember === 'SYSTEM' ? ' ' : 'Credit'}</th><th width="14%" className="money">Balance</th></tr></thead>
               <tbody className="text-xs">
-                <tr><td className="font-mono text-slate-500">{formatDate(statementConfig.startDate)}</td><td className="italic text-slate-500 font-medium">Opening Balance Brought Forward</td><td className="money text-slate-400">-</td><td className="money text-slate-400">-</td><td className="money font-bold text-blue-700 bg-blue-50/50">{formatCurrency(statementData.openingBalance)}</td></tr>
+                {/* Opening Balance Row (Skip for System Journal) */}
+                {selectedMember !== 'SYSTEM' && (
+                    <tr><td className="font-mono text-slate-500">{formatDate(statementConfig.startDate)}</td><td className="italic text-slate-500 font-medium">Opening Balance Brought Forward</td><td className="money text-slate-400">-</td><td className="money text-slate-400">-</td><td className="money font-bold text-blue-700 bg-blue-50/50">{formatCurrency(statementData.openingBalance)}</td></tr>
+                )}
+
                 {statementData.transactions.map((tx, idx) => {
-                  const isDebit = tx.amount < 0;
                   return (
                     <tr key={idx}>
                       <td className="font-mono text-slate-600">{formatDate(tx.date)}</td>
-                      <td><div className="font-bold text-slate-700">{tx.description}</div><div className="text-[9px] text-slate-500 font-mono mt-0.5">REF: {tx.reference} &bull; {tx.type}</div></td>
-                      <td className="money debit">{isDebit ? formatCurrency(Math.abs(tx.amount)) : '-'}</td>
-                      <td className="money credit">{!isDebit ? formatCurrency(tx.amount) : '-'}</td>
-                      <td className="money font-bold text-slate-900 bg-slate-50/30">{formatCurrency(tx.runningBalance)}</td>
+                      <td>
+                          <div className="font-bold text-slate-700">{tx.description}</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono uppercase border border-slate-200">
+                                  REF: {tx.reference}
+                              </span>
+                              {tx.externalReference && (
+                                  <span className="text-[9px] text-slate-400 font-mono uppercase flex items-center gap-1">
+                                      <Info size={8}/> Ext: {tx.externalReference}
+                                  </span>
+                              )}
+                          </div>
+                      </td>
+
+                      {/* ✅ FIXED: Use moneyIn/moneyOut props for both Statement Types */}
+                      <td className="money credit">{tx.moneyIn > 0 ? formatCurrency(tx.moneyIn) : '-'}</td>
+                      <td className="money debit">{tx.moneyOut > 0 ? formatCurrency(tx.moneyOut) : '-'}</td>
+
+                      <td className="money font-bold text-slate-900 bg-slate-50/30">
+                          {selectedMember === 'SYSTEM' ? formatCurrency(tx.runningBalance) : formatCurrency(tx.runningBalance)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -623,13 +655,26 @@ const ReportsDashboard = () => {
 
           <div className="relative z-10 flex justify-end pb-10">
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg w-[260px]">
-                  <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold"><span>Total Credits</span><span className="font-mono text-emerald-600">{formatCurrency(statementData.totalCredits)}</span></div>
-                  <div className="flex justify-between mb-4 text-xs text-slate-500 uppercase font-bold"><span>Total Debits</span><span className="font-mono text-rose-600">{formatCurrency(statementData.totalDebits)}</span></div>
-                  <div className="flex justify-between pt-3 border-t-2 border-slate-200 text-sm text-slate-900"><span className="font-black uppercase">Closing Balance</span><span className="font-mono font-black border-b-4 border-double border-slate-300">{formatCurrency(statementData.closingBalance)}</span></div>
+                  {selectedMember !== 'SYSTEM' && (
+                      <>
+                        <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold"><span>Total Credits</span><span className="font-mono text-emerald-600">{formatCurrency(statementData.totalCredits)}</span></div>
+                        <div className="flex justify-between mb-4 text-xs text-slate-500 uppercase font-bold"><span>Total Debits</span><span className="font-mono text-rose-600">{formatCurrency(statementData.totalDebits)}</span></div>
+                        <div className="flex justify-between pt-3 border-t-2 border-slate-200 text-sm text-slate-900"><span className="font-black uppercase">Closing Balance</span><span className="font-mono font-black border-b-4 border-double border-slate-300">{formatCurrency(statementData.closingBalance)}</span></div>
+                      </>
+                  )}
+                  {selectedMember === 'SYSTEM' && (
+                      <>
+                        <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold"><span>Total Money In</span><span className="font-mono text-emerald-600">{formatCurrency(statementData.totalCredits)}</span></div>
+                        <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold"><span>Total Money Out</span><span className="font-mono text-rose-600">{formatCurrency(statementData.totalDebits)}</span></div>
+                        <div className="flex justify-between pt-2 border-t-2 border-slate-200 text-sm text-slate-900">
+                            <span className="font-black uppercase">Net Flow</span>
+                            <span className="font-mono font-black">{formatCurrency(statementData.closingBalance)}</span>
+                        </div>
+                      </>
+                  )}
               </div>
           </div>
-          
-          {/* Repeating Sticky Footer */}
+
           <div className="print-footer">
               SYSTEM GENERATED DOCUMENT • {new Date().toISOString()} • BETTERLINK VENTURES LIMITED
           </div>
@@ -667,14 +712,12 @@ const ReportsDashboard = () => {
                 {activeExecView === 'dashboard' && (<>{renderKPIs()}{renderFinancialCharts()}</>)}
                 {activeExecView === 'balance-sheet' && renderBalanceSheet()}
                 {activeExecView === 'income-statement' && renderIncomeStatement()}
-                {/* Print View Rendered Conditionally */}
                 {printingExecReport && renderPrintableExecReport()}
               </>
             )}
           </>
         )}
 
-        {/* ... Other Tabs remain the same (Risk, Statements) ... */}
         {activeTab === 'risk' && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in print:hidden">
             <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center"><div><h3 className="font-bold text-slate-800 flex items-center gap-2"><AlertCircle size={20} className="text-red-500"/> Portfolio Risk (PAR)</h3><p className="text-sm text-slate-500 mt-1">Loans overdue by 1+ days</p></div><button className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 text-slate-700">Export Risk Report</button></div>

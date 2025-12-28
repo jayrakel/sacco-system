@@ -1,28 +1,28 @@
 import React, { useState, useRef } from 'react';
 import api from '../../../api';
 import QRCode from 'react-qr-code'; 
-import { Printer, Calendar, Search, ShieldCheck, FileX } from 'lucide-react';
+import { Printer, Calendar, Search, ShieldCheck, FileX, Info } from 'lucide-react';
 import { useSettings } from '../../../context/SettingsContext';
 
 export default function MemberStatements({ user }) {
     const [statement, setStatement] = useState(null);
-    const [transactions, setTransactions] = useState([]); 
+    const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(false);
-    
+
     const { settings, getImageUrl } = useSettings();
-    
+
     const logoUrl = getImageUrl(settings.SACCO_LOGO);
     const orgName = settings.SACCO_NAME || "Sacco System";
     const orgAddress = settings.SACCO_ADDRESS || "Nairobi, Kenya";
     const orgWebsite = settings.SACCO_WEBSITE || "";
-    
+
     const orgContact = [settings.SACCO_EMAIL, settings.SACCO_PHONE]
         .filter(Boolean)
         .join(' | ');
 
     const [config, setConfig] = useState({
-        startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], 
-        endDate: new Date().toISOString().split('T')[0] 
+        startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0]
     });
 
     const [docMeta, setDocMeta] = useState({ ref: '', generatedAt: '' });
@@ -32,19 +32,15 @@ export default function MemberStatements({ user }) {
         setLoading(true);
         try {
             const res = await api.get(`/api/reports/my-statement?startDate=${config.startDate}&endDate=${config.endDate}`);
-            
+
             if (res.data.success) {
                 const data = res.data.data;
                 const rawTransactions = data.transactions || [];
 
-                const cleanTransactions = rawTransactions.filter(tx => {
-                    const desc = tx.description.toLowerCase();
-                    return !desc.includes('registration fee') && !desc.includes('joining fee');
-                });
+                // Removed the filter that was hiding registration fees
+                setStatement(data);
+                setTransactions(rawTransactions);
 
-                setStatement(data); 
-                setTransactions(cleanTransactions);
-                
                 const randomRef = Math.floor(1000 + Math.random() * 9000);
                 setDocMeta({
                     ref: `STMT-${new Date().getFullYear()}${new Date().getMonth()+1}-${randomRef}`,
@@ -64,14 +60,12 @@ export default function MemberStatements({ user }) {
         window.print();
     };
 
-    const calculateTotals = () => {
-        const credit = transactions.reduce((sum, tx) => sum + (tx.amount > 0 ? tx.amount : 0), 0);
-        const debit = transactions.reduce((sum, tx) => sum + (tx.amount < 0 ? Math.abs(tx.amount) : 0), 0);
-        const closing = transactions.length > 0 ? transactions[transactions.length - 1].runningBalance : (statement?.openingBalance || 0);
-        return { credit, debit, closing, opening: statement?.openingBalance || 0 };
-    };
-
-    const totals = calculateTotals();
+    const totals = statement ? {
+        credit: statement.totalCredits,
+        debit: statement.totalDebits,
+        opening: statement.openingBalance,
+        closing: statement.closingBalance
+    } : { credit: 0, debit: 0, opening: 0, closing: 0 };
 
     const qrPayload = statement ? JSON.stringify({
         org: orgName,
@@ -89,8 +83,8 @@ export default function MemberStatements({ user }) {
                     <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
                         <Calendar size={14}/> Start Date
                     </label>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium"
                         value={config.startDate}
                         onChange={e => setConfig({...config, startDate: e.target.value})}
@@ -100,22 +94,22 @@ export default function MemberStatements({ user }) {
                     <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
                         <Calendar size={14}/> End Date
                     </label>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         className="w-full p-2.5 border border-slate-300 rounded-xl bg-slate-50 font-medium"
                         value={config.endDate}
                         onChange={e => setConfig({...config, endDate: e.target.value})}
                     />
                 </div>
-                <button 
-                    onClick={handleGenerate} 
+                <button
+                    onClick={handleGenerate}
                     disabled={loading}
                     className="px-6 py-2.5 bg-indigo-900 text-white rounded-xl font-bold hover:bg-indigo-800 transition shadow-lg shadow-indigo-900/20 disabled:opacity-50 flex items-center gap-2"
                 >
                     {loading ? 'Generating...' : <><Search size={18}/> Generate Statement</>}
                 </button>
                 {statement && (
-                    <button 
+                    <button
                         onClick={handlePrint}
                         className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-900/20 flex items-center gap-2"
                     >
@@ -127,10 +121,10 @@ export default function MemberStatements({ user }) {
             {/* PREVIEW AREA */}
             {statement && (
                 <div className="flex justify-center bg-slate-100 p-8 rounded-xl border border-slate-200 overflow-auto print:p-0 print:bg-white print:border-none print:overflow-visible">
-                    
+
                     {/* A4 CONTAINER */}
-                    <div 
-                        ref={statementRef} 
+                    <div
+                        ref={statementRef}
                         id="statement-container"
                         className="bg-white shadow-2xl relative text-slate-800 print:shadow-none"
                         style={{
@@ -140,14 +134,14 @@ export default function MemberStatements({ user }) {
                             boxSizing: 'border-box'
                         }}
                     >
-                        
+
                         <style>{`
                             @media print {
-                                body { 
-                                    visibility: hidden; 
-                                    margin: 0; 
-                                    padding: 0; 
-                                    overflow: hidden; 
+                                body {
+                                    visibility: hidden;
+                                    margin: 0;
+                                    padding: 0;
+                                    overflow: hidden;
                                 }
                                 #statement-container {
                                     visibility: visible;
@@ -174,17 +168,17 @@ export default function MemberStatements({ user }) {
                             .money { font-family: 'Consolas', monospace; font-weight: 600; text-align: right; }
                             .credit { color: #059669 !important; }
                             .debit { color: #dc2626 !important; }
-                            
+
                             .watermark {
-                                position: absolute; 
-                                top: 50%; 
-                                left: 50%; 
+                                position: absolute;
+                                top: 50%;
+                                left: 50%;
                                 transform: translate(-50%, -50%) rotate(-30deg);
-                                width: 80%; 
+                                width: 80%;
                                 max-width: 600px;
-                                opacity: 0.15; 
-                                z-index: 50; 
-                                pointer-events: none; 
+                                opacity: 0.15;
+                                z-index: 50;
+                                pointer-events: none;
                                 mix-blend-mode: multiply;
                             }
                         `}</style>
@@ -200,7 +194,7 @@ export default function MemberStatements({ user }) {
                              )}
                         </div>
 
-                        {/* HEADER - No Wrap */}
+                        {/* HEADER */}
                         <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 pb-6 relative z-10">
                             <div className="flex-1">
                                 <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight whitespace-nowrap">Statement of Account</h1>
@@ -211,11 +205,6 @@ export default function MemberStatements({ user }) {
                                 <h2 className="text-lg font-bold text-emerald-700 whitespace-nowrap">{orgName}</h2>
                                 <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{orgAddress}</p>
                                 <p className="text-xs text-slate-500 mt-1 whitespace-nowrap">{orgContact}</p>
-                                {orgWebsite && (
-                                    <p className="text-xs text-blue-600 mt-1 underline decoration-blue-200">
-                                        {orgWebsite}
-                                    </p>
-                                )}
                             </div>
                         </div>
 
@@ -230,7 +219,7 @@ export default function MemberStatements({ user }) {
                                     <p className="text-xs text-slate-600 flex gap-2"><span className="font-bold text-slate-400 inline-block w-20">Phone:</span> {user?.phoneNumber || 'N/A'}</p>
                                 </div>
                             </div>
-                            
+
                             {/* QR CODE */}
                             <div className="absolute top-0 left-1/2 -translate-x-1/2 text-center">
                                 <div className="bg-white p-1 border border-slate-200 inline-block">
@@ -265,7 +254,7 @@ export default function MemberStatements({ user }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* Opening Balance Row (Added Explicitly) */}
+                                    {/* Opening Balance Row */}
                                     <tr>
                                         <td className="font-mono text-slate-500">{new Date(config.startDate).toLocaleDateString()}</td>
                                         <td className="italic text-slate-500 font-medium">Opening Balance Brought Forward</td>
@@ -279,7 +268,18 @@ export default function MemberStatements({ user }) {
                                             <td className="font-mono text-slate-600">{new Date(tx.date).toLocaleDateString()}</td>
                                             <td>
                                                 <div className="font-bold text-slate-700 text-xs">{tx.description}</div>
-                                                <div className="text-[9px] text-slate-400 font-mono uppercase mt-0.5">REF: {tx.reference}</div>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    {/* ✅ PRIMARY REFERENCE (System Code) */}
+                                                    <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono uppercase border border-slate-200">
+                                                        REF: {tx.reference}
+                                                    </span>
+                                                    {/* ✅ EXTERNAL REFERENCE (User Code) - Display if exists */}
+                                                    {tx.externalReference && (
+                                                        <span className="text-[9px] text-slate-400 font-mono uppercase flex items-center gap-1">
+                                                            <Info size={8}/> Ext: {tx.externalReference}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="money debit">
                                                 {tx.amount < 0 ? Number(Math.abs(tx.amount)).toLocaleString() : '-'}
@@ -304,7 +304,7 @@ export default function MemberStatements({ user }) {
                             </table>
                         </div>
 
-                        {/* SUMMARY FOOTER (Updated with Opening Balance) */}
+                        {/* SUMMARY FOOTER */}
                         <div className="flex justify-end relative z-10">
                             <div className="bg-slate-50 border border-slate-200 p-6 rounded-lg w-[320px]">
                                 <div className="flex justify-between mb-2 text-xs text-slate-500 uppercase font-bold">
@@ -330,7 +330,6 @@ export default function MemberStatements({ user }) {
                         <div className="absolute bottom-8 left-0 w-full text-center">
                             <p className="text-[10px] text-slate-400 uppercase tracking-widest">
                                 System Generated Document • {docMeta.ref} • {orgName}
-                                {orgWebsite && <span> • {orgWebsite}</span>}
                             </p>
                         </div>
 

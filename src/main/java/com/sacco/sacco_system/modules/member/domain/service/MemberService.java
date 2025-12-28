@@ -12,6 +12,7 @@ import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService; // ✅ Added
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 
@@ -44,11 +45,12 @@ public class MemberService {
     private final SystemSettingService systemSettingService;
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
+    private final ReferenceCodeService referenceCodeService; // ✅ Inject Reference Service
 
     @Value("${app.upload.dir:uploads/profiles/}")
     private String uploadDir;
 
-    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode, String bankAccountCode, User user) throws IOException {
+    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String userExternalRef, String bankAccountCode, User user) throws IOException {
 
         if (memberRepository.findByEmail(memberDTO.getEmail()).isPresent()) throw new RuntimeException("Email already registered");
         if (memberRepository.findByPhoneNumber(memberDTO.getPhoneNumber()).isPresent()) throw new RuntimeException("Phone already registered");
@@ -80,7 +82,7 @@ public class MemberService {
                 .status(Member.MemberStatus.ACTIVE)
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
-                .beneficiaries(new ArrayList<>()) 
+                .beneficiaries(new ArrayList<>())
                 .build();
 
         if (memberDTO.getBeneficiaries() != null) {
@@ -92,13 +94,12 @@ public class MemberService {
                         .phoneNumber(bDto.getPhoneNumber())
                         .allocation(bDto.getAllocation())
                         .build();
-                member.addBeneficiary(beneficiary); 
+                member.addBeneficiary(beneficiary);
             }
         }
 
         if (memberDTO.getEmploymentDetails() != null) {
             EmploymentDetailsDTO eDto = memberDTO.getEmploymentDetails();
-            // Safe Enum Conversion
             EmploymentDetails.EmploymentTerms terms = EmploymentDetails.EmploymentTerms.PERMANENT;
             try {
                 if(eDto.getTerms() != null) terms = EmploymentDetails.EmploymentTerms.valueOf(eDto.getTerms());
@@ -117,11 +118,14 @@ public class MemberService {
                     .bankBranch(eDto.getBankBranch())
                     .bankAccountNumber(eDto.getBankAccountNumber())
                     .build();
-            member.setEmploymentDetails(details); 
+            member.setEmploymentDetails(details);
         }
 
         Member savedMember = memberRepository.save(member);
-        processRegistrationFee(savedMember, paymentMethod, referenceCode, bankAccountCode);
+
+        // ✅ Process fee using strict System Reference logic
+        processRegistrationFee(savedMember, paymentMethod, userExternalRef, bankAccountCode);
+
         createDefaultSavingsAccount(savedMember);
 
         return convertToDTO(savedMember);
@@ -156,8 +160,7 @@ public class MemberService {
                 details = new EmploymentDetails();
                 member.setEmploymentDetails(details);
             }
-            
-            // ✅ FIX: Safe Enum Conversion to prevent NPE
+
             if (eDto.getTerms() != null && !eDto.getTerms().isEmpty()) {
                 try {
                     details.setTerms(EmploymentDetails.EmploymentTerms.valueOf(eDto.getTerms()));
@@ -165,7 +168,7 @@ public class MemberService {
                     log.warn("Invalid employment term: {}", eDto.getTerms());
                 }
             }
-            
+
             details.setEmployerName(eDto.getEmployerName());
             details.setStaffNumber(eDto.getStaffNumber());
             details.setStationOrDepartment(eDto.getStationOrDepartment());
@@ -187,28 +190,53 @@ public class MemberService {
         return convertToDTO(saved);
     }
 
-    private void processRegistrationFee(Member member, String paymentMethod, String referenceCode, String bankAccountCode) {
+    private void processRegistrationFee(Member member, String paymentMethodStr, String userExternalRef, String bankAccountCode) {
         double feeAmount = systemSettingService.getDouble("REGISTRATION_FEE");
+
         if (feeAmount > 0) {
             BigDecimal amount = BigDecimal.valueOf(feeAmount);
+
+            // 1. Generate System Reference (The "PCM..." Code)
+            String systemRef = referenceCodeService.generateReferenceCode();
+
+            // 2. Determine Source Account
+            Transaction.PaymentMethod payMethod = Transaction.PaymentMethod.MPESA;
+            String sourceAccount = "1002"; // Default Paybill (MPESA)
+
+            if ("BANK".equalsIgnoreCase(paymentMethodStr) || "BANK_TRANSFER".equalsIgnoreCase(paymentMethodStr)) {
+                payMethod = Transaction.PaymentMethod.BANK;
+                sourceAccount = (bankAccountCode != null && !bankAccountCode.isEmpty()) ? bankAccountCode : "1010";
+            } else if ("CASH".equalsIgnoreCase(paymentMethodStr)) {
+                payMethod = Transaction.PaymentMethod.CASH;
+                sourceAccount = "1001"; // Cash on Hand
+            }
+
+            // 3. Post to General Ledger using SYSTEM REFERENCE
+            // Debit: Source (Asset), Credit: 4001 (Registration Fee Income)
+            accountingService.postEvent(
+                    "REGISTRATION_FEE",
+                    "Registration Fee - " + member.getMemberNumber(),
+                    systemRef, // ✅ Uses System Ref for Accounting
+                    amount,
+                    sourceAccount, // Override Debit
+                    "4001"         // Override Credit
+            );
+
+            // 4. Create Transaction Record
+            // Reference Code = System Ref (PCM...)
+            // External Reference = User's Code (M-Pesa)
             Transaction registrationTx = Transaction.builder()
                     .member(member)
                     .type(Transaction.TransactionType.REGISTRATION_FEE)
                     .amount(amount)
-                    .paymentMethod(Transaction.PaymentMethod.valueOf(paymentMethod))
-                    .referenceCode(referenceCode)
-                    .description("Registration Fee - " + member.getMemberNumber())
-                    .balanceAfter(BigDecimal.ZERO)
+                    .paymentMethod(payMethod)
+                    .referenceCode(systemRef)        // ✅ Primary Ref = System Code
+                    .externalReference(userExternalRef) // ✅ Secondary Ref = M-Pesa Code
+                    .description("Registration Fee")
+                    .balanceAfter(BigDecimal.ZERO) // Registration fee does not affect savings balance
                     .build();
 
-            Transaction saved = transactionRepository.save(registrationTx);
-            String paymentSuffix = paymentMethod.toUpperCase();
-
-            if ("BANK_TRANSFER".equals(paymentSuffix) && bankAccountCode != null && !bankAccountCode.isEmpty()) {
-                accountingService.postDoubleEntry("Registration Fee - " + member.getMemberNumber(), saved.getTransactionId(), bankAccountCode, "4001", amount);
-            } else {
-                accountingService.postEvent("REGISTRATION_FEE_" + paymentSuffix, "Registration Fee - " + member.getMemberNumber(), saved.getTransactionId(), amount);
-            }
+            transactionRepository.save(registrationTx);
         }
     }
 
@@ -222,24 +250,24 @@ public class MemberService {
         savingsAccountRepository.save(savingsAccount);
     }
 
-    public MemberDTO getMemberById(UUID id) { 
-        return memberRepository.findById(id).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found")); 
+    public MemberDTO getMemberById(UUID id) {
+        return memberRepository.findById(id).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found"));
     }
 
-    public MemberDTO getMemberByMemberNumber(String memberNumber) { 
-        return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found")); 
+    public MemberDTO getMemberByMemberNumber(String memberNumber) {
+        return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found"));
     }
 
-    public List<MemberDTO> getAllMembers() { 
-        return memberRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList()); 
+    public List<MemberDTO> getAllMembers() {
+        return memberRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    public List<MemberDTO> getActiveMembers() { 
-        return memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList()); 
+    public List<MemberDTO> getActiveMembers() {
+        return memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
     public long getActiveMembersCount() { return memberRepository.countActiveMembers(); }
-    
+
     public MemberDTO updateMember(UUID id, MemberDTO memberDTO) {
         Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
         member.setFirstName(memberDTO.getFirstName());
@@ -259,14 +287,14 @@ public class MemberService {
         memberRepository.save(member);
     }
 
-    private String generateMemberNumber() { 
-        long count = memberRepository.count(); 
-        return "MEM" + String.format("%06d", count + 1); 
+    private String generateMemberNumber() {
+        long count = memberRepository.count();
+        return "MEM" + String.format("%06d", count + 1);
     }
 
-    private String generateSavingsAccountNumber() { 
-        long count = savingsAccountRepository.count(); 
-        return "SAV" + String.format("%05d", count + 1); 
+    private String generateSavingsAccountNumber() {
+        long count = savingsAccountRepository.count();
+        return "SAV" + String.format("%05d", count + 1);
     }
 
     public MemberDTO convertToDTO(Member member) {
@@ -301,8 +329,7 @@ public class MemberService {
         if (member.getEmploymentDetails() != null) {
             EmploymentDetails ed = member.getEmploymentDetails();
             dto.setEmploymentDetails(EmploymentDetailsDTO.builder()
-                    // ✅ FIX: Null check before toString()
-                    .terms(ed.getTerms() != null ? ed.getTerms().toString() : "PERMANENT") 
+                    .terms(ed.getTerms() != null ? ed.getTerms().toString() : "PERMANENT")
                     .employerName(ed.getEmployerName())
                     .staffNumber(ed.getStaffNumber())
                     .grossMonthlyIncome(ed.getGrossMonthlyIncome())

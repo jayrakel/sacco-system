@@ -4,12 +4,8 @@ import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
 import com.sacco.sacco_system.modules.reporting.api.dto.LoanAgingDTO;
 import com.sacco.sacco_system.modules.reporting.api.dto.MemberStatementDTO;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -32,17 +27,14 @@ public class ReportingService {
 
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
-    private final LoanRepository loanRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
-    private final SystemSettingRepository systemSettingRepository; // Inject Settings
+    private final SystemSettingRepository systemSettingRepository;
 
     @Transactional(readOnly = true)
     public MemberStatementDTO getMemberStatement(UUID memberId, LocalDate startDate, LocalDate endDate) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        // 1. Fetch Organization Details (Dynamic Logo & Info)
-        // Assuming keys: 'organization_name', 'organization_logo', etc. Adjust keys to match your DB.
+        // 1. Organization Config
         List<SystemSetting> settings = systemSettingRepository.findAll();
         Map<String, String> config = settings.stream()
                 .collect(Collectors.toMap(SystemSetting::getKey, SystemSetting::getValue, (a, b) -> b));
@@ -50,29 +42,32 @@ public class ReportingService {
         String orgName = config.getOrDefault("ORGANIZATION_NAME", "Sacco System");
         String orgAddress = config.getOrDefault("ORGANIZATION_ADDRESS", "P.O. Box 0000");
         String orgEmail = config.getOrDefault("ORGANIZATION_EMAIL", "info@sacco.com");
-        String orgLogo = config.getOrDefault("ORGANIZATION_LOGO", ""); // URL or Base64
+        String orgLogo = config.getOrDefault("ORGANIZATION_LOGO", "");
 
-        // 2. Fetch Transactions
+        // 2. Fetch All Transactions
         List<Transaction> allTransactions = transactionRepository.findByMemberIdOrderByTransactionDateDesc(memberId);
 
-        // 3. Calculate Opening Balance
-        // Get the balance AFTER the last transaction that occurred BEFORE the start date.
-        BigDecimal openingBalance = allTransactions.stream()
-                .filter(tx -> tx.getTransactionDate().toLocalDate().isBefore(startDate))
-                .max(Comparator.comparing(Transaction::getTransactionDate))
-                .map(Transaction::getBalanceAfter)
-                .orElse(BigDecimal.ZERO);
+        // 3. Calculate Opening Balance (Replay history)
+        BigDecimal openingBalance = BigDecimal.ZERO;
+        List<Transaction> chronological = allTransactions.stream()
+                .sorted(Comparator.comparing(Transaction::getTransactionDate))
+                .collect(Collectors.toList());
+
+        for (Transaction tx : chronological) {
+            if (tx.getTransactionDate().toLocalDate().isBefore(startDate)) {
+                openingBalance = applyTransactionToBalance(openingBalance, tx);
+            }
+        }
 
         // 4. Filter for Period
-        List<Transaction> periodTransactions = allTransactions.stream()
+        List<Transaction> periodTransactions = chronological.stream()
                 .filter(tx -> {
                     LocalDate txDate = tx.getTransactionDate().toLocalDate();
                     return !txDate.isBefore(startDate) && !txDate.isAfter(endDate);
                 })
-                .sorted(Comparator.comparing(Transaction::getTransactionDate)) // Must be Ascending for running balance
                 .collect(Collectors.toList());
 
-        // 5. Calculate Running Balance Iteratively (Fixes the "Wrong Calculation" issue)
+        // 5. Generate Statement Lines
         BigDecimal currentBalance = openingBalance;
         BigDecimal totalDebits = BigDecimal.ZERO;
         BigDecimal totalCredits = BigDecimal.ZERO;
@@ -81,25 +76,25 @@ public class ReportingService {
 
         for (Transaction tx : periodTransactions) {
             BigDecimal amount = tx.getAmount();
-            
-            // Logic: Negative = Debit, Positive = Credit
-            if (amount.compareTo(BigDecimal.ZERO) < 0) {
+
+            // Visual Totals
+            if (isDebit(tx)) {
                 totalDebits = totalDebits.add(amount.abs());
             } else {
                 totalCredits = totalCredits.add(amount);
             }
 
-            // Update Running Balance
-            // New Balance = Old Balance + Amount (since amount is signed)
-            currentBalance = currentBalance.add(amount);
+            // Running Balance
+            currentBalance = applyTransactionToBalance(currentBalance, tx);
 
             dtos.add(MemberStatementDTO.StatementTransaction.builder()
                     .date(tx.getTransactionDate().toLocalDate())
-                    .reference(tx.getTransactionId())
+                    .reference(tx.getReferenceCode()) // System Ref
+                    .externalReference(tx.getExternalReference()) // User Ref
                     .description(tx.getDescription())
                     .type(tx.getType().toString())
-                    .amount(amount)
-                    .runningBalance(currentBalance) // Use calculated balance, not DB snapshot
+                    .amount(isDebit(tx) ? amount.negate() : amount) // Sign correctly
+                    .runningBalance(currentBalance)
                     .build());
         }
 
@@ -107,7 +102,7 @@ public class ReportingService {
                 .organizationName(orgName)
                 .organizationAddress(orgAddress)
                 .organizationEmail(orgEmail)
-                .organizationLogoUrl(orgLogo) // Pass to frontend
+                .organizationLogoUrl(orgLogo)
                 .memberName(member.getFirstName() + " " + member.getLastName())
                 .memberNumber(member.getMemberNumber())
                 .memberAddress(member.getEmail())
@@ -116,14 +111,69 @@ public class ReportingService {
                 .openingBalance(openingBalance)
                 .totalDebits(totalDebits)
                 .totalCredits(totalCredits)
-                .closingBalance(currentBalance) // Ensure matches final running balance
+                .closingBalance(currentBalance)
                 .transactions(dtos)
                 .build();
     }
 
-    // ... (Keep getLoanAgingReport unchanged) ...
+    /**
+     * Calculates impact on Savings Balance.
+     * External payments (M-Pesa/Bank) do NOT affect the Savings Balance.
+     */
+    private BigDecimal applyTransactionToBalance(BigDecimal currentBalance, Transaction tx) {
+        BigDecimal amount = tx.getAmount();
+
+        if (isExternalPayment(tx)) {
+            return currentBalance; // Balance unchanged
+        }
+
+        if (isDebit(tx)) {
+            return currentBalance.subtract(amount);
+        } else {
+            return currentBalance.add(amount);
+        }
+    }
+
+    /**
+     * Determines if transaction is Money Out (Debit) for the MEMBER.
+     */
+    private boolean isDebit(Transaction tx) {
+        switch (tx.getType()) {
+            case WITHDRAWAL:
+            case TRANSFER:
+            case PROCESSING_FEE:
+            case REGISTRATION_FEE:
+            case LATE_PAYMENT_PENALTY:
+            case FINE_PAYMENT:
+            case LOAN_REPAYMENT: // ✅ ADDED: Repayment is money leaving the member
+                return true;
+            default:
+                return false; // Deposits, Loan Disbursements, Interest Earned = Credit
+        }
+    }
+
+    /**
+     * Checks if money moved via external channel (M-Pesa/Bank/Cash)
+     * instead of the internal Savings Account.
+     */
+    private boolean isExternalPayment(Transaction tx) {
+        // These types can be paid externally
+        boolean canBeExternal =
+                tx.getType() == Transaction.TransactionType.PROCESSING_FEE ||
+                        tx.getType() == Transaction.TransactionType.REGISTRATION_FEE ||
+                        tx.getType() == Transaction.TransactionType.FINE_PAYMENT ||
+                        tx.getType() == Transaction.TransactionType.LOAN_REPAYMENT || // ✅ ADDED
+                        tx.getType() == Transaction.TransactionType.LOAN_DISBURSEMENT; // ✅ ADDED
+
+        // If payment method is NOT System/Null, it's external
+        boolean isExternalMethod = tx.getPaymentMethod() != Transaction.PaymentMethod.SYSTEM &&
+                tx.getPaymentMethod() != null;
+
+        return canBeExternal && isExternalMethod;
+    }
+
     @Transactional(readOnly = true)
     public List<LoanAgingDTO> getLoanAgingReport() {
-        return new ArrayList<>(); // Placeholder for brevity, keep original code
+        return new ArrayList<>();
     }
 }

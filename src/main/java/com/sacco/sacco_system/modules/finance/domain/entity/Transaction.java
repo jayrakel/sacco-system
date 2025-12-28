@@ -21,7 +21,7 @@ public class Transaction {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // Unique reference for the transaction (e.g., TXN123456789)
+    // Internal unique ID (TXN...)
     private String transactionId;
 
     @ManyToOne
@@ -32,7 +32,6 @@ public class Transaction {
     @JoinColumn(name = "savings_account_id")
     private SavingsAccount savingsAccount;
 
-    // Optional: Link to a loan if this transaction is related to one
     @ManyToOne
     @JoinColumn(name = "loan_id")
     private Loan loan;
@@ -47,7 +46,11 @@ public class Transaction {
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
 
-    private String referenceCode; // External ref (e.g. M-Pesa code, Check No)
+    // ✅ SYSTEM GENERATED CODE (e.g., REF-8X92M) - Used for verification
+    private String referenceCode;
+
+    // ✅ NEW: USER PROVIDED CODE (e.g., QKA...) - M-Pesa/Bank Reference
+    private String externalReference;
 
     private BigDecimal balanceAfter;
 
@@ -68,20 +71,18 @@ public class Transaction {
         INTEREST_EARNED,
         REGISTRATION_FEE,
         SHARE_PURCHASE,
-
-        // ✅ LOAN RELATED TYPES
-        PROCESSING_FEE,         // Application/Processing Fee
-        LOAN_DISBURSEMENT,      // Money out to member
-        LOAN_REPAYMENT,         // Money in from member
-        LATE_PAYMENT_PENALTY,   // Penalty charge
-        FINE_PAYMENT,           // Fine payment
-        REVERSAL                // Correction
+        PROCESSING_FEE,
+        LOAN_DISBURSEMENT,
+        LOAN_REPAYMENT,
+        LATE_PAYMENT_PENALTY,
+        FINE_PAYMENT,
+        REVERSAL
     }
 
     public enum PaymentMethod {
         CASH,
         BANK_TRANSFER,
-        BANK,   // ✅ Added to support the new routing logic
+        BANK,
         MPESA,
         CHECK,
         SYSTEM

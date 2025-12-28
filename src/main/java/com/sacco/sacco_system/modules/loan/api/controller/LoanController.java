@@ -42,7 +42,10 @@ public class LoanController {
         try {
             UUID productId = UUID.fromString(payload.get("productId").toString());
             String reference = payload.get("referenceCode").toString();
-            LoanDTO draft = loanService.initiateWithFee(getCurrentMemberId(), productId, reference);
+            // ✅ Extract Payment Method (Defaults to MPESA if missing)
+            String paymentMethod = payload.getOrDefault("paymentMethod", "MPESA").toString();
+
+            LoanDTO draft = loanService.initiateWithFee(getCurrentMemberId(), productId, reference, paymentMethod);
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -96,7 +99,6 @@ public class LoanController {
 
     // --- QUERIES ---
 
-    // ✅ FIXED: Added <String, Object> type hint to Map.of to prevent compiler error
     @GetMapping("/guarantors/eligible")
     public ResponseEntity<?> getEligibleGuarantors() {
         try {
