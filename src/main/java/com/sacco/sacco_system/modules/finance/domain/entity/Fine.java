@@ -1,7 +1,6 @@
 package com.sacco.sacco_system.modules.finance.domain.entity;
 
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,9 +32,8 @@ public class Fine {
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
-    private Loan loan;  // Optional - if fine is related to a loan
+    // Loan relationship removed; keep loan_id column removed in DB migrations if desired
+    // private Loan loan;  // removed
 
     @Enumerated(EnumType.STRING)
     private FineType type;
@@ -84,4 +82,3 @@ public class Fine {
         WAIVED      // Fine waived/forgiven
     }
 }
-

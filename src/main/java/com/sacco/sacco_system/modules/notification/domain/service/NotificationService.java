@@ -69,7 +69,7 @@ public class NotificationService {
 
     /**
      * Core method to save notification to DB.
-     * Used by LoanService and other internal services.
+     * Used by internal services.
      */
     public void createNotification(User user, String title, String message, Notification.NotificationType type) {
         Notification notification = Notification.builder()

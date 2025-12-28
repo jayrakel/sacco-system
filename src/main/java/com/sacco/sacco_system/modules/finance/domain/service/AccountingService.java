@@ -12,7 +12,7 @@ import com.sacco.sacco_system.modules.finance.domain.repository.GLAccountReposit
 import com.sacco.sacco_system.modules.finance.domain.repository.GlMappingRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.JournalEntryRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.JournalLineRepository;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+// Loan entity removed: AccountingService will no longer expose loan-specific methods
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
 import lombok.RequiredArgsConstructor;
@@ -350,47 +350,9 @@ public class AccountingService {
         postEvent("ASSET_PURCHASE", description, "ASSET-" + asset.getId(), asset.getPurchaseCost());
     }
 
-    /**
-     * ✅ UPDATED: Accepts sourceAccountCode (Credit Override)
-     * This allows loan disbursements to come from Bank or Cash instead of default M-Pesa.
-     */
-    public void postLoanDisbursement(Loan loan, String sourceAccountCode) {
-        log.info("Posting loan disbursement for loan {} from {}", loan.getLoanNumber(), sourceAccountCode);
-        
-        // Pass sourceAccountCode as the CREDIT override (2nd override param)
-        postEvent(
-            "LOAN_DISBURSEMENT", 
-            "Loan Disbursement - " + loan.getLoanNumber(),
-            loan.getLoanNumber(), 
-            loan.getPrincipalAmount(), 
-            null,              // Default Debit (1200 Loan Receivable)
-            sourceAccountCode  // Override Credit (Source of Funds)
-        );
-    }
+    // Loan-specific posting methods removed — loans module removed.
 
-    // Overload for backward compatibility
-    public void postLoanDisbursement(Loan loan) {
-        postLoanDisbursement(loan, null);
-    }
-
-    /**
-     * Post loan repayment transaction (principal and interest)
-     */
-    public void postLoanRepayment(Loan loan, BigDecimal principalAmount, BigDecimal interestAmount) {
-        // Note: For source-routed repayments, use the overloaded version in other services
-        log.info("Posting loan repayment for loan {} - Principal: {}, Interest: {}",
-                loan.getLoanNumber(), principalAmount, interestAmount);
-
-        if (principalAmount.compareTo(BigDecimal.ZERO) > 0) {
-            postEvent("LOAN_REPAYMENT_PRINCIPAL", "Loan Principal Repayment - " + loan.getLoanNumber(),
-                    loan.getLoanNumber(), principalAmount);
-        }
-
-        if (interestAmount.compareTo(BigDecimal.ZERO) > 0) {
-            postEvent("LOAN_REPAYMENT_INTEREST", "Loan Interest Payment - " + loan.getLoanNumber(),
-                    loan.getLoanNumber(), interestAmount);
-        }
-    }
+    // Loan repayment posting removed with loans module.
 
     /**
      * Post savings deposit transaction
@@ -498,14 +460,7 @@ public class AccountingService {
         // Savings Deposit Mapping
         createMapping("SAVINGS_DEPOSIT", "1002", "2001", "Member Savings Deposit");
 
-        // Loan Disbursement Mapping
-        createMapping("LOAN_DISBURSEMENT", "1200", "1002", "Loan Disbursement");
-
-        // Loan Repayment Mapping (Principal)
-        createMapping("LOAN_REPAYMENT_PRINCIPAL", "1002", "1200", "Loan Principal Repayment");
-
-        // Loan Repayment Mapping (Interest)
-        createMapping("LOAN_REPAYMENT_INTEREST", "1002", "4002", "Loan Interest Income");
+        // Loan mappings removed (loans module removed)
 
         // Registration Fee Mapping
         createMapping("REGISTRATION_FEE_CASH", "1001", "4001", "Registration Fee via Cash");
@@ -513,8 +468,7 @@ public class AccountingService {
         createMapping("REGISTRATION_FEE_BANK_TRANSFER", "1010", "4001", "Registration Fee via Bank (Default)");
         createMapping("REGISTRATION_FEE", "1002", "4001", "Member Registration Fee");
 
-        // Loan Processing Fee Mapping
-        createMapping("LOAN_PROCESSING_FEE", "1002", "4005", "Loan Processing Fee");
+        // Loan Processing Fee Mapping removed
 
         // Share Capital Purchase Mapping
         createMapping("SHARE_CAPITAL_PURCHASE", "1002", "3001", "Share Capital Purchase");

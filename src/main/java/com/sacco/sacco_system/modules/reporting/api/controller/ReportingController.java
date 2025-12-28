@@ -2,7 +2,6 @@ package com.sacco.sacco_system.modules.reporting.api.controller;
 
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
-import com.sacco.sacco_system.modules.reporting.api.dto.LoanAgingDTO;
 import com.sacco.sacco_system.modules.reporting.api.dto.MemberStatementDTO;
 import com.sacco.sacco_system.modules.reporting.domain.service.ReportingService;
 import lombok.RequiredArgsConstructor;
@@ -60,9 +59,5 @@ public class ReportingController {
         return ResponseEntity.ok(Map.of("success", true, "data", statement));
     }
 
-    @GetMapping("/loan-aging")
-    public ResponseEntity<Map<String, Object>> getLoanAgingReport() {
-        List<LoanAgingDTO> aging = reportingService.getLoanAgingReport();
-        return ResponseEntity.ok(Map.of("success", true, "data", aging));
-    }
+
 }

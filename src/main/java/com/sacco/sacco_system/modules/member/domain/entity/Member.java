@@ -3,7 +3,6 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
 
 import com.sacco.sacco_system.modules.users.domain.entity.User;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -83,11 +82,6 @@ public class Member {
     @JsonIgnoreProperties("member")
     @ToString.Exclude
     private List<SavingsAccount> savingsAccounts;
-
-    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @JsonIgnoreProperties("member")
-    @ToString.Exclude
-    private List<Loan> loans;
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnoreProperties("member")

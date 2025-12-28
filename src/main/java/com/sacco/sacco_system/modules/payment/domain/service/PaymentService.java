@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.payment.domain.service;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.payment.domain.service.PaymentService;
 import com.sacco.sacco_system.modules.savings.domain.service.SavingsService;
 
@@ -11,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 
 @Service
 @RequiredArgsConstructor
@@ -19,7 +17,6 @@ public class PaymentService {
 
     private final MemberRepository memberRepository;
     private final SavingsService savingsService;
-    private final LoanService loanService;
 
     /**
      * SIMULATE M-PESA STK PUSH
@@ -52,11 +49,11 @@ public class PaymentService {
                 .orElseThrow(() -> new RuntimeException("No member found with phone: " + phoneNumber));
 
         // Auto-Allocate Funds (Simple Rule: Default to Savings)
-        // In a real system, you'd check a 'PendingTransaction' table to know if this was for Loan or Savings
+        // All payments are deposited to savings by default
         savingsService.deposit(
-                member.getSavingsAccounts().get(0).getAccountNumber(),
-                amount,
-                "M-Pesa: " + mpesaCode
+            member.getSavingsAccounts().get(0).getAccountNumber(),
+            amount,
+            "M-Pesa: " + mpesaCode
         );
     }
 }

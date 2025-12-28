@@ -17,9 +17,6 @@ import java.util.stream.Collectors;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -39,9 +36,6 @@ public class SavingsService {
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
     
-    // ✅ ADDED: Dependencies to check liabilities
-    private final LoanRepository loanRepository;
-    private final GuarantorRepository guarantorRepository;
 
     // ========================================================================
     // 1. ACCOUNT MANAGEMENT
@@ -167,88 +161,7 @@ public class SavingsService {
         return convertToDTO(savedAccount);
     }
 
-    /**
-     * ✅ SECURED: MEMBER EXIT WITHDRAWAL
-     * Prevents exit if member has active loans or is a guarantor.
-     */
-    public SavingsAccountDTO processMemberExit(UUID memberId, String reason) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        // 1. ✅ Check for Active Loans (Self)
-        boolean hasActiveLoans = loanRepository.existsByMemberIdAndStatusIn(
-                memberId, 
-                List.of(
-                    Loan.LoanStatus.ACTIVE,
-                    Loan.LoanStatus.IN_ARREARS,
-                    Loan.LoanStatus.DISBURSED
-                )
-        );
-
-        if (hasActiveLoans) {
-            throw new RuntimeException("Cannot exit SACCO: You have active unpaid loans. Please clear them first.");
-        }
-
-        // 2. ✅ Check for Active Guarantees (Others)
-        boolean isActiveGuarantor = guarantorRepository.existsByMemberIdAndLoanStatusIn(
-                memberId,
-                List.of(
-                    Loan.LoanStatus.ACTIVE,
-                    Loan.LoanStatus.IN_ARREARS,
-                    Loan.LoanStatus.DISBURSED
-                )
-        );
-
-        if (isActiveGuarantor) {
-            throw new RuntimeException("Cannot exit SACCO: You are guaranteeing active loans for other members. You must be replaced as a guarantor before you can exit.");
-        }
-
-        // 3. Proceed with Account Closure
-        List<SavingsAccount> accounts = savingsAccountRepository.findByMemberId(memberId);
-
-        if (accounts.isEmpty()) {
-            throw new RuntimeException("No savings accounts found for member");
-        }
-
-        BigDecimal totalWithdrawal = BigDecimal.ZERO;
-
-        for (SavingsAccount account : accounts) {
-            totalWithdrawal = totalWithdrawal.add(account.getBalance());
-            account.setStatus(SavingsAccount.AccountStatus.CLOSED);
-            account.setBalance(BigDecimal.ZERO);
-            savingsAccountRepository.save(account);
-        }
-
-        if (totalWithdrawal.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("No funds available to withdraw");
-        }
-
-        member.setTotalSavings(BigDecimal.ZERO);
-        member.setStatus(Member.MemberStatus.INACTIVE); 
-        memberRepository.save(member);
-
-        Transaction tx = Transaction.builder()
-                .member(member)
-                .type(Transaction.TransactionType.WITHDRAWAL)
-                .amount(totalWithdrawal)
-                .description("Member Exit: " + (reason != null ? reason : "Voluntary exit"))
-                .balanceAfter(BigDecimal.ZERO)
-                .build();
-        transactionRepository.save(tx);
-
-        Withdrawal withdrawal = Withdrawal.builder()
-                .member(member)
-                .amount(totalWithdrawal)
-                .status(Withdrawal.WithdrawalStatus.APPROVED)
-                .reason("Member Exit: " + (reason != null ? reason : "Voluntary exit"))
-                .requestDate(LocalDateTime.now())
-                .processingDate(LocalDateTime.now())
-                .build();
-
-        accountingService.postSavingsWithdrawal(withdrawal);
-
-        return accounts.isEmpty() ? null : convertToDTO(accounts.get(0));
-    }
 
     @Deprecated
     public SavingsAccountDTO withdraw(String accountNumber, BigDecimal amount, String description) {

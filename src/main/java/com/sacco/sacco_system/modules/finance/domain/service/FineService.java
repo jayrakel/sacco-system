@@ -3,9 +3,6 @@ package com.sacco.sacco_system.modules.finance.domain.service;
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.finance.domain.entity.Fine;
 import com.sacco.sacco_system.modules.finance.domain.repository.FineRepository;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +29,6 @@ public class FineService {
 
     private final FineRepository fineRepository;
     private final MemberRepository memberRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
     private final SystemSettingService systemSettingService;
     private final AccountingService accountingService;
 
@@ -56,11 +51,8 @@ public class FineService {
                 .build();
 
         if (loanId != null) {
-            // Link to loan if provided
-            fine.setLoan(member.getLoans().stream()
-                    .filter(l -> l.getId().equals(loanId))
-                    .findFirst()
-                    .orElse(null));
+            // Loans module removed: cannot link fine to loan. Persist fine without loan link.
+            log.warn("Loan ID provided to imposeFine but loans module is removed: {}", loanId);
         }
 
         Fine saved = fineRepository.save(fine);
@@ -75,50 +67,8 @@ public class FineService {
      * Calculate and impose late payment fine for overdue loan repayment
      */
     public Fine calculateLateFine(UUID loanRepaymentId) {
-        LoanRepayment repayment = loanRepaymentRepository.findById(loanRepaymentId)
-                .orElseThrow(() -> new RuntimeException("Repayment not found"));
-
-        if (repayment.getStatus() == LoanRepayment.RepaymentStatus.PAID) {
-            throw new RuntimeException("Repayment already paid. No fine needed.");
-        }
-
-        LocalDate today = LocalDate.now();
-        LocalDate dueDate = repayment.getDueDate();
-
-        if (today.isBefore(dueDate) || today.isEqual(dueDate)) {
-            throw new RuntimeException("Payment not yet overdue. No fine applicable.");
-        }
-
-        long daysOverdue = ChronoUnit.DAYS.between(dueDate, today);
-
-        // Get fine rate from settings (e.g., 1% per day or fixed amount)
-        BigDecimal fineRate = BigDecimal.valueOf(
-                systemSettingService.getDouble("LATE_PAYMENT_FINE_RATE", 0.01)); // 1% per day default
-
-        // Calculate fine amount
-        BigDecimal fineAmount = repayment.getAmount()
-                .multiply(fineRate)
-                .multiply(BigDecimal.valueOf(daysOverdue));
-
-        // Check for maximum fine cap
-        BigDecimal maxFine = BigDecimal.valueOf(
-                systemSettingService.getDouble("MAX_LATE_PAYMENT_FINE", 5000.0));
-
-        if (fineAmount.compareTo(maxFine) > 0) {
-            fineAmount = maxFine;
-        }
-
-        String description = String.format("Late payment fine for %d days overdue on installment #%d",
-                daysOverdue, repayment.getRepaymentNumber());
-
-        return imposeFine(
-                repayment.getLoan().getMember().getId(),
-                repayment.getLoan().getId(),
-                Fine.FineType.LATE_LOAN_PAYMENT,
-                fineAmount,
-                description,
-                (int) daysOverdue
-        );
+        // Late fine calculation depends on LoanRepayment data which is part of the removed loans module.
+        throw new UnsupportedOperationException("Loan repayment fine calculation is unavailable because the loans module has been removed.");
     }
 
     /**
@@ -230,35 +180,6 @@ public class FineService {
      * This can be scheduled to run daily
      */
     public List<Fine> processOverduePayments() {
-        List<LoanRepayment> overduePayments = loanRepaymentRepository
-                .findByStatusAndDueDateBefore(
-                        LoanRepayment.RepaymentStatus.PENDING,
-                        LocalDate.now()
-                );
-
-        List<Fine> finesImposed = new java.util.ArrayList<>();
-
-        for (LoanRepayment repayment : overduePayments) {
-            try {
-                // Check if fine already exists for this repayment
-                List<Fine> existingFines = fineRepository.findByLoanId(repayment.getLoan().getId());
-                boolean fineExists = existingFines.stream()
-                        .anyMatch(f -> f.getDescription().contains("installment #" + repayment.getRepaymentNumber()));
-
-                if (!fineExists) {
-                    Fine fine = calculateLateFine(repayment.getId());
-                    finesImposed.add(fine);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to impose fine for repayment {}: {}",
-                        repayment.getId(), e.getMessage());
-            }
-        }
-
-        log.info("Processed {} overdue payments, imposed {} fines",
-                overduePayments.size(), finesImposed.size());
-
-        return finesImposed;
+        throw new UnsupportedOperationException("Overdue payment processing is unavailable because the loans module has been removed.");
     }
 }
-

@@ -2,14 +2,9 @@ package com.sacco.sacco_system.modules.reporting.domain.service;
 
 import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
-import com.sacco.sacco_system.modules.reporting.api.dto.LoanAgingDTO;
 import com.sacco.sacco_system.modules.reporting.api.dto.MemberStatementDTO;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,8 +27,6 @@ public class ReportingService {
 
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
-    private final LoanRepository loanRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
     private final SystemSettingRepository systemSettingRepository; // Inject Settings
 
     @Transactional(readOnly = true)
