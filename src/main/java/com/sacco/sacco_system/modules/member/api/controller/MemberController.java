@@ -54,7 +54,7 @@ public class MemberController {
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
             
             // Call the updated Service method
-            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode);
+            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode, null);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

@@ -43,30 +43,25 @@ public class LoanService {
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
 
-    /**
-     * ✅ ELIGIBILITY CHECK
-     * Fetches the keys you manually added via the Admin Dashboard.
-     */
     public Map<String, Object> checkEligibility(UUID userId) {
         Member member = memberRepository.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Member record not found"));
 
-        // Match these exactly to what you type in the "Add Setting" modal
-        int requiredMonths = Integer.parseInt(systemSettingService.getString("MINIMUM_MEMBERSHIP_MONTHS", "3"));
-        BigDecimal requiredSavings = new BigDecimal(systemSettingService.getString("MINIMUM_LOAN_SAVINGS", "5000"));
+        // ✅ FIXED: Using keys that actually exist in SystemSettingService defaults
+        int requiredMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_MEMBERSHIP", "3"));
+        BigDecimal requiredSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_FOR_LOAN", "5000"));
         int maxActiveLoans = Integer.parseInt(systemSettingService.getString("MAX_ACTIVE_LOANS", "1"));
 
         Map<String, Object> response = new HashMap<>();
         List<String> reasons = new ArrayList<>();
 
-        // Live Balance Sum (Always accurate)
-        BigDecimal currentSavings = savingsAccountRepository.findByMemberId(member.getId())
+        // ✅ FIXED: Using correct repo method
+        BigDecimal currentSavings = savingsAccountRepository.findByMember_Id(member.getId())
                 .stream()
                 .map(SavingsAccount::getBalance)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Active Loan Count
         long activeLoanCount = loanRepository.countByMemberIdAndStatusIn(
                 member.getId(),
                 List.of(Loan.LoanStatus.ACTIVE, Loan.LoanStatus.IN_ARREARS)
@@ -101,9 +96,6 @@ public class LoanService {
         return response;
     }
 
-    /**
-     * ✅ INITIATE LOAN (FEE FIRST)
-     */
     public LoanDTO initiateWithFee(UUID userId, UUID productId, String referenceCode) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
@@ -126,11 +118,8 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    /**
-     * ✅ SUBMIT APPLICATION
-     */
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
         if (!loan.isApplicationFeePaid()) {
             throw new RuntimeException("Application fee must be paid before submitting details.");
@@ -154,9 +143,6 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    /**
-     * ✅ ADD GUARANTOR
-     */
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
@@ -179,8 +165,6 @@ public class LoanService {
         return convertToGuarantorDTO(guarantorRepository.save(g));
     }
 
-    // --- QUERIES & HELPERS ---
-
     public List<LoanDTO> getLoansByMember(UUID userId) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
         return loanRepository.findByMemberId(member.getId()).stream()
@@ -189,9 +173,7 @@ public class LoanService {
     }
 
     public LoanDTO getLoanById(UUID loanId) {
-        return loanRepository.findById(loanId)
-                .map(this::convertToDTO)
-                .orElseThrow(() -> new RuntimeException("Loan not found"));
+        return loanRepository.findById(loanId).map(this::convertToDTO).orElseThrow();
     }
 
     private void validateAbilityToPay(Member member, BigDecimal weeklyRepayment) {

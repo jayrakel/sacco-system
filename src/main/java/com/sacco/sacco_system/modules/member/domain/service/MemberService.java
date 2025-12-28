@@ -6,6 +6,7 @@ import com.sacco.sacco_system.modules.member.api.dto.EmploymentDetailsDTO;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
 import com.sacco.sacco_system.modules.member.domain.entity.Beneficiary;
 import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
+import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
@@ -47,7 +48,7 @@ public class MemberService {
     @Value("${app.upload.dir:uploads/profiles/}")
     private String uploadDir;
 
-    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode, String bankAccountCode) throws IOException {
+    public MemberDTO createMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode, String bankAccountCode, User user) throws IOException {
 
         if (memberRepository.findByEmail(memberDTO.getEmail()).isPresent()) throw new RuntimeException("Email already registered");
         if (memberRepository.findByPhoneNumber(memberDTO.getPhoneNumber()).isPresent()) throw new RuntimeException("Phone already registered");
@@ -65,6 +66,7 @@ public class MemberService {
         String memberNumber = generateMemberNumber();
 
         Member member = Member.builder()
+                .user(user)
                 .memberNumber(memberNumber)
                 .firstName(memberDTO.getFirstName())
                 .lastName(memberDTO.getLastName())

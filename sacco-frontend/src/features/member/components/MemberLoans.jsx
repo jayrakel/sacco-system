@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText, ArrowRight, Trash2, Edit, Users, AlertCircle, ChevronRight } from 'lucide-react';
+import { CreditCard, PlusCircle, CheckCircle, Clock, XCircle, FileText, Edit, AlertCircle, ChevronRight } from 'lucide-react';
 import LoanApplicationModal from './LoanApplicationModal';
 import LoanFeePaymentModal from './LoanFeePaymentModal';
 
@@ -9,6 +9,7 @@ export default function MemberLoans({ user }) {
     const [loading, setLoading] = useState(true);
     const [eligibilityData, setEligibilityData] = useState(null);
     const [isEligible, setIsEligible] = useState(false);
+    const [error, setError] = useState(null); // ✅ Added Error State
 
     // Modal States
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
@@ -21,18 +22,26 @@ export default function MemberLoans({ user }) {
 
     const loadDashboardData = async () => {
         setLoading(true);
+        setError(null);
         try {
-            const [loansRes, eligRes] = await Promise.all([
-                api.get('/api/loans/my-loans'),
-                api.get('/api/loans/eligibility/check')
-            ]);
-            if (loansRes.data.success) setLoans(loansRes.data.data);
-            if (eligRes.data.success) {
+            // Fetch independently to prevent one failure from blocking the other
+            const loansRes = await api.get('/api/loans/my-loans').catch(e => ({ error: e }));
+            const eligRes = await api.get('/api/loans/eligibility/check').catch(e => ({ error: e }));
+
+            if (loansRes.data?.success) {
+                setLoans(loansRes.data.data);
+            }
+
+            if (eligRes.data?.success) {
                 setIsEligible(eligRes.data.data.eligible);
                 setEligibilityData(eligRes.data.data);
+            } else if (eligRes.error) {
+                console.error("Eligibility Check Failed:", eligRes.error);
+                setError(eligRes.error.response?.data?.message || "Could not verify eligibility.");
             }
         } catch (e) {
             console.error("Failed to load dashboard data", e);
+            setError("System connection error.");
         } finally {
             setLoading(false);
         }
@@ -65,7 +74,18 @@ export default function MemberLoans({ user }) {
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
 
-            {/* 1. PREREQUISITES SECTION: Shown only if NOT eligible */}
+            {/* ✅ Error Banner */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl flex items-center gap-3">
+                    <AlertCircle size={20} />
+                    <div>
+                        <p className="font-bold text-sm">Synchronization Error</p>
+                        <p className="text-xs">{error}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* 1. PREREQUISITES SECTION */}
             {!isEligible && (
                 <div className="bg-white p-8 rounded-3xl border-2 border-amber-100 shadow-sm overflow-hidden relative">
                     <div className="flex items-center gap-4 mb-8">
@@ -110,6 +130,7 @@ export default function MemberLoans({ user }) {
                         </div>
                     </div>
 
+                    {/* Pending Actions */}
                     <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100/50">
                         <h4 className="text-[10px] font-black text-amber-600 uppercase mb-2 tracking-widest">Pending Actions</h4>
                         <ul className="space-y-2">
@@ -123,13 +144,13 @@ export default function MemberLoans({ user }) {
                 </div>
             )}
 
-            {/* 2. ELIGIBLE ACTION: Card shown only when qualifies */}
+            {/* 2. ELIGIBLE ACTION */}
             {isEligible && (
                 <div className="bg-indigo-900 rounded-3xl p-10 text-white flex flex-col md:flex-row justify-between items-center shadow-2xl shadow-indigo-900/20 border border-white/10 group relative overflow-hidden">
                     <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors duration-700" />
                     <div className="relative z-10 space-y-2 text-center md:text-left mb-6 md:mb-0">
                         <h2 className="text-3xl font-black tracking-tight">You are Eligible for a Loan!</h2>
-                        <p className="text-indigo-200 text-sm max-w-md">You have met all system requirements. You can now proceed to submit an application.</p>
+                        <p className="text-indigo-200 text-sm max-w-md">You have met all system requirements.</p>
                     </div>
                     <button
                         onClick={handleApplyNewLoan}
@@ -140,7 +161,7 @@ export default function MemberLoans({ user }) {
                 </div>
             )}
 
-            {/* 3. LOAN HISTORY: Only shown if history exists */}
+            {/* 3. LOAN HISTORY */}
             {loans.length > 0 && (
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
@@ -163,21 +184,8 @@ export default function MemberLoans({ user }) {
                                         <td className="p-4 text-right font-black text-slate-900 font-mono">KES {Number(loan.principalAmount || 0).toLocaleString()}</td>
                                         <td className="p-4">{getStatusBadge(loan.status)}</td>
                                         <td className="p-4 text-center">
-                                            <div className="flex justify-center gap-2">
-                                                {loan.status === 'DRAFT' && (
-                                                    <button onClick={() => { setSelectedLoan(loan); setIsApplyModalOpen(true); }} className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition" title="Complete Application">
-                                                        <Edit size={16}/>
-                                                    </button>
-                                                )}
-                                                {loan.status === 'APPLICATION_FEE_PENDING' && (
-                                                    <button onClick={() => { setSelectedLoan(loan); setIsPayFeeModalOpen(true); }} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black hover:bg-purple-700 transition shadow-md">
-                                                        PAY FEE
-                                                    </button>
-                                                )}
-                                                <button className="text-slate-400 p-2 hover:bg-slate-100 rounded-lg">
-                                                    <FileText size={16}/>
-                                                </button>
-                                            </div>
+                                            {loan.status === 'DRAFT' && <button onClick={() => { setSelectedLoan(loan); setIsApplyModalOpen(true); }} className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg"><Edit size={16}/></button>}
+                                            {loan.status === 'APPLICATION_FEE_PENDING' && <button onClick={() => { setSelectedLoan(loan); setIsPayFeeModalOpen(true); }} className="bg-purple-600 text-white px-3 py-1 text-[10px] rounded hover:bg-purple-700">PAY FEE</button>}
                                         </td>
                                     </tr>
                                 ))}
@@ -187,21 +195,8 @@ export default function MemberLoans({ user }) {
                 </div>
             )}
 
-            {/* Application Modals */}
-            <LoanApplicationModal
-                isOpen={isApplyModalOpen}
-                onClose={() => setIsApplyModalOpen(false)}
-                onSuccess={loadDashboardData}
-                resumeLoan={selectedLoan}
-            />
-
-            <LoanFeePaymentModal
-                isOpen={isPayFeeModalOpen}
-                onClose={() => setIsPayFeeModalOpen(false)}
-                onSuccess={handleFeePaymentSuccess}
-                loan={selectedLoan}
-                isNewApplication={!selectedLoan}
-            />
+            <LoanApplicationModal isOpen={isApplyModalOpen} onClose={() => setIsApplyModalOpen(false)} onSuccess={loadDashboardData} resumeLoan={selectedLoan} />
+            <LoanFeePaymentModal isOpen={isPayFeeModalOpen} onClose={() => setIsPayFeeModalOpen(false)} onSuccess={handleFeePaymentSuccess} loan={selectedLoan} isNewApplication={!selectedLoan} />
         </div>
     );
 }

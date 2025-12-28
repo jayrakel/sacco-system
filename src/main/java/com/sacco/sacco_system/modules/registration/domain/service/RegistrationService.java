@@ -55,7 +55,7 @@ public class RegistrationService {
         // this change will be automatically saved to the database at the end of the method.
 
         // Step 3: Create Member record (SACCO membership)
-        MemberDTO createdMember = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, null);
+        MemberDTO createdMember = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, null, user);
 
         // Step 4: Create email verification token
         String token = UUID.randomUUID().toString();

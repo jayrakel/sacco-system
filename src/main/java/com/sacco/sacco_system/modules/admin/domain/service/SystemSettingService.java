@@ -27,6 +27,7 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
+    // ✅ UPDATED DEFAULTS: Includes MAX_ACTIVE_LOANS & MAX_DEBT_RATIO
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
@@ -34,27 +35,36 @@ public class SystemSettingService {
             entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             entry("LOAN_LIMIT_MULTIPLIER", "3"),
             entry("LOAN_APPLICATION_FEE", "500"),
+
             // Loan Eligibility Thresholds
             entry("MIN_SAVINGS_FOR_LOAN", "5000"),
             entry("MIN_MONTHS_MEMBERSHIP", "3"),
             entry("MIN_SHARE_CAPITAL", "1000"),
+
+            // ✅ ADDED: Missing Governance Keys
+            entry("MAX_ACTIVE_LOANS", "1"),
+            entry("MAX_DEBT_RATIO", "0.66"),
+
             // Guarantor Eligibility Thresholds
             entry("MIN_SAVINGS_TO_GUARANTEE", "10000"),
             entry("MIN_MONTHS_TO_GUARANTEE", "6"),
             entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
+
             // Share Capital
             entry("SHARE_VALUE", "100"),
+
             // Branding & Contact Details
             entry("SACCO_NAME", "Secure Sacco"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
-            entry("SACCO_ADDRESS", "P.O. Box 12345-00100, Nairobi, Kenya"), // NEW
-            entry("SACCO_PHONE", "+254 700 000 000"), // NEW
-            entry("SACCO_EMAIL", "info@securesacco.com"), // NEW
-            entry("SACCO_WEBSITE", "https://www.securesacco.com"), // NEW
+            entry("SACCO_ADDRESS", "P.O. Box 12345-00100, Nairobi, Kenya"),
+            entry("SACCO_PHONE", "+254 700 000 000"),
+            entry("SACCO_EMAIL", "info@securesacco.com"),
+            entry("SACCO_WEBSITE", "https://www.securesacco.com"),
             entry("SACCO_LOGO", ""),
             entry("SACCO_FAVICON", ""),
             entry("BRAND_COLOR_PRIMARY", "#059669"),
             entry("BRAND_COLOR_SECONDARY", "#0f172a"),
+
             // Bank Details
             entry("BANK_NAME", "Co-operative Bank"),
             entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
@@ -69,10 +79,10 @@ public class SystemSettingService {
             if (repository.findByKey(key).isEmpty()) {
                 // Determine data type for the frontend
                 String type = "NUMBER";
-                if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME")) {
+                if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") || key.contains("ADDRESS") || key.contains("EMAIL") || key.contains("WEBSITE")) {
                     type = "STRING";
                 }
-                
+
                 repository.save(SystemSetting.builder()
                         .key(key)
                         .value(value)
@@ -92,10 +102,10 @@ public class SystemSettingService {
     }
 
     public String getString(String key, String defaultValue) {
-    return repository.findByKey(key)
-            .map(SystemSetting::getValue)
-            .orElse(defaultValue);
-}
+        return repository.findByKey(key)
+                .map(SystemSetting::getValue)
+                .orElse(defaultValue);
+    }
 
     @Transactional
     public SystemSetting createOrUpdate(String key, String value, String description) {
