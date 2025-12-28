@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { X, CheckCircle, Calculator, UserPlus, Search, ArrowRight, ArrowLeft, Users, AlertCircle, Loader, Lock, Info } from 'lucide-react';
 
-export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user, resumeLoan }) { // ✅ Added resumeLoan
+export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user, resumeLoan }) {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [loanId, setLoanId] = useState(null);
 
     // Step 1 Data
     const [products, setProducts] = useState([]);
-    const [formData, setFormData] = useState({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
+    // ✅ FIXED: Default durationUnit is now 'WEEKS'
+    const [formData, setFormData] = useState({ productId: '', amount: '', duration: '', durationUnit: 'WEEKS' });
     const [calculatedRepayment, setCalculatedRepayment] = useState(null);
 
     // Limits
@@ -34,17 +35,15 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                 console.log("Resume mode - loan ID:", resumeLoan.id);
                 setLoanId(resumeLoan.id);
 
-                // Check if loan has product details (completed step 1)
-                if (resumeLoan.productName && resumeLoan.principalAmount) {
-                    // Step 1 was completed - go to step 2 (guarantors)
+                if (resumeLoan.principalAmount && Number(resumeLoan.principalAmount) > 0) {
                     console.log("Loan has product details - jumping to step 2");
                     setStep(2);
                     fetchExistingGuarantors(resumeLoan.id);
                 } else {
-                    // Step 1 not completed - stay on step 1
                     console.log("Loan needs product details - staying on step 1");
                     setStep(1);
-                    setFormData({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
+                    // ✅ FIXED: Ensure unit is WEEKS on resume
+                    setFormData({ productId: '', amount: '', duration: '', durationUnit: 'WEEKS' });
                 }
             } else {
                 // ✅ NEW MODE
@@ -52,7 +51,8 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                 setStep(1);
                 setLoanId(null);
                 setSelectedGuarantors([]);
-                setFormData({ productId: '', amount: '', duration: '', durationUnit: 'MONTHS' });
+                // ✅ FIXED: Ensure unit is WEEKS on new
+                setFormData({ productId: '', amount: '', duration: '', durationUnit: 'WEEKS' });
             }
         }
     }, [isOpen, resumeLoan]);
@@ -86,22 +86,23 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
 
     const fetchMembers = async () => {
         try {
-            const res = await api.get('/api/members/active');
+            const res = await api.get('/api/loans/guarantors/eligible');
             if (res.data.success) {
-                const others = res.data.data.filter(m => String(m.id) !== String(user?.Id));
-                setMembers(others);
+                setMembers(res.data.data);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("Failed to fetch eligible guarantors", e);
+            setMembers([]);
+        }
     };
 
     const fetchExistingGuarantors = async (id) => {
         try {
             const res = await api.get(`/api/loans/${id}/guarantors`);
             if (res.data.success) {
-                // Map backend DTO to frontend structure
                 const formatted = res.data.data.map(g => ({
-                    id: g.memberId, // Important for "already added" check
-                    firstName: g.memberName.split(' ')[0], // Simple split if full name provided
+                    id: g.memberId,
+                    firstName: g.memberName.split(' ')[0],
                     lastName: g.memberName.split(' ').slice(1).join(' ') || '',
                     memberNumber: '...',
                     amount: g.guaranteeAmount
@@ -112,48 +113,44 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
     };
 
     // --- STEP 1: CREATE OR UPDATE DRAFT ---
-        const handleCreateDraft = async (e) => {
-            e.preventDefault();
+    const handleCreateDraft = async (e) => {
+        e.preventDefault();
 
-            if (parseFloat(formData.amount) > effectiveLimit) {
-                alert(`Amount cannot exceed your limit of KES ${Number(effectiveLimit).toLocaleString()}`);
-                return;
+        if (parseFloat(formData.amount) > effectiveLimit) {
+            alert(`Amount cannot exceed your limit of KES ${Number(effectiveLimit).toLocaleString()}`);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const payload = {
+                productId: formData.productId,
+                amount: formData.amount,
+                duration: formData.duration,
+                durationUnit: 'WEEKS' // ✅ FIXED: Hardcoded to WEEKS
+            };
+
+            if (loanId) {
+                payload.loanId = loanId;
             }
 
-            setLoading(true);
-            try {
-                const params = new URLSearchParams();
-                // params.append('productId', formData.productId); // Product usually shouldn't change on update to simplify logic
-                params.append('amount', formData.amount);
-                params.append('duration', formData.duration);
-                params.append('durationUnit', formData.durationUnit);
+            const res = await api.post('/api/loans/apply', payload);
 
-                let res;
-                if (loanId) {
-                    // ✅ UPDATE EXISTING DRAFT
-                    res = await api.put(`/api/loans/${loanId}/update`, params);
-                } else {
-                    // ✅ CREATE NEW DRAFT
-                    params.append('productId', formData.productId); // Only needed for creation
-                    res = await api.post('/api/loans/apply', params);
-                }
-
-                if (res.data.success) {
-                    setLoanId(res.data.data.id);
-                    setStep(2);
-                }
-            } catch (e) {
-                alert(e.response?.data?.message || "Failed to process request");
-            } finally {
-                setLoading(false);
+            if (res.data.success) {
+                setLoanId(res.data.data.id);
+                setStep(2);
             }
-        };
+        } catch (e) {
+            alert(e.response?.data?.message || "Failed to process request");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // --- STEP 2: ADD GUARANTOR ---
     const handleAddGuarantor = async () => {
         if (!activeGuarantorId || !guaranteeAmount) return;
 
-        // Prevent duplicates
         if (selectedGuarantors.some(g => g.id === activeGuarantorId)) {
             alert("Member already added as guarantor.");
             return;
@@ -203,13 +200,14 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
         if (product && formData.amount && formData.duration) {
             const P = parseFloat(formData.amount);
             const rate = product.interestRate || 0;
-            const divisor = formData.durationUnit === 'WEEKS' ? 52 : 12;
+            // ✅ FIXED: Always use 52 for divisor since we are strictly WEEKS
+            const divisor = 52;
             const N = parseInt(formData.duration);
 
             const totalInterest = P * (rate / 100) * (N / divisor);
-            const monthly = (P + totalInterest) / N;
+            const weekly = (P + totalInterest) / N;
 
-            setCalculatedRepayment(monthly.toFixed(2));
+            setCalculatedRepayment(weekly.toFixed(2));
         } else {
             setCalculatedRepayment(null);
         }
@@ -242,7 +240,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                 {/* Body */}
                 <div className="p-6 overflow-y-auto flex-1">
 
-                    {/* STEP 1: CONFIGURATION (Only show if NOT resuming, or if we allowed editing draft details which we skip for simplicity) */}
+                    {/* STEP 1: CONFIGURATION */}
                     {step === 1 && (
                         <form id="step1-form" onSubmit={handleCreateDraft} className="space-y-5">
 
@@ -294,27 +292,17 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                                         <p className="text-xs text-red-500 mt-1 font-bold">Exceeds limit</p>
                                     )}
                                 </div>
-                                <div className="flex gap-2">
-                                    <div className="flex-1">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Duration</label>
-                                        <input
-                                            type="number" required min="1"
-                                            className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                                            value={formData.duration}
-                                            onChange={e => setFormData({...formData, duration: e.target.value})}
-                                        />
-                                    </div>
-                                    <div className="w-1/3">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Unit</label>
-                                        <select
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none"
-                                            value={formData.durationUnit}
-                                            onChange={e => setFormData({...formData, durationUnit: e.target.value})}
-                                        >
-                                            <option value="MONTHS">Months</option>
-                                            <option value="WEEKS">Weeks</option>
-                                        </select>
-                                    </div>
+
+                                {/* ✅ FIXED: Changed to single full-width input for Weeks */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Duration (Weeks)</label>
+                                    <input
+                                        type="number" required min="1"
+                                        placeholder="e.g. 52"
+                                        className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={formData.duration}
+                                        onChange={e => setFormData({...formData, duration: e.target.value})}
+                                    />
                                 </div>
                             </div>
 
@@ -324,7 +312,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                                     <div>
                                         <p className="text-xs text-emerald-800 font-bold uppercase">Estimated Repayment</p>
                                         <p className="text-lg font-bold text-emerald-700 font-mono">
-                                            KES {Number(calculatedRepayment).toLocaleString()} <span className="text-sm font-normal text-emerald-600">/ {formData.durationUnit.toLowerCase().slice(0, -1)}</span>
+                                            KES {Number(calculatedRepayment).toLocaleString()} <span className="text-sm font-normal text-emerald-600">/ week</span>
                                         </p>
                                     </div>
                                 </div>

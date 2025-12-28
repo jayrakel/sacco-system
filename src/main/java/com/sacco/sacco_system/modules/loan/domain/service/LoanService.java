@@ -44,7 +44,8 @@ public class LoanService {
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
 
-    // ... (checkEligibility method remains unchanged) ...
+    // --- PHASE 1: ELIGIBILITY & LIMITS ---
+
     public Map<String, Object> checkEligibility(UUID userId) {
         Member member = memberRepository.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Member record not found"));
@@ -96,6 +97,46 @@ public class LoanService {
         return response;
     }
 
+    /**
+     * ✅ GATEKEEPER: Get list of members eligible to be guarantors.
+     */
+    public List<Member> getEligibleGuarantors(UUID applicantId) {
+        BigDecimal minSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_TO_GUARANTEE", "10000"));
+        int minMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_TO_GUARANTEE", "6"));
+
+        List<Member> candidates = memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream()
+                .filter(m -> !m.getId().equals(applicantId)) // Exclude self
+                .collect(Collectors.toList());
+
+        List<Member> eligible = new ArrayList<>();
+
+        for (Member m : candidates) {
+            BigDecimal savings = savingsAccountRepository.findByMember_Id(m.getId()).stream()
+                    .map(SavingsAccount::getBalance)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            if (savings.compareTo(minSavings) < 0) continue;
+
+            long monthsActive = 0;
+            if (m.getCreatedAt() != null) {
+                monthsActive = java.time.temporal.ChronoUnit.MONTHS.between(m.getCreatedAt(), LocalDate.now());
+            }
+            if (monthsActive < minMonths) continue;
+
+            boolean hasDefaults = loanRepository.findByMemberId(m.getId()).stream()
+                    .anyMatch(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED || l.getStatus() == Loan.LoanStatus.WRITTEN_OFF);
+
+            if (hasDefaults) continue;
+
+            eligible.add(m);
+        }
+
+        return eligible;
+    }
+
+    // --- PHASE 2: INITIATION & SUBMISSION ---
+
     public LoanDTO initiateWithFee(UUID userId, UUID productId, String referenceCode) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
@@ -114,7 +155,6 @@ public class LoanService {
                 .applicationDate(LocalDate.now())
                 .applicationFeePaid(true)
                 .gracePeriodWeeks(0)
-                // ✅ FIX: Initialize voting fields to satisfy DB NOT NULL constraints
                 .votingOpen(false)
                 .votesYes(0)
                 .votesNo(0)
@@ -123,7 +163,6 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
-    // ... (submitApplication, addGuarantor, queries, validation remain same) ...
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -156,12 +195,20 @@ public class LoanService {
         return convertToDTO(loanRepository.save(loan));
     }
 
+    // --- PHASE 3: GUARANTOR MANAGEMENT ---
+
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
-        Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        Member guarantor = memberRepository.findById(guarantorMemberId).orElseThrow(() -> new RuntimeException("Guarantor not found"));
 
         if (guarantor.getId().equals(loan.getMember().getId())) {
             throw new RuntimeException("Conflict: You cannot guarantee your own loan.");
+        }
+
+        boolean alreadyAdded = loan.getGuarantors().stream()
+                .anyMatch(g -> g.getMember().getId().equals(guarantorMemberId));
+        if (alreadyAdded) {
+            throw new RuntimeException("This member is already a guarantor for this loan.");
         }
 
         Guarantor g = Guarantor.builder()
@@ -173,10 +220,42 @@ public class LoanService {
                 .build();
 
         notificationService.notifyUser(guarantor.getId(), "Guarantorship Request",
-                "Action required for loan " + loan.getLoanNumber(), true, false);
+                "Request from " + loan.getMemberName() + " for loan " + loan.getLoanNumber(), true, false);
 
         return convertToGuarantorDTO(guarantorRepository.save(g));
     }
+
+    public void finalizeGuarantorRequests(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getGuarantors().isEmpty()) {
+            throw new RuntimeException("At least one guarantor is required.");
+        }
+
+        // Confirm status and update timestamp if needed
+        loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
+        loanRepository.save(loan);
+    }
+
+    // ✅ THIS IS THE METHOD YOU WERE MISSING
+    public List<GuarantorDTO> getGuarantorsByLoan(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        return guarantorRepository.findByLoan(loan).stream()
+                .map(this::convertToGuarantorDTO)
+                .collect(Collectors.toList());
+    }
+
+    public List<GuarantorDTO> getGuarantorRequests(UUID userId) {
+        Member member = memberRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Member record not found"));
+
+        return guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING)
+                .stream()
+                .map(this::convertToGuarantorDTO)
+                .collect(Collectors.toList());
+    }
+
+    // --- QUERIES & HELPERS ---
 
     public List<LoanDTO> getLoansByMember(UUID userId) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
@@ -187,17 +266,6 @@ public class LoanService {
 
     public LoanDTO getLoanById(UUID loanId) {
         return loanRepository.findById(loanId).map(this::convertToDTO).orElseThrow();
-    }
-
-    // ✅ NEW METHOD: Needed for the dashboard
-    public List<GuarantorDTO> getGuarantorRequests(UUID userId) {
-        Member member = memberRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("Member record not found"));
-
-        return guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING)
-                .stream()
-                .map(this::convertToGuarantorDTO)
-                .collect(Collectors.toList());
     }
 
     private void validateAbilityToPay(Member member, BigDecimal weeklyRepayment) {
@@ -217,7 +285,7 @@ public class LoanService {
                 .id(loan.getId())
                 .loanNumber(loan.getLoanNumber())
                 .status(loan.getStatus().toString())
-                .memberName(loan.getMember().getFirstName() + " " + loan.getMember().getLastName())
+                .memberName(loan.getMemberName())
                 .principalAmount(loan.getPrincipalAmount())
                 .loanBalance(loan.getLoanBalance())
                 .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
@@ -227,9 +295,10 @@ public class LoanService {
     private GuarantorDTO convertToGuarantorDTO(Guarantor g) {
         return GuarantorDTO.builder()
                 .id(g.getId())
-                .loanId(g.getLoan().getId()) // Needed for frontend actions
-                .loanNumber(g.getLoan().getLoanNumber()) // Needed for display
-                .applicantName(g.getLoan().getMemberName()) // Needed for display
+                .memberId(g.getMember().getId())
+                .loanId(g.getLoan().getId())
+                .loanNumber(g.getLoan().getLoanNumber())
+                .applicantName(g.getLoan().getMemberName())
                 .memberName(g.getMember().getFirstName() + " " + g.getMember().getLastName())
                 .guaranteeAmount(g.getGuaranteeAmount())
                 .status(g.getStatus().toString())
