@@ -7,7 +7,7 @@ import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeServic
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
-import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor.GuarantorStatus; // ✅ Added Import
+import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor.GuarantorStatus;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Collections;
 
 @Slf4j
 @Service
@@ -118,7 +119,6 @@ public class LoanService {
 
             long monthsActive = 0;
             if (m.getCreatedAt() != null) {
-                // Fixed: Convert LocalDateTime to LocalDate
                 monthsActive = java.time.temporal.ChronoUnit.MONTHS.between(m.getCreatedAt().toLocalDate(), LocalDate.now());
             }
             if (monthsActive < minMonths) continue;
@@ -220,8 +220,9 @@ public class LoanService {
         if (amount.compareTo(availableLimit) > 0)
             throw new RuntimeException("Exceeds limit of KES " + availableLimit);
 
+        // ✅ FIX 1: Treat duration as WEEKS, not MONTHS
         BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(amount,
-                loan.getProduct().getInterestRate(), duration, Loan.DurationUnit.MONTHS);
+                loan.getProduct().getInterestRate(), duration, Loan.DurationUnit.WEEKS);
 
         validateAbilityToPay(loan.getMember(), weeklyRepayment);
 
@@ -237,8 +238,13 @@ public class LoanService {
         loan.setWeeklyRepaymentAmount(weeklyRepayment);
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
+        // ✅ FIX 2: Correct Date Calculation (Today + X Weeks)
+        loan.setExpectedRepaymentDate(LocalDate.now().plusWeeks(duration));
+
         return convertToDTO(loanRepository.save(loan));
     }
+
+    // --- PHASE 2: GUARANTORS ---
 
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -262,13 +268,31 @@ public class LoanService {
                 .dateRequestSent(LocalDate.now())
                 .build();
 
-        // Note: Notification moved to finalizeGuarantorRequests
-        return convertToGuarantorDTO(guarantorRepository.save(g));
+        g = guarantorRepository.save(g);
+
+        try {
+            String guarantorMessage = String.format(
+                    "Hello %s, member %s has requested you to guarantee their loan (%s) for an amount of KES %s. Please log in to your dashboard to Accept or Decline.",
+                    guarantor.getFirstName(),
+                    loan.getMemberName(),
+                    loan.getLoanNumber(),
+                    amount
+            );
+
+            notificationService.notifyUser(
+                    guarantor.getId(),
+                    "Action Required: Guarantorship Request",
+                    guarantorMessage,
+                    true,
+                    false
+            );
+        } catch (Exception e) {
+            log.error("Failed to send immediate notification to guarantor: {}", e.getMessage());
+        }
+
+        return convertToGuarantorDTO(g);
     }
 
-    /**
-     * ✅ UPDATED: Finalize & Send Email Notifications
-     */
     public void finalizeGuarantorRequests(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -276,59 +300,37 @@ public class LoanService {
             throw new RuntimeException("At least one guarantor is required.");
         }
 
-        // 1. Notify Each Guarantor (Email + System Alert)
+        int countSent = 0;
         for (Guarantor g : loan.getGuarantors()) {
-            // Update status to pending if not already
-            if (g.getStatus() == null || g.getStatus() == GuarantorStatus.PENDING) {
-                g.setStatus(GuarantorStatus.PENDING);
-                guarantorRepository.save(g);
+            if (g.getStatus() == GuarantorStatus.PENDING) {
+                String guarantorMessage = String.format(
+                        "Reminder: Hello %s, member %s is still waiting for you to guarantee their loan (%s). Amount: KES %s.",
+                        g.getMember().getFirstName(),
+                        loan.getMemberName(),
+                        loan.getLoanNumber(),
+                        g.getGuaranteeAmount()
+                );
+                notificationService.notifyUser(g.getMember().getId(), "Reminder: Guarantorship Request", guarantorMessage, true, false);
+                countSent++;
             }
-
-            String guarantorMessage = String.format(
-                    "Hello %s, member %s has requested you to guarantee their loan (%s) for an amount of KES %s. Please log in to your dashboard to Accept or Decline.",
-                    g.getMember().getFirstName(),
-                    loan.getMemberName(),
-                    loan.getLoanNumber(),
-                    g.getGuaranteeAmount()
-            );
-
-            // boolean saveToDb = true, boolean sendEmail = true
-            notificationService.notifyUser(
-                    g.getMember().getId(),
-                    "Action Required: Guarantorship Request",
-                    guarantorMessage,
-                    true,
-                    true // ✅ Send Email
-            );
         }
 
-        // 2. Notify Applicant (Confirmation)
-        String applicantMessage = "Your guarantor requests have been sent successfully. We will notify you as soon as they respond.";
-        notificationService.notifyUser(
-                loan.getMember().getId(),
-                "Guarantor Requests Sent",
-                applicantMessage,
-                true,
-                true // ✅ Send Email
-        );
+        if (countSent > 0) {
+            notificationService.notifyUser(loan.getMember().getId(), "Guarantor Requests Resent", "We have resent notifications to " + countSent + " pending guarantors.", true, false);
+        }
 
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
         loanRepository.save(loan);
     }
 
-    /**
-     * ✅ STEP 3: Guarantor Responds (Accept/Decline)
-     */
     public void respondToGuarantorRequest(UUID userId, UUID requestId, String responseStatus) {
         Guarantor request = guarantorRepository.findById(requestId)
                 .orElseThrow(() -> new RuntimeException("Guarantor request not found"));
 
-        // 1. Security Check: Ensure the logged-in user is the target guarantor
         if (!request.getMember().getUser().getId().equals(userId)) {
             throw new RuntimeException("Unauthorized: You are not the guarantor for this request.");
         }
 
-        // 2. Validate Response
         GuarantorStatus status;
         try {
             status = GuarantorStatus.valueOf(responseStatus.toUpperCase());
@@ -340,45 +342,70 @@ public class LoanService {
         request.setDateResponded(LocalDate.now());
         guarantorRepository.save(request);
 
-        // 3. Notify the Applicant
         String message = "Your guarantor " + request.getMember().getFirstName() + " has " + status.toString().toLowerCase() + " your request.";
-        notificationService.notifyUser(
-                request.getLoan().getMember().getId(),
-                "Guarantor Update",
-                message,
-                true,
-                true // ✅ Send Email
-        );
+        notificationService.notifyUser(request.getLoan().getMember().getId(), "Guarantor Update", message, true, true);
 
-        // 4. Check if Loan is Fully Guaranteed
         checkAndProgressLoan(request.getLoan());
     }
 
-    /**
-     * Helper: Checks if all guarantors have accepted.
-     * If so, moves loan to 'SUBMITTED' for officer review.
-     */
     private void checkAndProgressLoan(Loan loan) {
         List<Guarantor> allGuarantors = loan.getGuarantors();
-
-        boolean anyDeclined = allGuarantors.stream().anyMatch(g -> g.getStatus() == GuarantorStatus.DECLINED);
         boolean allAccepted = allGuarantors.stream().allMatch(g -> g.getStatus() == GuarantorStatus.ACCEPTED);
 
         if (allAccepted) {
-            // Success! Move to Next Stage
             loan.setStatus(Loan.LoanStatus.SUBMITTED);
             loanRepository.save(loan);
+            notificationService.notifyUser(loan.getMember().getId(), "Loan Application Submitted", "Great news! All guarantors have accepted. Your application is now with the Loan Officer for review.", true, true);
+        }
+    }
 
-            // Notify Applicant
+    // --- PHASE 3: LOAN OFFICER REVIEW ---
+
+    public List<LoanDTO> getPendingLoansForAdmin() {
+        return loanRepository.findByStatus(Loan.LoanStatus.SUBMITTED).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    public void reviewLoanApplication(UUID adminUserId, UUID loanId, String decision, String remarks) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
+            throw new RuntimeException("This loan is not in the correct stage for review (Current: " + loan.getStatus() + ")");
+        }
+
+        if ("APPROVE".equalsIgnoreCase(decision)) {
+            loan.setStatus(Loan.LoanStatus.APPROVED);
+
             notificationService.notifyUser(
                     loan.getMember().getId(),
-                    "Loan Application Submitted",
-                    "Great news! All guarantors have accepted. Your application is now with the Loan Officer for review.",
+                    "Loan Approved!",
+                    "Congratulations! Your loan application has been approved by the loan officer. It is now awaiting final disbursement.",
                     true,
                     true
             );
+
+        } else if ("REJECT".equalsIgnoreCase(decision)) {
+            loan.setStatus(Loan.LoanStatus.REJECTED);
+
+            String rejectionMsg = "We regret to inform you that your loan application was rejected. Reason: " + remarks;
+            notificationService.notifyUser(
+                    loan.getMember().getId(),
+                    "Loan Application Rejected",
+                    rejectionMsg,
+                    true,
+                    true
+            );
+        } else {
+            throw new RuntimeException("Invalid decision. Use APPROVE or REJECT.");
         }
+
+        loanRepository.save(loan);
+        log.info("Loan {} was {} by Admin {}", loan.getLoanNumber(), decision, adminUserId);
     }
+
+    // --- HELPERS & GETTERS ---
 
     public List<GuarantorDTO> getGuarantorsByLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -398,10 +425,11 @@ public class LoanService {
     }
 
     public List<LoanDTO> getLoansByMember(UUID userId) {
-        Member member = memberRepository.findByUserId(userId).orElseThrow();
-        return loanRepository.findByMemberId(member.getId()).stream()
-                .map(this::convertToDTO)
-                .toList();
+        return memberRepository.findByUserId(userId)
+                .map(member -> loanRepository.findByMemberId(member.getId()).stream()
+                        .map(this::convertToDTO)
+                        .collect(Collectors.toList()))
+                .orElse(Collections.emptyList());
     }
 
     public LoanDTO getLoanById(UUID loanId) {
@@ -421,6 +449,19 @@ public class LoanService {
     }
 
     private LoanDTO convertToDTO(Loan loan) {
+        // ✅ NEW: Calculate Member Total Savings
+        BigDecimal totalSavings = savingsAccountRepository.findByMember_Id(loan.getMember().getId())
+                .stream()
+                .map(SavingsAccount::getBalance)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // ✅ NEW: Get Net Monthly Income
+        BigDecimal netIncome = BigDecimal.ZERO;
+        if (loan.getMember().getEmploymentDetails() != null && loan.getMember().getEmploymentDetails().getNetMonthlyIncome() != null) {
+            netIncome = loan.getMember().getEmploymentDetails().getNetMonthlyIncome();
+        }
+
         return LoanDTO.builder()
                 .id(loan.getId())
                 .loanNumber(loan.getLoanNumber())
@@ -429,10 +470,26 @@ public class LoanService {
                 .principalAmount(loan.getPrincipalAmount())
                 .loanBalance(loan.getLoanBalance())
                 .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
+                // ✅ POPULATE NEW DTO FIELDS
+                .memberSavings(totalSavings)
+                .memberNetIncome(netIncome)
                 .build();
     }
 
     private GuarantorDTO convertToGuarantorDTO(Guarantor g) {
+        if (g.getLoan() == null) {
+            return GuarantorDTO.builder()
+                    .id(g.getId())
+                    .memberId(g.getMember().getId())
+                    .loanId(null)
+                    .loanNumber("N/A")
+                    .applicantName("Unknown (Deleted Loan)")
+                    .memberName(g.getMember().getFirstName())
+                    .guaranteeAmount(g.getGuaranteeAmount())
+                    .status(g.getStatus() != null ? g.getStatus().toString() : "UNKNOWN")
+                    .build();
+        }
+
         return GuarantorDTO.builder()
                 .id(g.getId())
                 .memberId(g.getMember().getId())

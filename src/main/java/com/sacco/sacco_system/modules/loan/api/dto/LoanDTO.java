@@ -27,7 +27,7 @@ public class LoanDTO {
     private LocalDate applicationDate;
     private LocalDate disbursementDate;
 
-    // ✅ ADDED: This resolves the builder compilation error
+    // Using String for simpler JSON serialization of date
     private String expectedRepaymentDate;
 
     private BigDecimal weeklyRepaymentAmount;
@@ -37,4 +37,8 @@ public class LoanDTO {
     private BigDecimal processingFee;
     private Integer votesYes;
     private Integer votesNo;
+
+    // ✅ NEW FIELDS FOR LOAN OFFICER
+    private BigDecimal memberSavings;
+    private BigDecimal memberNetIncome;
 }

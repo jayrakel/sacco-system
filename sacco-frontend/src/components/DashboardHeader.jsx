@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../api';
-import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X, User } from 'lucide-react';
+import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Shield, Check, X, User } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import BrandedSpinner from './BrandedSpinner';
 import { useSettings } from '../context/SettingsContext';
@@ -18,12 +18,12 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     const navigate = useNavigate();
     const notifRef = useRef(null);
     const reqRef = useRef(null);
-    const profileRef = useRef(null); // ✅ NEW REF
+    const profileRef = useRef(null);
 
     // --- DROPDOWN VISIBILITY ---
     const [showNotifDropdown, setShowNotifDropdown] = useState(false);
     const [showReqDropdown, setShowReqDropdown] = useState(false);
-    const [showProfileDropdown, setShowProfileDropdown] = useState(false); // ✅ NEW STATE
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
     const [showArchive, setShowArchive] = useState(false);
 
     const onLogout = () => {
@@ -39,7 +39,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         function handleClickOutside(event) {
             if (notifRef.current && !notifRef.current.contains(event.target)) setShowNotifDropdown(false);
             if (reqRef.current && !reqRef.current.contains(event.target)) setShowReqDropdown(false);
-            if (profileRef.current && !profileRef.current.contains(event.target)) setShowProfileDropdown(false); // ✅ CLOSE PROFILE
+            if (profileRef.current && !profileRef.current.contains(event.target)) setShowProfileDropdown(false);
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -86,12 +86,18 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
     const respondToRequest = async (requestId, accepted) => {
         const action = accepted ? "accept" : "decline";
+        const status = accepted ? "ACCEPTED" : "DECLINED";
+
         if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
         try {
-            await api.post(`/api/loans/guarantors/${requestId}/respond?accepted=${accepted}`);
-            setRequests(prev => prev.filter(r => r.requestId !== requestId));
+            await api.post(`/api/loans/guarantors/${requestId}/respond`, { status });
+            // ✅ FIX: Filter by 'id' to match Backend DTO
+            setRequests(prev => prev.filter(r => r.id !== requestId));
             alert(`Request ${action}ed successfully.`);
-        } catch (err) { alert("Action failed"); }
+        } catch (err) {
+            console.error(err);
+            alert("Action failed: " + (err.response?.data?.message || "Unknown error"));
+        }
     };
 
     if (isLoggingOut) {
@@ -149,23 +155,29 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                     {/* 1. GUARANTOR REQUESTS */}
                     <div className="relative" ref={reqRef}>
                         <button onClick={() => setShowReqDropdown(!showReqDropdown)} className="p-2 relative hover:bg-slate-100 rounded-full transition text-slate-600">
-                            <Users size={22} />
+                            <Shield size={22} />
                             {requests.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-full border-2 border-white animate-pulse"></span>}
                         </button>
                         {showReqDropdown && (
                              <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
-                                {/* ... Guarantor Request List (Same as before) ... */}
                                 <div className="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
                                     <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Guarantor Requests</span>
                                     <button onClick={() => setShowReqDropdown(false)}><XCircle size={16} className="text-amber-400 hover:text-amber-600"/></button>
                                 </div>
                                 <div className="max-h-64 overflow-y-auto custom-scrollbar">
                                     {requests.length === 0 ? <div className="p-6 text-center text-slate-400 text-xs italic">No pending requests.</div> : requests.map(r => (
-                                        <div key={r.requestId} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                            <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
+                                        <div key={r.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
+                                                {/* Display Loan Number if available */}
+                                                <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{r.loanNumber}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mb-2">Requesting: <span className="font-bold text-slate-700">KES {Number(r.guaranteeAmount).toLocaleString()}</span></p>
+
                                             <div className="flex gap-2 mt-2">
-                                                <button onClick={() => respondToRequest(r.requestId, true)} className="flex-1 bg-emerald-600 text-white text-xs py-1 rounded">Accept</button>
-                                                <button onClick={() => respondToRequest(r.requestId, false)} className="flex-1 bg-white border border-red-200 text-red-600 text-xs py-1 rounded">Decline</button>
+                                                {/* ✅ FIX: Use r.id here */}
+                                                <button onClick={() => respondToRequest(r.id, true)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 rounded font-bold transition">Accept</button>
+                                                <button onClick={() => respondToRequest(r.id, false)} className="flex-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-xs py-1.5 rounded font-bold transition">Decline</button>
                                             </div>
                                         </div>
                                     ))}
@@ -212,9 +224,9 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
                     <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
 
-                    {/* 3. ✅ NEW USER PROFILE DROPDOWN */}
+                    {/* 3. USER PROFILE DROPDOWN */}
                     <div className="relative" ref={profileRef}>
-                        <button 
+                        <button
                             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                             className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded-full transition border border-transparent hover:border-slate-200"
                         >
@@ -229,14 +241,12 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
                         {showProfileDropdown && (
                             <div className="absolute right-0 mt-3 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200">
-                                {/* Header */}
                                 <div className="p-4 border-b border-slate-50 bg-slate-50/50">
                                     <p className="text-sm font-bold text-slate-800">{user?.firstName} {user?.lastName}</p>
                                     <p className="text-xs text-slate-500 font-medium uppercase mt-0.5">{user?.role || 'MEMBER'}</p>
                                     <p className="text-xs text-slate-400 truncate">{user?.email}</p>
                                 </div>
 
-                                {/* Menu Items */}
                                 <div className="p-2">
                                     <Link 
                                         to="/dashboard?tab=profile" 

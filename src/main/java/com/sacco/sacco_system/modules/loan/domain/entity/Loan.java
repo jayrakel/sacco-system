@@ -46,6 +46,9 @@ public class Loan {
     private BigDecimal totalPrepaid;
     private BigDecimal totalArrears;
 
+    // ✅ ADDED THIS FIELD to store the calculated date
+    private LocalDate expectedRepaymentDate;
+
     @Enumerated(EnumType.STRING)
     private LoanStatus status;
 
@@ -86,6 +89,7 @@ public class Loan {
         APPLICATION_FEE_PENDING,
         SUBMITTED,
         LOAN_OFFICER_REVIEW,
+        APPROVED,
         SECRETARY_TABLED,
         ON_AGENDA,
         VOTING_OPEN,
@@ -110,29 +114,5 @@ public class Loan {
 
     public String getMemberName() {
         return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
-    }
-
-    /**
-     * ✅ CRITICAL FIX: Handles Draft loans (where duration is null)
-     * and calculates date based on Disbursement + Grace Period.
-     */
-    public LocalDate getExpectedRepaymentDate() {
-        // 1. Safety Check: If duration is missing (Draft stage), return null.
-        if (this.duration == null || this.duration == 0) {
-            return null;
-        }
-
-        // 2. Logic: If disbursed, start counting AFTER the grace period.
-        if (this.disbursementDate != null) {
-            int graceWeeks = (this.gracePeriodWeeks != null) ? this.gracePeriodWeeks : 0;
-            LocalDate startDate = this.disbursementDate.plusWeeks(graceWeeks);
-
-            return this.durationUnit == DurationUnit.WEEKS ?
-                    startDate.plusWeeks(this.duration) :
-                    startDate.plusMonths(this.duration);
-        }
-
-        // 3. Fallback for non-disbursed loans
-        return this.applicationDate != null ? this.applicationDate.plusMonths(this.duration) : LocalDate.now();
     }
 }

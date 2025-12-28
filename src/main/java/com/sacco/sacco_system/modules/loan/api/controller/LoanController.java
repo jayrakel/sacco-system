@@ -3,10 +3,10 @@ package com.sacco.sacco_system.modules.loan.api.controller;
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService; // ✅ Added Import
+import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository; // ✅ Added Import
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,9 +26,9 @@ import java.util.stream.Collectors;
 public class LoanController {
 
     private final LoanService loanService;
-    private final LoanLimitService loanLimitService; // ✅ Injected
+    private final LoanLimitService loanLimitService;
     private final UserRepository userRepository;
-    private final MemberRepository memberRepository; // ✅ Injected
+    private final MemberRepository memberRepository;
     private final LoanProductRepository loanProductRepository;
 
     // --- PHASE 1: ELIGIBILITY & INITIATION ---
@@ -36,17 +36,16 @@ public class LoanController {
     @GetMapping("/eligibility/check")
     public ResponseEntity<?> checkEligibility() {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.checkEligibility(getCurrentMemberId())));
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.checkEligibility(getCurrentUserId())));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ FIXED: Added the missing endpoint causing 500 error
     @GetMapping("/limits/check")
     public ResponseEntity<?> checkLimit() {
         try {
-            UUID userId = getCurrentMemberId();
+            UUID userId = getCurrentUserId();
             Member member = memberRepository.findByUserId(userId)
                     .orElseThrow(() -> new RuntimeException("Member record not found"));
 
@@ -63,10 +62,9 @@ public class LoanController {
             UUID productId = UUID.fromString(payload.get("productId").toString());
             String reference = payload.get("referenceCode").toString();
             String paymentMethod = payload.getOrDefault("paymentMethod", "MPESA").toString();
-            // Optional: User-provided external reference (e.g., M-Pesa code)
             String externalRef = payload.getOrDefault("externalReference", reference).toString();
 
-            LoanDTO draft = loanService.initiateWithFee(getCurrentMemberId(), productId, externalRef, paymentMethod);
+            LoanDTO draft = loanService.initiateWithFee(getCurrentUserId(), productId, externalRef, paymentMethod);
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -123,8 +121,10 @@ public class LoanController {
     @GetMapping("/guarantors/eligible")
     public ResponseEntity<?> getEligibleGuarantors() {
         try {
-            UUID applicantId = getCurrentMemberId();
-            List<Member> eligibleMembers = loanService.getEligibleGuarantors(applicantId);
+            UUID userId = getCurrentUserId();
+            Member member = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
+
+            List<Member> eligibleMembers = loanService.getEligibleGuarantors(member.getId());
 
             List<Map<String, Object>> response = eligibleMembers.stream().map(m -> Map.<String, Object>of(
                     "id", m.getId(),
@@ -141,12 +141,61 @@ public class LoanController {
 
     @GetMapping("/guarantors/requests")
     public ResponseEntity<?> getGuarantorRequests() {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getGuarantorRequests(getCurrentMemberId())));
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getGuarantorRequests(getCurrentUserId())));
     }
+
+    @PostMapping("/guarantors/{requestId}/respond")
+    public ResponseEntity<?> respondToRequest(@PathVariable UUID requestId, @RequestBody Map<String, String> payload) {
+        try {
+            String status = payload.get("status");
+            UUID userId = getCurrentUserId();
+
+            loanService.respondToGuarantorRequest(userId, requestId, status);
+
+            return ResponseEntity.ok(Map.of("success", true, "message", "Response recorded successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // --- PHASE 3: ADMIN REVIEW (NEW) ---
+
+    /**
+     * ✅ NEW: Get all loans with status SUBMITTED for admin to review
+     */
+    @GetMapping("/admin/pending")
+    public ResponseEntity<?> getPendingLoans() {
+        try {
+            // Note: In real app, check if user is ADMIN via roles
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingLoansForAdmin()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * ✅ NEW: Approve or Reject a loan
+     */
+    @PostMapping("/admin/{loanId}/review")
+    public ResponseEntity<?> reviewLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
+        try {
+            String decision = payload.get("decision"); // "APPROVE" or "REJECT"
+            String remarks = payload.getOrDefault("remarks", "");
+            UUID adminId = getCurrentUserId(); // Log who made the decision
+
+            loanService.reviewLoanApplication(adminId, loanId, decision, remarks);
+
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan review processed successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // --- HELPERS ---
 
     @GetMapping("/my-loans")
     public ResponseEntity<?> getMyLoans() {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMember(getCurrentMemberId())));
+        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMember(getCurrentUserId())));
     }
 
     @GetMapping("/products")
@@ -159,8 +208,10 @@ public class LoanController {
         return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanById(id)));
     }
 
-    private UUID getCurrentMemberId() {
+    private UUID getCurrentUserId() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByEmailOrOfficialEmail(email).map(User::getId).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findByEmailOrOfficialEmail(email)
+                .map(User::getId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 }
