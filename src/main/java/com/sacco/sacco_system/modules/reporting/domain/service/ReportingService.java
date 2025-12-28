@@ -114,9 +114,5 @@ public class ReportingService {
                 .build();
     }
 
-    // ... (Keep getLoanAgingReport unchanged) ...
-    @Transactional(readOnly = true)
-    public List<LoanAgingDTO> getLoanAgingReport() {
-        return new ArrayList<>(); // Placeholder for brevity, keep original code
-    }
+
 }

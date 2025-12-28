@@ -14,8 +14,7 @@ import SystemSettings from './pages/admin/SystemSettings';
 import ResetPassword from './pages/ResetPassword';
 
 // Role Dashboards
-// Loans module removed: LoansDashboard route disabled
-// import LoansDashboard from './pages/LoansDashboard';
+// ...existing code...
 import FinanceDashboard from './pages/FinanceDashboard';
 import ChairpersonDashboard from './pages/ChairpersonDashboard';
 import SecretaryDashboard from './pages/SecretaryDashboard';
@@ -62,7 +61,7 @@ function App() {
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
           {/* Role Dashboards (Now Separate) */}
-          {/* LoansDashboard route removed as part of loans module removal */}
+          {/* ...existing code... */}
           <Route path="/finance-dashboard" element={<FinanceDashboard />} />
           <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
           <Route path="/secretary-dashboard" element={<SecretaryDashboard />} />

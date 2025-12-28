@@ -10,7 +10,6 @@ import com.sacco.sacco_system.modules.finance.domain.repository.ChargeRepository
 @Repository
 public interface ChargeRepository extends JpaRepository<Charge, UUID> {
     List<Charge> findByMemberId(UUID memberId);
-    List<Charge> findByLoanId(UUID loanId);
 }
 
 

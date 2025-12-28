@@ -28,14 +28,11 @@ public class DataInitializer {
     private final SystemSettingRepository systemSettingRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${app.default-admin.email}")
-    private String adminEmail;
 
-    @Value("${app.default-admin.password}")
-    private String adminPassword;
-
-    @Value("${app.default-admin.phone}")
-    private String adminPhone;
+    // Hardcoded test admin values for test profile
+    private String adminEmail = "admin@example.com";
+    private String adminPassword = "admin123";
+    private String adminPhone = "0700000000";
 
     @Value("${app.official-email-domain}")
     private String officialEmailDomain;

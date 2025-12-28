@@ -23,26 +23,7 @@ const LogoutButton = () => {
     );
 };
 
-// --- LOAN OFFICER ---
-export const LoansDashboard = () => (
-    <div className="p-10 bg-blue-50 min-h-screen font-sans">
-        <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-3">
-                <div className="p-3 bg-blue-100 rounded-full text-blue-600">
-                    <Briefcase size={24} />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Loan Officer Portal</h1>
-                    <p className="text-slate-500 text-sm">Manage applications and approvals</p>
-                </div>
-            </div>
-            <LogoutButton />
-        </div>
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center">
-            <p className="text-slate-400">Loan applications list will appear here.</p>
-        </div>
-    </div>
-);
+// ...existing code...
 
 // --- TREASURER ---
 export const FinanceDashboard = () => (
