@@ -8,7 +8,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
@@ -27,9 +26,8 @@ public class Charge {
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
-    private Loan loan; // Optional: If linked to a loan
+    // Loan reference removed (loans module removed)
+    // private Loan loan;
 
     @Enumerated(EnumType.STRING)
     private ChargeType type;
@@ -59,8 +57,3 @@ public class Charge {
         PENDING, PAID, WAIVED
     }
 }
-
-
-
-
-

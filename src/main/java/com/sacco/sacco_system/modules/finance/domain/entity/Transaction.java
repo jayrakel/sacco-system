@@ -5,7 +5,6 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 
@@ -32,10 +31,8 @@ public class Transaction {
     @JoinColumn(name = "savings_account_id")
     private SavingsAccount savingsAccount;
 
-    // Optional: Link to a loan if this transaction is related to one
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
-    private Loan loan;
+    // Loan link removed as part of loans module removal
+    // private Loan loan;
 
     @Enumerated(EnumType.STRING)
     private TransactionType type;
@@ -69,10 +66,8 @@ public class Transaction {
         REGISTRATION_FEE,
         SHARE_PURCHASE,
 
-        // ✅ LOAN RELATED TYPES
-        PROCESSING_FEE,         // Application/Processing Fee
-        LOAN_DISBURSEMENT,      // Money out to member
-        LOAN_REPAYMENT,         // Money in from member
+        // NOTE: Loan-specific transaction types removed with loans module
+        PROCESSING_FEE,         // Application/Processing Fee (used generically)
         LATE_PAYMENT_PENALTY,   // Penalty charge
         FINE_PAYMENT,           // Fine payment
         REVERSAL                // Correction

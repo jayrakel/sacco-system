@@ -15,8 +15,6 @@ import java.util.List;
 import com.sacco.sacco_system.modules.finance.domain.repository.FinancialReportRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 
@@ -29,8 +27,6 @@ public class FinancialReportService {
     private final FinancialReportRepository financialReportRepository;
     private final MemberRepository memberRepository;
     private final SavingsAccountRepository savingsAccountRepository;
-    private final LoanRepository loanRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
     private final ShareCapitalRepository shareCapitalRepository;
     private final TransactionRepository transactionRepository;
     
@@ -98,13 +94,10 @@ public class FinancialReportService {
                     // Balance Sheet Items (Operational View)
                     .totalSavings(savingsAccountRepository.getTotalActiveAccountsBalance() != null 
                             ? savingsAccountRepository.getTotalActiveAccountsBalance() : BigDecimal.ZERO)
-                    .totalLoansIssued(loanRepository.getTotalDisbursedLoans() != null 
-                            ? loanRepository.getTotalDisbursedLoans() : BigDecimal.ZERO)
-                    .totalLoansOutstanding(loanRepository.getTotalOutstandingLoans() != null 
-                            ? loanRepository.getTotalOutstandingLoans() : BigDecimal.ZERO)
-                    .totalRepayments(loanRepaymentRepository.getTotalRepaidAmount() != null 
-                            ? loanRepaymentRepository.getTotalRepaidAmount() : BigDecimal.ZERO)
-                    .totalShareCapital(shareCapitalRepository.getTotalShareCapital() != null 
+                    .totalLoansIssued(BigDecimal.ZERO)
+                    .totalLoansOutstanding(BigDecimal.ZERO)
+                    .totalRepayments(BigDecimal.ZERO)
+                    .totalShareCapital(shareCapitalRepository.getTotalShareCapital() != null
                             ? shareCapitalRepository.getTotalShareCapital() : BigDecimal.ZERO)
                     
                     // ✅ P&L Items (Sourced from GL for accuracy)

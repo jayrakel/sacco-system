@@ -13,10 +13,6 @@ import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepo
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanRepaymentService;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -50,15 +46,12 @@ public class DepositService {
     private final DepositProductRepository depositProductRepository;
     private final MemberRepository memberRepository;
     private final SavingsAccountRepository savingsAccountRepository;
-    private final LoanRepository loanRepository;
     private final FineRepository fineRepository;
     private final ShareCapitalRepository shareCapitalRepository;
     private final TransactionRepository transactionRepository;
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
     private final SavingsService savingsService;
-    private final LoanService loanService;
-    private final LoanRepaymentService loanRepaymentService;
     private final SystemSettingService systemSettingService;
 
     /**
@@ -179,28 +172,11 @@ public class DepositService {
             throw new IllegalArgumentException("Loan ID is required");
         }
 
-        Loan loan = loanRepository.findById(request.getLoanId())
-                .orElseThrow(() -> new RuntimeException("Loan not found"));
-
-        if (!loan.getMember().getId().equals(member.getId())) {
-            throw new SecurityException("Cannot pay another member's loan");
-        }
-
-        if (loan.getStatus() != Loan.LoanStatus.ACTIVE) {
-            throw new IllegalStateException("Loan is not active");
-        }
-
-        // Make loan repayment using the determined Source Account
-        loanRepaymentService.processPayment(
-            loan, 
-            allocation.getAmount(), 
-            sourceAccount
-        );
-
-        allocation.setLoan(loan);
-        allocation.setStatus(AllocationStatus.COMPLETED);
-        
-        log.info("Routed {} to loan repayment for loan {} via {}", allocation.getAmount(), loan.getLoanNumber(), sourceAccount);
+        // Loans module removed: cannot process loan repayment. Mark allocation as FAILED with clear message.
+        allocation.setStatus(AllocationStatus.FAILED);
+        allocation.setErrorMessage("Loan repayment unavailable: loans module has been removed."
+                + " Please restore loans module or re-route allocation.");
+        log.warn("Deposit allocation for loanId {} cannot be processed because loans module is removed.", request.getLoanId());
     }
 
     /**
@@ -456,9 +432,7 @@ public class DepositService {
                         ? allocation.getSavingsAccount().getAccountNumber() 
                         : "Savings Account";
             case LOAN_REPAYMENT:
-                return allocation.getLoan() != null 
-                        ? "Loan " + allocation.getLoan().getLoanNumber() 
-                        : "Loan Repayment";
+                return "Loan Repayment"; // Loans module removed - generic label
             case FINE_PAYMENT:
                 return allocation.getFine() != null 
                         ? allocation.getFine().getDescription() 
@@ -494,3 +468,4 @@ public class DepositService {
         }
     }
 }
+

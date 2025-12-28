@@ -1,8 +1,6 @@
 package com.sacco.sacco_system.modules.analytics.service;
 
 import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepository;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
@@ -28,7 +26,6 @@ import java.util.stream.Collectors;
 public class AnalyticsService {
 
     private final MemberRepository memberRepository;
-    private final LoanRepository loanRepository;
     private final SavingsAccountRepository savingsAccountRepository;
     private final ShareCapitalRepository shareCapitalRepository;
 
@@ -62,58 +59,20 @@ public class AnalyticsService {
     }
 
     /**
-     * Get loan portfolio analytics
+     * Loan portfolio analytics removed with loans module — return neutral values.
      */
     public Map<String, Object> getLoanPortfolioAnalytics() {
-        List<Loan> allLoans = loanRepository.findAll();
-
-        long totalLoans = allLoans.size();
-        long activeLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED)
-                .count();
-        long completedLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.COMPLETED)
-                .count();
-        long defaultedLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED)
-                .count();
-
-        BigDecimal totalDisbursed = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED ||
-                            l.getStatus() == Loan.LoanStatus.COMPLETED)
-                .map(Loan::getPrincipalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalOutstanding = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED)
-                .map(l -> l.getLoanBalance() != null ? l.getLoanBalance() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalRepaid = totalDisbursed.subtract(totalOutstanding);
-
-        // Calculate portfolio at risk (PAR)
-        BigDecimal portfolioAtRisk = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED)
-                .map(Loan::getPrincipalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        double parPercentage = totalDisbursed.compareTo(BigDecimal.ZERO) > 0 ?
-                portfolioAtRisk.divide(totalDisbursed, 4, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(100)).doubleValue() : 0;
-
         return Map.of(
-                "totalLoans", totalLoans,
-                "activeLoans", activeLoans,
-                "completedLoans", completedLoans,
-                "defaultedLoans", defaultedLoans,
-                "totalDisbursed", totalDisbursed,
-                "totalOutstanding", totalOutstanding,
-                "totalRepaid", totalRepaid,
-                "portfolioAtRisk", portfolioAtRisk,
-                "parPercentage", parPercentage,
-                "repaymentRate", totalDisbursed.compareTo(BigDecimal.ZERO) > 0 ?
-                        totalRepaid.divide(totalDisbursed, 4, RoundingMode.HALF_UP)
-                                .multiply(BigDecimal.valueOf(100)).doubleValue() : 0
+                "totalLoans", 0,
+                "activeLoans", 0,
+                "completedLoans", 0,
+                "defaultedLoans", 0,
+                "totalDisbursed", BigDecimal.ZERO,
+                "totalOutstanding", BigDecimal.ZERO,
+                "totalRepaid", BigDecimal.ZERO,
+                "portfolioAtRisk", BigDecimal.ZERO,
+                "parPercentage", 0.0,
+                "repaymentRate", 0.0
         );
     }
 
@@ -175,16 +134,10 @@ public class AnalyticsService {
                     .count();
 
             // Loans disbursed this month
-            long loansDisbursed = loanRepository.findAll().stream()
-                    .filter(l -> l.getDisbursementDate() != null)
-                    .filter(l -> !l.getDisbursementDate().isBefore(monthStart) &&
-                                !l.getDisbursementDate().isAfter(monthEnd))
-                    .count();
-
             trends.add(Map.of(
                     "month", monthStart.toString(),
                     "membersJoined", membersJoined,
-                    "loansDisbursed", loansDisbursed
+                    "loansDisbursed", 0
             ));
         }
 
