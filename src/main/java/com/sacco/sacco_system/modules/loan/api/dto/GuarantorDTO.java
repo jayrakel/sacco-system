@@ -16,11 +16,19 @@ public class GuarantorDTO {
     private UUID id;
     private UUID memberId;
     private String memberName;
+
+    // ✅ ADDED: Required for Dashboard Requests View
+    private UUID loanId;
+    private String loanNumber;
+    private String applicantName;
+
+    // Contact/Personal Info
     private String name;
     private String email;
     private String phone;
     private String relationship;
     private String idNumber;
+
     private BigDecimal guaranteeAmount;
     private String status;
 }

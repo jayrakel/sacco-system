@@ -9,9 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Core Loan Entity representing a member's loan application and active loan.
- */
 @Entity
 @Table(name = "loans")
 @Data
@@ -61,12 +58,12 @@ public class Loan {
     private boolean applicationFeePaid;
     private String checkNumber;
     private Integer gracePeriodWeeks;
-    
+
     // Governance / Voting Fields
     private boolean votingOpen;
     private Integer votesYes;
     private Integer votesNo;
-    
+
     @ElementCollection
     private List<UUID> votedUserIds = new ArrayList<>();
 
@@ -97,7 +94,7 @@ public class Loan {
         TREASURER_DISBURSEMENT,
         DISBURSED,
         ACTIVE,
-        IN_ARREARS,      // ✅ Add this back
+        IN_ARREARS,
         ADMIN_APPROVED,
         REJECTED,
         DEFAULTED,
@@ -114,13 +111,28 @@ public class Loan {
     public String getMemberName() {
         return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
     }
-    /** ✅ Added to resolve LoanAutomationService and LoanCalculatorService errors */
-public LocalDate getExpectedRepaymentDate() {
-    if (this.disbursementDate != null) {
-        return this.durationUnit == DurationUnit.WEEKS ? 
-               this.disbursementDate.plusWeeks(this.duration) : 
-               this.disbursementDate.plusMonths(this.duration);
+
+    /**
+     * ✅ CRITICAL FIX: Handles Draft loans (where duration is null)
+     * and calculates date based on Disbursement + Grace Period.
+     */
+    public LocalDate getExpectedRepaymentDate() {
+        // 1. Safety Check: If duration is missing (Draft stage), return null.
+        if (this.duration == null || this.duration == 0) {
+            return null;
+        }
+
+        // 2. Logic: If disbursed, start counting AFTER the grace period.
+        if (this.disbursementDate != null) {
+            int graceWeeks = (this.gracePeriodWeeks != null) ? this.gracePeriodWeeks : 0;
+            LocalDate startDate = this.disbursementDate.plusWeeks(graceWeeks);
+
+            return this.durationUnit == DurationUnit.WEEKS ?
+                    startDate.plusWeeks(this.duration) :
+                    startDate.plusMonths(this.duration);
+        }
+
+        // 3. Fallback for non-disbursed loans
+        return this.applicationDate != null ? this.applicationDate.plusMonths(this.duration) : LocalDate.now();
     }
-    return this.applicationDate != null ? this.applicationDate.plusMonths(this.duration) : LocalDate.now();
-}
 }

@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -43,11 +44,11 @@ public class LoanService {
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
 
+    // ... (checkEligibility method remains unchanged) ...
     public Map<String, Object> checkEligibility(UUID userId) {
         Member member = memberRepository.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Member record not found"));
 
-        // ✅ FIXED: Using keys that actually exist in SystemSettingService defaults
         int requiredMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_MEMBERSHIP", "3"));
         BigDecimal requiredSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_FOR_LOAN", "5000"));
         int maxActiveLoans = Integer.parseInt(systemSettingService.getString("MAX_ACTIVE_LOANS", "1"));
@@ -55,7 +56,6 @@ public class LoanService {
         Map<String, Object> response = new HashMap<>();
         List<String> reasons = new ArrayList<>();
 
-        // ✅ FIXED: Using correct repo method
         BigDecimal currentSavings = savingsAccountRepository.findByMember_Id(member.getId())
                 .stream()
                 .map(SavingsAccount::getBalance)
@@ -113,11 +113,17 @@ public class LoanService {
                 .status(Loan.LoanStatus.DRAFT)
                 .applicationDate(LocalDate.now())
                 .applicationFeePaid(true)
+                .gracePeriodWeeks(0)
+                // ✅ FIX: Initialize voting fields to satisfy DB NOT NULL constraints
+                .votingOpen(false)
+                .votesYes(0)
+                .votesNo(0)
                 .build();
 
         return convertToDTO(loanRepository.save(loan));
     }
 
+    // ... (submitApplication, addGuarantor, queries, validation remain same) ...
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -134,6 +140,13 @@ public class LoanService {
                 loan.getProduct().getInterestRate(), duration, Loan.DurationUnit.MONTHS);
 
         validateAbilityToPay(loan.getMember(), weeklyRepayment);
+
+        String gracePeriodStr = systemSettingService.getString("LOAN_GRACE_PERIOD_WEEKS", "0");
+        try {
+            loan.setGracePeriodWeeks(Integer.parseInt(gracePeriodStr));
+        } catch (NumberFormatException e) {
+            loan.setGracePeriodWeeks(0);
+        }
 
         loan.setPrincipalAmount(amount);
         loan.setDuration(duration);
@@ -176,6 +189,17 @@ public class LoanService {
         return loanRepository.findById(loanId).map(this::convertToDTO).orElseThrow();
     }
 
+    // ✅ NEW METHOD: Needed for the dashboard
+    public List<GuarantorDTO> getGuarantorRequests(UUID userId) {
+        Member member = memberRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Member record not found"));
+
+        return guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING)
+                .stream()
+                .map(this::convertToGuarantorDTO)
+                .collect(Collectors.toList());
+    }
+
     private void validateAbilityToPay(Member member, BigDecimal weeklyRepayment) {
         EmploymentDetails emp = member.getEmploymentDetails();
         if (emp != null && emp.getNetMonthlyIncome() != null) {
@@ -203,6 +227,9 @@ public class LoanService {
     private GuarantorDTO convertToGuarantorDTO(Guarantor g) {
         return GuarantorDTO.builder()
                 .id(g.getId())
+                .loanId(g.getLoan().getId()) // Needed for frontend actions
+                .loanNumber(g.getLoan().getLoanNumber()) // Needed for display
+                .applicantName(g.getLoan().getMemberName()) // Needed for display
                 .memberName(g.getMember().getFirstName() + " " + g.getMember().getLastName())
                 .guaranteeAmount(g.getGuaranteeAmount())
                 .status(g.getStatus().toString())
