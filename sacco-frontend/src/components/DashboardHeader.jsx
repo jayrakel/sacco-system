@@ -3,8 +3,8 @@ import api from '../api';
 import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Users, Check, X, User } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import BrandedSpinner from './BrandedSpinner';
-import { useSettings } from '../context/SettingsContext'; 
-import { logoutUser } from '../features/auth/services/authService'; 
+import { useSettings } from '../context/SettingsContext';
+import { logoutUser } from '../features/auth/services/authService';
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     // --- STATE MANAGEMENT ---
@@ -132,7 +132,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
             {/* --- NAVBAR --- */}
             <nav className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-                
+
                 {/* LOGO AREA */}
                 <div className="flex items-center gap-3">
                     {logo ? (

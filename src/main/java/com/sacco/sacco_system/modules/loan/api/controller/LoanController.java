@@ -3,8 +3,10 @@ package com.sacco.sacco_system.modules.loan.api.controller;
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService; // ✅ Added Import
 import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository; // ✅ Added Import
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,14 +26,32 @@ import java.util.stream.Collectors;
 public class LoanController {
 
     private final LoanService loanService;
+    private final LoanLimitService loanLimitService; // ✅ Injected
     private final UserRepository userRepository;
+    private final MemberRepository memberRepository; // ✅ Injected
     private final LoanProductRepository loanProductRepository;
 
     // --- PHASE 1: ELIGIBILITY & INITIATION ---
+
     @GetMapping("/eligibility/check")
     public ResponseEntity<?> checkEligibility() {
         try {
             return ResponseEntity.ok(Map.of("success", true, "data", loanService.checkEligibility(getCurrentMemberId())));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ FIXED: Added the missing endpoint causing 500 error
+    @GetMapping("/limits/check")
+    public ResponseEntity<?> checkLimit() {
+        try {
+            UUID userId = getCurrentMemberId();
+            Member member = memberRepository.findByUserId(userId)
+                    .orElseThrow(() -> new RuntimeException("Member record not found"));
+
+            BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
+            return ResponseEntity.ok(Map.of("success", true, "limit", limit));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -42,10 +62,11 @@ public class LoanController {
         try {
             UUID productId = UUID.fromString(payload.get("productId").toString());
             String reference = payload.get("referenceCode").toString();
-            // ✅ Extract Payment Method (Defaults to MPESA if missing)
             String paymentMethod = payload.getOrDefault("paymentMethod", "MPESA").toString();
+            // Optional: User-provided external reference (e.g., M-Pesa code)
+            String externalRef = payload.getOrDefault("externalReference", reference).toString();
 
-            LoanDTO draft = loanService.initiateWithFee(getCurrentMemberId(), productId, reference, paymentMethod);
+            LoanDTO draft = loanService.initiateWithFee(getCurrentMemberId(), productId, externalRef, paymentMethod);
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
