@@ -28,13 +28,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LoanController {
 
-    // --- VERTICAL SERVICES ---
     private final LoanOriginationService originationService;
     private final LoanGovernanceService governanceService;
     private final LoanReadService readService;
-
-    // --- HELPER SERVICES & REPOS ---
-    private final LoanLimitService loanLimitService; // Using your original file
+    private final LoanLimitService loanLimitService;
     private final UserRepository userRepository;
     private final MemberRepository memberRepository;
     private final LoanProductRepository loanProductRepository;
@@ -57,13 +54,7 @@ public class LoanController {
             Member member = memberRepository.findByUserId(userId)
                     .orElseThrow(() -> new RuntimeException("Member record not found for this user."));
 
-            // ✅ FIXED: Using the method from your original LoanLimitService
             BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
-
-            // Optional: If you want the full breakdown in the frontend, use:
-            // Map<String, Object> details = loanLimitService.calculateMemberLoanLimitWithDetails(member);
-            // return ResponseEntity.ok(Map.of("success", true, "data", details));
-
             return ResponseEntity.ok(Map.of("success", true, "limit", limit));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));

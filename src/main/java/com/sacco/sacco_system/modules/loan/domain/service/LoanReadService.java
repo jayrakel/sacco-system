@@ -45,7 +45,6 @@ public class LoanReadService {
         )).stream().map(LoanDTO::fromEntity).collect(Collectors.toList());
     }
 
-    // ✅ FIXED: Added this method
     public List<GuarantorDTO> getGuarantorRequests(UUID userId) {
         return memberRepository.findByUserId(userId)
                 .map(member -> guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING)
@@ -53,7 +52,6 @@ public class LoanReadService {
                 .orElse(Collections.emptyList());
     }
 
-    // ✅ FIXED: Added this method for the controller error
     public List<GuarantorDTO> getGuarantorsByLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         return loan.getGuarantors().stream()
@@ -61,11 +59,10 @@ public class LoanReadService {
                 .collect(Collectors.toList());
     }
 
-    // ✅ FIXED: Added this method
     public List<LoanDTO> getActiveVotesForMember(UUID userId) {
         List<Loan> openLoans = loanRepository.findByStatus(Loan.LoanStatus.VOTING_OPEN);
         return openLoans.stream()
-                .filter(l -> !l.getVotedUserIds().contains(userId)) // Filter already voted
+                .filter(l -> !l.getVotedUserIds().contains(userId))
                 .map(LoanDTO::fromEntity)
                 .collect(Collectors.toList());
     }

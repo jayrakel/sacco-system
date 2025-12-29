@@ -35,87 +35,112 @@ public class LoanRepaymentService {
 
     public void generateSchedule(Loan loan) {
         int gracePeriodWeeks = (int) systemSettingService.getDouble("LOAN_GRACE_PERIOD_WEEKS", 1.0);
-        
+
         BigDecimal principal = loan.getPrincipalAmount();
-        BigDecimal rate = loan.getProduct().getInterestRate(); 
+        BigDecimal rate = loan.getProduct().getInterestRate();
         int duration = loan.getDuration();
+        Loan.DurationUnit unit = loan.getDurationUnit() != null ? loan.getDurationUnit() : Loan.DurationUnit.WEEKS;
 
-        BigDecimal weeklyInstallment;
+        BigDecimal installmentAmount;
         int totalInstallments;
-
         BigDecimal rateDecimal = rate.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
-        
-        if (loan.getDurationUnit() == Loan.DurationUnit.WEEKS) {
+
+        // 1. Calculate Interest & Installments based on Unit
+        if (unit == Loan.DurationUnit.WEEKS) {
             totalInstallments = duration;
             BigDecimal weeklyRate = rateDecimal.divide(BigDecimal.valueOf(52), 8, RoundingMode.HALF_UP);
             BigDecimal totalInterest = principal.multiply(weeklyRate).multiply(BigDecimal.valueOf(duration));
-            weeklyInstallment = principal.add(totalInterest).divide(BigDecimal.valueOf(totalInstallments), 2, RoundingMode.HALF_UP);
+            installmentAmount = principal.add(totalInterest).divide(BigDecimal.valueOf(totalInstallments), 2, RoundingMode.HALF_UP);
         } else {
-            totalInstallments = (int) Math.ceil(duration * 4.33);
+            // Monthly
+            totalInstallments = duration; // 12 Months = 12 Installments
             BigDecimal monthlyRate = rateDecimal.divide(BigDecimal.valueOf(12), 8, RoundingMode.HALF_UP);
             BigDecimal totalInterest = principal.multiply(monthlyRate).multiply(BigDecimal.valueOf(duration));
-            weeklyInstallment = principal.add(totalInterest).divide(BigDecimal.valueOf(totalInstallments), 2, RoundingMode.HALF_UP);
+            installmentAmount = principal.add(totalInterest).divide(BigDecimal.valueOf(totalInstallments), 2, RoundingMode.HALF_UP);
         }
 
-        loan.setWeeklyRepaymentAmount(weeklyInstallment);
-        loan.setLoanBalance(principal.add(principal.multiply(rateDecimal).multiply(BigDecimal.valueOf(duration)).divide(BigDecimal.valueOf(12), 2, RoundingMode.HALF_UP)));
+        loan.setWeeklyRepaymentAmount(installmentAmount);
+
+        // Set initial balance (Principal + Interest) -> Flat Rate Model
+        BigDecimal totalRepayable = installmentAmount.multiply(BigDecimal.valueOf(totalInstallments));
+        loan.setLoanBalance(totalRepayable);
 
         List<LoanRepayment> schedule = new ArrayList<>();
-        LocalDate nextDueDate = LocalDate.now().plusWeeks(gracePeriodWeeks + 1);
+        LocalDate nextDueDate = LocalDate.now().plusWeeks(gracePeriodWeeks);
 
         for (int i = 1; i <= totalInstallments; i++) {
+            // Increment Date based on Unit
+            if (i > 1) {
+                nextDueDate = (unit == Loan.DurationUnit.WEEKS) ? nextDueDate.plusWeeks(1) : nextDueDate.plusMonths(1);
+            }
+
             LoanRepayment r = LoanRepayment.builder()
                     .loan(loan)
                     .installmentNumber(i)
                     .dueDate(nextDueDate)
-                    .amountDue(weeklyInstallment)
+                    .amountDue(installmentAmount)
                     .status(LoanRepayment.RepaymentStatus.PENDING)
                     .amountPaid(BigDecimal.ZERO)
                     .build();
             schedule.add(r);
-            nextDueDate = nextDueDate.plusWeeks(1);
         }
-        
+
         repaymentRepository.saveAll(schedule);
         loanRepository.save(loan);
         log.info("Generated schedule for Loan {}: {} installments", loan.getLoanNumber(), totalInstallments);
     }
 
     public void processPayment(Loan loan, BigDecimal amountPaid, String sourceAccountCode) {
-        final BigDecimal[] pot = { amountPaid.add(loan.getTotalPrepaid() != null ? loan.getTotalPrepaid() : BigDecimal.ZERO) };
+        // Pot includes current payment + any previously prepaid amount
+        BigDecimal pot = amountPaid.add(loan.getTotalPrepaid() != null ? loan.getTotalPrepaid() : BigDecimal.ZERO);
         loan.setTotalPrepaid(BigDecimal.ZERO);
 
-        // 1. Pay Arrears
+        // 1. Pay Arrears First
         if (loan.getTotalArrears() != null && loan.getTotalArrears().compareTo(BigDecimal.ZERO) > 0) {
-            if (pot[0].compareTo(loan.getTotalArrears()) >= 0) {
-                pot[0] = pot[0].subtract(loan.getTotalArrears());
+            if (pot.compareTo(loan.getTotalArrears()) >= 0) {
+                pot = pot.subtract(loan.getTotalArrears());
                 loan.setTotalArrears(BigDecimal.ZERO);
             } else {
-                loan.setTotalArrears(loan.getTotalArrears().subtract(pot[0]));
-                pot[0] = BigDecimal.ZERO;
+                loan.setTotalArrears(loan.getTotalArrears().subtract(pot));
+                pot = BigDecimal.ZERO;
             }
         }
 
-        // 2. Pay Next Installment
-        repaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
-                loan.getId(), LoanRepayment.RepaymentStatus.PENDING).ifPresent(next -> {
-            
-            BigDecimal remaining = next.getAmountDue().subtract(next.getAmountPaid() != null ? next.getAmountPaid() : BigDecimal.ZERO);
+        // 2. Cascade Payment: Loop through pending installments
+        // We use findByLoanId... but for simplicity, we can fetch all pending and sort
+        List<LoanRepayment> pendingInstallments = repaymentRepository.findAll().stream()
+                .filter(r -> r.getLoan().getId().equals(loan.getId()))
+                .filter(r -> r.getStatus() == LoanRepayment.RepaymentStatus.PENDING || r.getStatus() == LoanRepayment.RepaymentStatus.PARTIALLY_PAID)
+                .sorted((a, b) -> a.getDueDate().compareTo(b.getDueDate()))
+                .toList();
 
-            if (pot[0].compareTo(remaining) >= 0) {
+        for (LoanRepayment next : pendingInstallments) {
+            if (pot.compareTo(BigDecimal.ZERO) <= 0) break;
+
+            BigDecimal alreadyPaid = next.getAmountPaid() != null ? next.getAmountPaid() : BigDecimal.ZERO;
+            BigDecimal remainingOnInstallment = next.getAmountDue().subtract(alreadyPaid);
+
+            if (pot.compareTo(remainingOnInstallment) >= 0) {
+                // Fully pay this installment
                 next.setAmountPaid(next.getAmountDue());
                 next.setStatus(LoanRepayment.RepaymentStatus.PAID);
                 next.setPaymentDate(LocalDate.now());
-                loan.setTotalPrepaid(pot[0].subtract(remaining));
+                pot = pot.subtract(remainingOnInstallment);
             } else {
-                next.setAmountPaid((next.getAmountPaid() != null ? next.getAmountPaid() : BigDecimal.ZERO).add(pot[0]));
+                // Partially pay this installment
+                next.setAmountPaid(alreadyPaid.add(pot));
                 next.setStatus(LoanRepayment.RepaymentStatus.PARTIALLY_PAID);
-                pot[0] = BigDecimal.ZERO;
+                pot = BigDecimal.ZERO; // Pot exhausted
             }
             repaymentRepository.save(next);
-        });
+        }
 
-        // 3. Update Loan Balance
+        // 3. Store remaining excess in Prepaid
+        if (pot.compareTo(BigDecimal.ZERO) > 0) {
+            loan.setTotalPrepaid(pot);
+        }
+
+        // 4. Update Loan Balance
         loan.setLoanBalance(loan.getLoanBalance().subtract(amountPaid));
         if (loan.getLoanBalance().compareTo(BigDecimal.ZERO) <= 0) {
             loan.setLoanBalance(BigDecimal.ZERO);
@@ -123,16 +148,16 @@ public class LoanRepaymentService {
         }
         loanRepository.save(loan);
 
-        // 4. Record Transaction & Post Accounting
+        // 5. Record Transaction & Post Accounting
         recordTransaction(loan, amountPaid, sourceAccountCode);
         accountingService.postEvent(
-            "LOAN_REPAYMENT_PRINCIPAL", 
-            "Repayment - " + loan.getLoanNumber(), 
-            loan.getLoanNumber(), 
-            amountPaid, 
-            sourceAccountCode
+                "LOAN_REPAYMENT_PRINCIPAL",
+                "Repayment - " + loan.getLoanNumber(),
+                loan.getLoanNumber(),
+                amountPaid,
+                sourceAccountCode
         );
-    } // ✅ This was the missing brace causing the error
+    }
 
     private void recordTransaction(Loan loan, BigDecimal amount, String sourceAccount) {
         Transaction.PaymentMethod method = Transaction.PaymentMethod.CASH;

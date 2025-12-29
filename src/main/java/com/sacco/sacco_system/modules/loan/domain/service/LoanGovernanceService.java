@@ -19,11 +19,9 @@ public class LoanGovernanceService {
     private final LoanRepository loanRepository;
     private final NotificationService notificationService;
 
-    // --- LOAN OFFICER ---
     @Transactional
     public void reviewApplication(UUID loanId, String decision, String remarks) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
-
         if ("APPROVE".equalsIgnoreCase(decision)) {
             loan.setStatus(Loan.LoanStatus.APPROVED);
             loan.setApprovalDate(LocalDate.now());
@@ -35,7 +33,6 @@ public class LoanGovernanceService {
         loanRepository.save(loan);
     }
 
-    // --- SECRETARY ---
     @Transactional
     public void tableLoan(UUID loanId, LocalDateTime meetingDate) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
@@ -53,6 +50,20 @@ public class LoanGovernanceService {
     }
 
     @Transactional
+    public void castVote(UUID loanId, UUID userId, boolean voteYes) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new ArrayList<>());
+
+        if (loan.getVotedUserIds().contains(userId)) throw new RuntimeException("Already voted");
+
+        if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
+        else loan.setVotesNo(loan.getVotesNo() + 1);
+
+        loan.getVotedUserIds().add(userId);
+        loanRepository.save(loan);
+    }
+
+    @Transactional
     public void closeVoting(UUID loanId, boolean approved, String minutes) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         loan.setVotingOpen(false);
@@ -66,22 +77,6 @@ public class LoanGovernanceService {
         loanRepository.save(loan);
     }
 
-    // --- COMMITTEE MEMBER ---
-    @Transactional
-    public void castVote(UUID loanId, UUID userId, boolean voteYes) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
-        // ... (Insert checks for conflicts/double voting from original file) ...
-
-        if (voteYes) loan.setVotesYes(loan.getVotesYes() + 1);
-        else loan.setVotesNo(loan.getVotesNo() + 1);
-
-        if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new ArrayList<>());
-        loan.getVotedUserIds().add(userId);
-
-        loanRepository.save(loan);
-    }
-
-    // --- CHAIRPERSON ---
     @Transactional
     public void chairpersonFinalApprove(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();

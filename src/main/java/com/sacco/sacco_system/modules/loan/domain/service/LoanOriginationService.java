@@ -14,17 +14,17 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -34,7 +34,6 @@ public class LoanOriginationService {
     private final MemberRepository memberRepository;
     private final LoanProductRepository loanProductRepository;
     private final GuarantorRepository guarantorRepository;
-
     private final AccountingService accountingService;
     private final TransactionRepository transactionRepository;
     private final LoanLimitService loanLimitService;
@@ -43,14 +42,10 @@ public class LoanOriginationService {
     private final NotificationService notificationService;
     private final ReferenceCodeService referenceCodeService;
 
-    // --- ELIGIBILITY ---
     public Map<String, Object> checkEligibility(UUID userId) {
-        Member member = memberRepository.findByUserId(userId).orElse(null);
-        if (member == null) return Map.of("eligible", false, "reasons", List.of("Member not found"));
-
-        Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
-
-        return Map.of("eligible", true, "details", limitDetails);
+        Member member = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
+        Map<String, Object> details = loanLimitService.calculateMemberLoanLimitWithDetails(member);
+        return Map.of("eligible", (boolean)details.get("canBorrow"), "details", details);
     }
 
     public List<Member> getEligibleGuarantors(UUID applicantUserId) {
@@ -60,7 +55,6 @@ public class LoanOriginationService {
                 .collect(Collectors.toList());
     }
 
-    // --- INITIATION ---
     public LoanDTO initiateWithFee(UUID userId, UUID productId, String userExtRef, String method) {
         Member member = memberRepository.findByUserId(userId).orElseThrow();
         LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
@@ -69,7 +63,6 @@ public class LoanOriginationService {
         if (fee.compareTo(BigDecimal.ZERO) > 0) {
             String ref = referenceCodeService.generateReferenceCode();
             accountingService.postEvent("LOAN_PROCESSING_FEE", "App Fee", ref, fee, "1002", null);
-
             transactionRepository.save(Transaction.builder()
                     .member(member).amount(fee).type(Transaction.TransactionType.PROCESSING_FEE)
                     .paymentMethod(Transaction.PaymentMethod.MPESA).referenceCode(ref)
@@ -86,36 +79,29 @@ public class LoanOriginationService {
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        // 1. Check Limits
         if (!loanLimitService.canMemberBorrow(loan.getMember(), amount)) {
             throw new RuntimeException("Amount exceeds available limit.");
         }
 
-        // 2. Set Default Unit to WEEKS (As requested)
+        // Default to WEEKS if not specified (Standardizing on weeks for Sacco micro-loans)
         Loan.DurationUnit unit = Loan.DurationUnit.WEEKS;
         loan.setDurationUnit(unit);
 
-        // 3. Calculate Repayment (Passing WEEKS unit)
-        BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
-                amount,
-                loan.getProduct().getInterestRate(),
-                duration,
-                unit
+        BigDecimal installment = repaymentScheduleService.calculateWeeklyRepayment(
+                amount, loan.getProduct().getInterestRate(), duration, unit
         );
 
-        // 4. Validate Ability to Pay
-        validateAbilityToPay(loan.getMember(), weeklyRepayment);
+        validateAbilityToPay(loan.getMember(), installment);
 
         loan.setPrincipalAmount(amount);
         loan.setDuration(duration);
-        loan.setWeeklyRepaymentAmount(weeklyRepayment);
+        loan.setWeeklyRepaymentAmount(installment);
         loan.setInterestRate(loan.getProduct().getInterestRate());
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
         return LoanDTO.fromEntity(loanRepository.save(loan));
     }
 
-    // --- GUARANTORS ---
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
         Member guarantor = memberRepository.findById(guarantorId).orElseThrow();
@@ -126,8 +112,7 @@ public class LoanOriginationService {
                 .status(Guarantor.GuarantorStatus.PENDING).dateRequestSent(LocalDate.now()).build();
 
         g = guarantorRepository.save(g);
-        notificationService.notifyUser(guarantorId, "Guarantorship Request",
-                "Please guarantee loan " + loan.getLoanNumber(), true, false);
+        notificationService.notifyUser(guarantorId, "Guarantorship Request", "Please guarantee loan " + loan.getLoanNumber(), true, false);
         return GuarantorDTO.fromEntity(g);
     }
 
