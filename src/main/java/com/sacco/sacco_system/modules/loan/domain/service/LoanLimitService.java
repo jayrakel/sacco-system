@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
-import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;

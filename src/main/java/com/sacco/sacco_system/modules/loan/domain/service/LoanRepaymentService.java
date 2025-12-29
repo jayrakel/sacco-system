@@ -4,7 +4,7 @@ import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
-import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;

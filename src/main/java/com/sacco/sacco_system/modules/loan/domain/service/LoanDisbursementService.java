@@ -7,14 +7,13 @@ import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanDisbursement;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanDisbursementRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
