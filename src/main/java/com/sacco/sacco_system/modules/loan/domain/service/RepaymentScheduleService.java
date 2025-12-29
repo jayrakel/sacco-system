@@ -110,9 +110,9 @@ public class RepaymentScheduleService {
         BigDecimal totalAmount = principalAmount.add(totalInterest);
 
         // Monthly repayment = total amount / total months
-        BigDecimal monthlyRepayment = totalAmount.divide(BigDecimal.valueOf(totalMonths), 2, RoundingMode.HALF_UP);
+        BigDecimal weeklyRepayment = totalAmount.divide(BigDecimal.valueOf(totalMonths), 2, RoundingMode.HALF_UP);
 
-        return monthlyRepayment;
+        return weeklyRepayment;
     }
 
     /**

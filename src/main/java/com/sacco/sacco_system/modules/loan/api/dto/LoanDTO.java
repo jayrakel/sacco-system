@@ -1,5 +1,7 @@
 package com.sacco.sacco_system.modules.loan.api.dto;
 
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -47,4 +49,45 @@ public class LoanDTO {
     // ✅ NEW FIELDS FOR LOAN OFFICER
     private BigDecimal memberSavings;
     private BigDecimal memberNetIncome;
+
+    /**
+     * ✅ STATIC MAPPER METHOD
+     * Converts a Loan Entity to LoanDTO.
+     */
+    public static LoanDTO fromEntity(Loan loan) {
+        Member member = loan.getMember();
+        BigDecimal netIncome = BigDecimal.ZERO;
+
+        // Safely extract income if available
+        if (member.getEmploymentDetails() != null && member.getEmploymentDetails().getNetMonthlyIncome() != null) {
+            netIncome = member.getEmploymentDetails().getNetMonthlyIncome();
+        }
+
+        return LoanDTO.builder()
+                .id(loan.getId())
+                .loanNumber(loan.getLoanNumber())
+                .memberId(member.getId())
+                .memberName(member.getFirstName() + " " + member.getLastName())
+                .productName(loan.getProduct().getName())
+                .principalAmount(loan.getPrincipalAmount())
+                .loanBalance(loan.getLoanBalance())
+                .duration(loan.getDuration())
+                .durationUnit(loan.getDurationUnit() != null ? loan.getDurationUnit().toString() : "MONTHS")
+                .status(loan.getStatus().toString())
+                .applicationDate(loan.getApplicationDate())
+                .disbursementDate(loan.getDisbursementDate())
+                .approvalDate(loan.getApprovalDate())
+                .weeklyRepaymentAmount(loan.getWeeklyRepaymentAmount())
+                .applicationFeePaid(loan.isApplicationFeePaid())
+                .processingFee(loan.getProduct().getProcessingFee())
+                .votesYes(loan.getVotesYes() != null ? loan.getVotesYes() : 0)
+                .votesNo(loan.getVotesNo() != null ? loan.getVotesNo() : 0)
+                // Convert Dates to Strings safely
+                .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
+                .meetingDate(loan.getMeetingDate() != null ? loan.getMeetingDate().toString() : null)
+                // Member Financials
+                .memberNetIncome(netIncome)
+                .memberSavings(BigDecimal.ZERO) // NOTE: Needs Repository to calculate real savings.
+                .build();
+    }
 }

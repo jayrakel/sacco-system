@@ -3,8 +3,10 @@ package com.sacco.sacco_system.modules.loan.api.controller;
 import com.sacco.sacco_system.modules.loan.api.dto.GuarantorDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDTO;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanGovernanceService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanLimitService;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanOriginationService;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanReadService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
@@ -26,8 +28,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LoanController {
 
-    private final LoanService loanService;
-    private final LoanLimitService loanLimitService;
+    // --- VERTICAL SERVICES ---
+    private final LoanOriginationService originationService;
+    private final LoanGovernanceService governanceService;
+    private final LoanReadService readService;
+
+    // --- HELPER SERVICES & REPOS ---
+    private final LoanLimitService loanLimitService; // Using your original file
     private final UserRepository userRepository;
     private final MemberRepository memberRepository;
     private final LoanProductRepository loanProductRepository;
@@ -37,7 +44,7 @@ public class LoanController {
     @GetMapping("/eligibility/check")
     public ResponseEntity<?> checkEligibility() {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.checkEligibility(getCurrentUserId())));
+            return ResponseEntity.ok(Map.of("success", true, "data", originationService.checkEligibility(getCurrentUserId())));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -50,7 +57,13 @@ public class LoanController {
             Member member = memberRepository.findByUserId(userId)
                     .orElseThrow(() -> new RuntimeException("Member record not found for this user."));
 
+            // ✅ FIXED: Using the method from your original LoanLimitService
             BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
+
+            // Optional: If you want the full breakdown in the frontend, use:
+            // Map<String, Object> details = loanLimitService.calculateMemberLoanLimitWithDetails(member);
+            // return ResponseEntity.ok(Map.of("success", true, "data", details));
+
             return ResponseEntity.ok(Map.of("success", true, "limit", limit));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -65,7 +78,7 @@ public class LoanController {
             String paymentMethod = payload.getOrDefault("paymentMethod", "MPESA").toString();
             String externalRef = payload.getOrDefault("externalReference", reference).toString();
 
-            LoanDTO draft = loanService.initiateWithFee(getCurrentUserId(), productId, externalRef, paymentMethod);
+            LoanDTO draft = originationService.initiateWithFee(getCurrentUserId(), productId, externalRef, paymentMethod);
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -78,7 +91,9 @@ public class LoanController {
             UUID loanId = UUID.fromString(payload.get("loanId").toString());
             BigDecimal amount = new BigDecimal(payload.get("amount").toString());
             Integer duration = Integer.parseInt(payload.get("duration").toString());
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.submitApplication(loanId, amount, duration)));
+
+            return ResponseEntity.ok(Map.of("success", true, "data",
+                    originationService.submitApplication(loanId, amount, duration)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -89,7 +104,7 @@ public class LoanController {
     @GetMapping("/{id}/guarantors")
     public ResponseEntity<?> getLoanGuarantors(@PathVariable UUID id) {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getGuarantorsByLoan(id)));
+            return ResponseEntity.ok(Map.of("success", true, "data", readService.getGuarantorsByLoan(id)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -100,7 +115,8 @@ public class LoanController {
         try {
             UUID memberId = UUID.fromString(payload.get("memberId").toString());
             BigDecimal amount = new BigDecimal(payload.get("guaranteeAmount").toString());
-            GuarantorDTO guarantor = loanService.addGuarantor(id, memberId, amount);
+
+            GuarantorDTO guarantor = originationService.addGuarantor(id, memberId, amount);
             return ResponseEntity.ok(Map.of("success", true, "data", guarantor));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -110,23 +126,17 @@ public class LoanController {
     @PostMapping("/{id}/send-requests")
     public ResponseEntity<?> sendRequests(@PathVariable UUID id) {
         try {
-            loanService.finalizeGuarantorRequests(id);
+            originationService.finalizeGuarantorRequests(id);
             return ResponseEntity.ok(Map.of("success", true, "message", "Requests sent successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // --- QUERIES ---
-
     @GetMapping("/guarantors/eligible")
     public ResponseEntity<?> getEligibleGuarantors() {
         try {
-            UUID userId = getCurrentUserId();
-            Member member = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
-
-            List<Member> eligibleMembers = loanService.getEligibleGuarantors(member.getId());
-
+            List<Member> eligibleMembers = originationService.getEligibleGuarantors(getCurrentUserId());
             List<Map<String, Object>> response = eligibleMembers.stream().map(m -> Map.<String, Object>of(
                     "id", m.getId(),
                     "firstName", m.getFirstName(),
@@ -142,29 +152,26 @@ public class LoanController {
 
     @GetMapping("/guarantors/requests")
     public ResponseEntity<?> getGuarantorRequests() {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getGuarantorRequests(getCurrentUserId())));
+        return ResponseEntity.ok(Map.of("success", true, "data", readService.getGuarantorRequests(getCurrentUserId())));
     }
 
     @PostMapping("/guarantors/{requestId}/respond")
     public ResponseEntity<?> respondToRequest(@PathVariable UUID requestId, @RequestBody Map<String, String> payload) {
         try {
             String status = payload.get("status");
-            UUID userId = getCurrentUserId();
-
-            loanService.respondToGuarantorRequest(userId, requestId, status);
-
+            originationService.respondToGuarantorRequest(getCurrentUserId(), requestId, status);
             return ResponseEntity.ok(Map.of("success", true, "message", "Response recorded successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // --- PHASE 3: ADMIN GOVERNANCE & DISBURSEMENT ---
+    // --- PHASE 3: GOVERNANCE ---
 
     @GetMapping("/admin/pending")
     public ResponseEntity<?> getPendingLoans() {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingLoansForAdmin()));
+            return ResponseEntity.ok(Map.of("success", true, "data", readService.getPendingLoansForAdmin()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -173,25 +180,18 @@ public class LoanController {
     @PostMapping("/admin/{loanId}/review")
     public ResponseEntity<?> reviewLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
-            String decision = payload.get("decision");
-            String remarks = payload.getOrDefault("remarks", "");
-            UUID adminId = getCurrentUserId();
-
-            loanService.reviewLoanApplication(adminId, loanId, decision, remarks);
-
+            governanceService.reviewApplication(loanId, payload.get("decision"), payload.getOrDefault("remarks", ""));
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan review processed successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // --- GOVERNANCE ENDPOINTS ---
-
     @PostMapping("/secretary/{loanId}/table")
     public ResponseEntity<?> tableLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
             LocalDateTime dateTime = LocalDateTime.parse(payload.get("meetingDate"));
-            loanService.tableLoanForMeeting(loanId, dateTime);
+            governanceService.tableLoan(loanId, dateTime);
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled for meeting successfully."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -201,67 +201,47 @@ public class LoanController {
     @PostMapping("/chairperson/{loanId}/start-voting")
     public ResponseEntity<?> startVoting(@PathVariable UUID loanId) {
         try {
-            loanService.startVoting(loanId);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Voting is now open for this loan."));
+            governanceService.startVoting(loanId);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Voting is now open."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ NEW: Member Vote Casting
     @PostMapping("/{loanId}/vote")
     public ResponseEntity<?> castVote(@PathVariable UUID loanId, @RequestBody Map<String, Boolean> payload) {
         try {
-            boolean voteYes = payload.get("vote");
-            loanService.castVote(loanId, getCurrentUserId(), voteYes);
+            governanceService.castVote(loanId, getCurrentUserId(), payload.get("vote"));
             return ResponseEntity.ok(Map.of("success", true, "message", "Vote cast successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ NEW: Get active votes for member (Filters own loans)
     @GetMapping("/voting/active")
     public ResponseEntity<?> getActiveVotes() {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getActiveVotesForMember(getCurrentUserId())));
+            return ResponseEntity.ok(Map.of("success", true, "data", readService.getActiveVotesForMember(getCurrentUserId())));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ UPDATED: Secretary Finalizes the Vote
     @PostMapping("/secretary/{loanId}/finalize-vote")
     public ResponseEntity<?> finalizeVote(@PathVariable UUID loanId, @RequestBody Map<String, Object> payload) {
         try {
-            boolean approved = Boolean.parseBoolean(payload.get("approved").toString());
-            String minutes = payload.getOrDefault("minutes", "").toString();
-            loanService.closeVoting(loanId, approved, minutes);
+            governanceService.closeVoting(loanId, Boolean.parseBoolean(payload.get("approved").toString()), payload.getOrDefault("minutes", "").toString());
             return ResponseEntity.ok(Map.of("success", true, "message", "Vote Finalized"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    // ✅ NEW: Chairperson Final Approval
     @PostMapping("/chairperson/{loanId}/final-approval")
     public ResponseEntity<?> chairpersonFinalApprove(@PathVariable UUID loanId) {
         try {
-            loanService.chairpersonFinalApprove(loanId);
+            governanceService.chairpersonFinalApprove(loanId);
             return ResponseEntity.ok(Map.of("success", true, "message", "Approved for Disbursement"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
-        }
-    }
-
-    /**
-     * ✅ NEW: Disburse Loan Funds
-     */
-    @PostMapping("/admin/{loanId}/disburse")
-    public ResponseEntity<?> disburseLoan(@PathVariable UUID loanId) {
-        try {
-            loanService.disburseLoan(loanId);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan disbursed successfully. Funds moved to Member account."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
@@ -271,7 +251,7 @@ public class LoanController {
 
     @GetMapping("/my-loans")
     public ResponseEntity<?> getMyLoans() {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoansByMember(getCurrentUserId())));
+        return ResponseEntity.ok(Map.of("success", true, "data", readService.getMemberLoans(getCurrentUserId())));
     }
 
     @GetMapping("/products")
@@ -281,7 +261,7 @@ public class LoanController {
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getLoan(@PathVariable UUID id) {
-        return ResponseEntity.ok(Map.of("success", true, "data", loanService.getLoanById(id)));
+        return ResponseEntity.ok(Map.of("success", true, "data", readService.getLoanById(id)));
     }
 
     private UUID getCurrentUserId() {
