@@ -209,6 +209,28 @@ public class LoanController {
         }
     }
 
+    // ✅ NEW: Member Vote Casting
+    @PostMapping("/{loanId}/vote")
+    public ResponseEntity<?> castVote(@PathVariable UUID loanId, @RequestBody Map<String, Boolean> payload) {
+        try {
+            boolean voteYes = payload.get("vote");
+            loanService.castVote(loanId, getCurrentUserId(), voteYes);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Vote cast successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Get active votes for member (Filters own loans)
+    @GetMapping("/voting/active")
+    public ResponseEntity<?> getActiveVotes() {
+        try {
+            return ResponseEntity.ok(Map.of("success", true, "data", loanService.getActiveVotesForMember(getCurrentUserId())));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
     // ✅ UPDATED: Secretary Finalizes the Vote
     @PostMapping("/secretary/{loanId}/finalize-vote")
     public ResponseEntity<?> finalizeVote(@PathVariable UUID loanId, @RequestBody Map<String, Object> payload) {

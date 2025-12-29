@@ -13,6 +13,7 @@ import api from '../api';
 export default function MemberDashboard() {
     const [user, setUser] = useState(null);
     const [searchParams] = useSearchParams();
+    const [pendingVotesCount, setPendingVotesCount] = useState(0); // ✅ Track Pending Votes
 
     const activeTab = searchParams.get('tab') || 'overview';
 
@@ -20,6 +21,7 @@ export default function MemberDashboard() {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
         fetchUserProfile();
+        fetchPendingVotes(); // ✅ Check for notifications on load
     }, []);
 
     const fetchUserProfile = async () => {
@@ -31,6 +33,19 @@ export default function MemberDashboard() {
             }
         } catch (error) {
             console.error("Failed to refresh user profile", error);
+        }
+    };
+
+    // ✅ NEW: Fetch active votes count to show the Red Dot
+    // This endpoint excludes the user's own loans automatically via backend logic
+    const fetchPendingVotes = async () => {
+        try {
+            const res = await api.get('/api/loans/voting/active');
+            if (res.data.success) {
+                setPendingVotesCount(res.data.data.length);
+            }
+        } catch (e) {
+            console.error("Failed to check pending votes", e);
         }
     };
 
@@ -52,9 +67,18 @@ export default function MemberDashboard() {
                         <span className="block truncate">Savings</span>
                     </Link>
 
-                    <Link to="?tab=loans" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border group text-left ${activeTab === 'loans' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white hover:bg-indigo-50 hover:text-indigo-700 border-slate-100'}`}>
+                    {/* ✅ LOANS TAB WITH NOTIFICATION DOT */}
+                    <Link to="?tab=loans" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border group text-left relative ${activeTab === 'loans' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white hover:bg-indigo-50 hover:text-indigo-700 border-slate-100'}`}>
                         <div className={`p-1.5 rounded-lg shadow-sm ${activeTab === 'loans' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-indigo-600'}`}><HandCoins size={16}/></div>
                         <span className="block truncate">Loans</span>
+
+                        {/* 🔴 THE RED DOT INDICATOR */}
+                        {pendingVotesCount > 0 && (
+                            <span className="absolute top-2 right-2 flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white"></span>
+                            </span>
+                        )}
                     </Link>
 
                     <Link to="?tab=statements" className={`w-full p-3 rounded-xl flex items-center gap-3 transition text-sm font-bold border group text-left ${activeTab === 'statements' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white hover:bg-purple-50 hover:text-purple-700 border-slate-100'}`}>
@@ -78,10 +102,14 @@ export default function MemberDashboard() {
                     {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
 
-                    {/* ✅ LATEST: Unified Loan Management workflow handles all modal logic internally */}
+                    {/* ✅ LATEST: Pass fetchPendingVotes to update dot after voting */}
                     {activeTab === 'loans' && (
                         <div className="animate-in slide-in-from-bottom-2 duration-500">
-                            <MemberLoans user={user} onUpdate={fetchUserProfile} />
+                            <MemberLoans
+                                user={user}
+                                onUpdate={fetchUserProfile}
+                                onVoteCast={fetchPendingVotes} // Triggers dot update
+                            />
                         </div>
                     )}
 

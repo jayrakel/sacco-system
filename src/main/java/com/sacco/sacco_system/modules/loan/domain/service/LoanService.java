@@ -435,6 +435,56 @@ public class LoanService {
         log.info("Voting opened for loan {}", loan.getLoanNumber());
     }
 
+    // ✅ NEW: Member Casting Vote (Before Secretary Finalizes)
+    public void castVote(UUID loanId, UUID userId, boolean voteYes) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.VOTING_OPEN) {
+            throw new RuntimeException("Voting is not open for this loan.");
+        }
+
+        Member voter = getMemberSafely(userId).orElseThrow(() -> new RuntimeException("Voter must be a member"));
+
+        // Prevent voting on own loan
+        if (loan.getMember().getId().equals(voter.getId())) {
+            throw new RuntimeException("You cannot vote on your own loan.");
+        }
+
+        // Prevent Double Voting
+        if (loan.getVotedUserIds() != null && loan.getVotedUserIds().contains(userId)) {
+            throw new RuntimeException("You have already voted.");
+        }
+
+        // Initialize lists/counters if null (Safety)
+        if (loan.getVotesYes() == null) loan.setVotesYes(0);
+        if (loan.getVotesNo() == null) loan.setVotesNo(0);
+        if (loan.getVotedUserIds() == null) loan.setVotedUserIds(new ArrayList<>());
+
+        // Record Vote
+        if (voteYes) {
+            loan.setVotesYes(loan.getVotesYes() + 1);
+        } else {
+            loan.setVotesNo(loan.getVotesNo() + 1);
+        }
+
+        loan.getVotedUserIds().add(userId);
+        loanRepository.save(loan);
+    }
+
+    // ✅ NEW: Get active votes for member (Filters own loans)
+    public List<LoanDTO> getActiveVotesForMember(UUID userId) {
+        List<Loan> openLoans = loanRepository.findByStatus(Loan.LoanStatus.VOTING_OPEN);
+        Member voter = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
+
+        return openLoans.stream()
+                // STRICT EXCLUSION: Applicant cannot see their own loan in voting list
+                .filter(loan -> !loan.getMember().getId().equals(voter.getId()))
+                // EXCLUSION: Remove already voted
+                .filter(loan -> loan.getVotedUserIds() == null || !loan.getVotedUserIds().contains(userId))
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
     // ✅ NEW METHOD: Secretary Finalizes Vote -> Moves to Chair
     public void closeVoting(UUID loanId, boolean approved, String minutes) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -600,6 +650,10 @@ public class LoanService {
                 .approvalDate(loan.getApprovalDate())
                 .memberSavings(totalSavings)
                 .memberNetIncome(netIncome)
+                // ✅ ADDED: Votes
+                .votesYes(loan.getVotesYes() != null ? loan.getVotesYes() : 0)
+                .votesNo(loan.getVotesNo() != null ? loan.getVotesNo() : 0)
+                .memberId(loan.getMember().getId())
                 .build();
     }
 
