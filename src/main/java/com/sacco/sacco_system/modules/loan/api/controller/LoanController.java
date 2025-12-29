@@ -15,11 +15,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/loans")
@@ -190,8 +190,9 @@ public class LoanController {
     @PostMapping("/secretary/{loanId}/table")
     public ResponseEntity<?> tableLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
-            LocalDate date = LocalDate.parse(payload.get("meetingDate"));
-            loanService.tableLoanForMeeting(loanId, date);
+            // ✅ UPDATED: Parse LocalDateTime for exact scheduling
+            LocalDateTime dateTime = LocalDateTime.parse(payload.get("meetingDate"));
+            loanService.tableLoanForMeeting(loanId, dateTime);
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled for meeting successfully."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
@@ -203,6 +204,30 @@ public class LoanController {
         try {
             loanService.startVoting(loanId);
             return ResponseEntity.ok(Map.of("success", true, "message", "Voting is now open for this loan."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ UPDATED: Secretary Finalizes the Vote
+    @PostMapping("/secretary/{loanId}/finalize-vote")
+    public ResponseEntity<?> finalizeVote(@PathVariable UUID loanId, @RequestBody Map<String, Object> payload) {
+        try {
+            boolean approved = Boolean.parseBoolean(payload.get("approved").toString());
+            String minutes = payload.getOrDefault("minutes", "").toString();
+            loanService.closeVoting(loanId, approved, minutes);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Vote Finalized"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // ✅ NEW: Chairperson Final Approval
+    @PostMapping("/chairperson/{loanId}/final-approval")
+    public ResponseEntity<?> chairpersonFinalApprove(@PathVariable UUID loanId) {
+        try {
+            loanService.chairpersonFinalApprove(loanId);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Approved for Disbursement"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

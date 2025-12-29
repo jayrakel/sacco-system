@@ -1,172 +1,233 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api';
-import { useSettings } from '../context/SettingsContext';
-import { FileText, Calendar, CheckSquare, Users, Clock, Gavel, CheckCircle, XCircle } from 'lucide-react';
-import DashboardHeader from '../components/DashboardHeader';
-import BrandedSpinner from '../components/BrandedSpinner';
-import ShareCapitalCard from '../components/ShareCapitalCard';
+import api from '../api'; // ✅ FIXED PATH
+import { FileText, Calendar, Clock, Users, CheckCircle, Gavel, XCircle } from 'lucide-react';
+import DashboardHeader from '../components/DashboardHeader'; // ✅ FIXED PATH
+import BrandedSpinner from '../components/BrandedSpinner'; // ✅ FIXED PATH
+import ShareCapitalCard from '../components/ShareCapitalCard'; // ✅ FIXED PATH
 
 export default function SecretaryDashboard() {
-    const { settings } = useSettings();
     const [user, setUser] = useState(null);
-    const [loans, setLoans] = useState([]);
+    const [pendingLoans, setPendingLoans] = useState([]); // APPROVED (To Schedule)
+    const [scheduledLoans, setScheduledLoans] = useState([]); // SECRETARY_TABLED (Scheduled)
+    const [activeVotes, setActiveVotes] = useState([]);   // VOTING_OPEN (Monitor & Finalize)
     const [loading, setLoading] = useState(true);
 
+    // Modal State
     const [selectedLoan, setSelectedLoan] = useState(null);
-    const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split('T')[0]);
-
-    const [finalizeLoan, setFinalizeLoan] = useState(null);
-    const [manualDecision, setManualDecision] = useState(null);
-    const [secretaryComments, setSecretaryComments] = useState('');
+    const [meetingDateTime, setMeetingDateTime] = useState('');
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
-        fetchTabledLoans();
+        fetchDashboardData();
     }, []);
 
-    const fetchTabledLoans = async () => {
+    const fetchDashboardData = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/api/loans');
+            const res = await api.get('/api/loans/admin/pending');
             if (res.data.success) {
-                const readyLoans = res.data.data.filter(l =>
-                    ['SECRETARY_TABLED', 'VOTING_OPEN'].includes(l.status)
-                );
-                setLoans(readyLoans);
+                const allData = res.data.data;
+                setPendingLoans(allData.filter(l => l.status === 'APPROVED'));
+                setScheduledLoans(allData.filter(l => l.status === 'SECRETARY_TABLED'));
+                // ✅ NEW: Fetch active votes to monitor progress
+                setActiveVotes(allData.filter(l => l.status === 'VOTING_OPEN'));
             }
         } catch (e) {
-            console.error(e);
+            console.error("Failed to load secretary data", e);
         } finally {
             setLoading(false);
         }
     };
 
     const handleTableLoan = async () => {
-        if (!selectedLoan) return;
+        if (!selectedLoan || !meetingDateTime) return alert("Please select date and time.");
+
         try {
-            await api.post(`/api/loans/${selectedLoan.id}/table?meetingDate=${meetingDate}`);
-            await api.post(`/api/loans/${selectedLoan.id}/start-voting`);
-            alert("Loan added to agenda and voting opened.");
+            await api.post(`/api/loans/secretary/${selectedLoan.id}/table`, { meetingDate: meetingDateTime });
+            alert(`Loan ${selectedLoan.loanNumber} scheduled for ${meetingDateTime.replace('T', ' ')}.`);
             setSelectedLoan(null);
-            fetchTabledLoans();
+            fetchDashboardData();
         } catch (error) {
-            alert(error.response?.data?.message || "Failed to table loan");
+            alert(error.response?.data?.message || "Failed to table loan. Please try again.");
         }
     };
 
-    const handleFinalizeVote = async () => {
-        if (!finalizeLoan) return;
-        const isManual = settings?.LOAN_VOTING_METHOD === 'MANUAL';
+    // ✅ NEW: Secretary starts voting manually if needed (or Chair does it, depending on strictness)
+    const handleStartVoting = async (loanId) => {
+        if(!window.confirm("Start voting for this loan?")) return;
+        try {
+            await api.post(`/api/loans/secretary/${loanId}/start-voting`); // Using shared service logic
+            alert("Voting Started.");
+            fetchDashboardData();
+        } catch (e) { alert("Failed to start voting."); }
+    };
 
-        if (isManual && manualDecision === null) {
-            alert("Please select a decision (Approve or Reject).");
-            return;
-        }
+    // ✅ NEW: Secretary Finalizes based on counts
+    const handleFinalizeVote = async (loanId, approved) => {
+        const decision = approved ? "APPROVE" : "REJECT";
+        const minutes = prompt(`Enter meeting minutes regarding this ${decision}:`);
+        if (!minutes) return;
 
         try {
-            await api.post(`/api/loans/${finalizeLoan.id}/finalize`, null, {
-                params: {
-                    approved: isManual ? manualDecision : null,
-                    comments: secretaryComments || 'Meeting minutes recorded.'
-                }
-            });
-            alert("Decision finalized and recorded.");
-            setFinalizeLoan(null);
-            setManualDecision(null);
-            setSecretaryComments('');
-            fetchTabledLoans();
-        } catch (error) {
-            alert(error.response?.data?.message || "Failed to finalize");
-        }
+            await api.post(`/api/loans/secretary/${loanId}/finalize-vote`, { approved, minutes });
+            alert(`Vote Finalized: ${decision}D`);
+            fetchDashboardData();
+        } catch (e) { alert("Failed to finalize vote."); }
     };
 
     return (
         <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-12">
             <DashboardHeader user={user} title="Secretariat Portal" />
+
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8 animate-in fade-in">
-                <div className="flex justify-between items-end">
+
+                {/* 1. HEADER & STATS */}
+                <div className="flex flex-col md:flex-row justify-between items-end gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800">Meeting Management</h1>
-                        <p className="text-slate-500 text-sm">Review officer-approved loans and manage committee voting.</p>
-                    </div>
-                    <div className={`px-4 py-2 rounded-xl border flex items-center gap-3 shadow-sm ${settings?.LOAN_VOTING_METHOD === 'MANUAL' ? 'bg-purple-50 border-purple-100 text-purple-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
-                        <Gavel size={20} />
-                        <div className="text-right">
-                            <p className="text-[10px] uppercase font-bold opacity-60">Voting Mode</p>
-                            <p className="font-bold text-sm leading-none">{settings?.LOAN_VOTING_METHOD === 'MANUAL' ? 'Manual Discretion' : 'Automatic Tally'}</p>
-                        </div>
+                        <p className="text-slate-500 text-sm">Prepare committee agendas and monitor voting progress.</p>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <StatCard icon={<FileText size={24}/>} color="orange" label="Awaiting Agenda" value={loans.filter(l => l.status === 'SECRETARY_TABLED').length} />
-                    <StatCard icon={<Users size={24}/>} color="pink" label="Voting Active" value={loans.filter(l => l.status === 'VOTING_OPEN').length} />
+                    <StatCard icon={<FileText size={24}/>} color="amber" label="To Schedule" value={pendingLoans.length} />
+                    <StatCard icon={<Gavel size={24}/>} color="purple" label="Voting Active" value={activeVotes.length} />
                     <ShareCapitalCard />
                 </div>
 
+                {/* 2. ACTIVE VOTING MONITOR (NEW SECTION) */}
+                {activeVotes.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-purple-200 overflow-hidden">
+                        <div className="p-6 border-b border-purple-100 bg-purple-50 flex justify-between items-center">
+                            <h2 className="font-bold text-purple-900 flex items-center gap-2">
+                                <Gavel size={20}/> Voting In Progress
+                            </h2>
+                            <span className="bg-purple-200 text-purple-800 text-xs font-bold px-2 py-1 rounded">Action Required</span>
+                        </div>
+                        <div className="p-4 grid gap-4">
+                            {activeVotes.map(loan => (
+                                <div key={loan.id} className="flex flex-col md:flex-row justify-between items-center p-4 bg-white border rounded-xl shadow-sm gap-4">
+                                    <div>
+                                        <h3 className="font-bold text-lg">{loan.memberName}</h3>
+                                        <p className="text-sm text-slate-500 font-mono">{loan.loanNumber} • KES {Number(loan.principalAmount).toLocaleString()}</p>
+                                    </div>
+
+                                    {/* ✅ VOTING PROGRESS DISPLAY */}
+                                    <div className="flex items-center gap-6 bg-slate-50 px-4 py-2 rounded-lg">
+                                        <div className="text-center">
+                                            <span className="block text-xs font-bold text-slate-400 uppercase">Yes</span>
+                                            <span className="block text-xl font-bold text-emerald-600">{loan.votesYes || 0}</span>
+                                        </div>
+                                        <div className="w-px h-8 bg-slate-200"></div>
+                                        <div className="text-center">
+                                            <span className="block text-xs font-bold text-slate-400 uppercase">No</span>
+                                            <span className="block text-xl font-bold text-red-600">{loan.votesNo || 0}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleFinalizeVote(loan.id, false)} className="flex items-center gap-1 px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50">
+                                            <XCircle size={16}/> Reject
+                                        </button>
+                                        <button onClick={() => handleFinalizeVote(loan.id, true)} className="flex items-center gap-1 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 shadow-sm">
+                                            <CheckCircle size={16}/> Pass Vote
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. PENDING SCHEDULING */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                            <Clock size={20} className="text-amber-600"/> Pending Scheduling
+                        </h2>
+                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-3 py-1 rounded-full">
+                            {pendingLoans.length} Loans
+                        </span>
+                    </div>
+
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase text-xs">
                             <tr>
-                                <th className="p-4">Ref</th>
+                                <th className="p-4">Reference</th>
                                 <th className="p-4">Applicant</th>
-                                <th className="p-4">Amount</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4 text-center">Votes (Y/N)</th>
-                                <th className="p-4 text-center">Action</th>
+                                <th className="p-4 text-right">Amount</th>
+                                <th className="p-4">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan="6" className="p-12 flex justify-center"><BrandedSpinner size="medium"/></td></tr>
-                            ) : loans.map(loan => (
-                                <tr key={loan.id} className="hover:bg-slate-50">
-                                    <td className="p-4 font-mono text-xs">{loan.loanNumber}</td>
-                                    <td className="p-4 font-bold">{loan.memberName}</td>
-                                    <td className="p-4">KES {Number(loan.principalAmount).toLocaleString()}</td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${loan.status === 'SECRETARY_TABLED' ? 'bg-orange-50 text-orange-600' : 'bg-pink-50 text-pink-600 animate-pulse'}`}>
-                                            {loan.status.replace('_', ' ')}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-center font-bold">
-                                        <span className="text-emerald-600">{loan.votesYes || 0}</span> / <span className="text-red-500">{loan.votesNo || 0}</span>
-                                    </td>
-                                    <td className="p-4 flex justify-center">
-                                        {loan.status === 'SECRETARY_TABLED' ? (
-                                            <button onClick={() => setSelectedLoan(loan)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold"><Calendar size={14}/> Table</button>
-                                        ) : (
-                                            <button onClick={() => setFinalizeLoan(loan)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold"><Gavel size={14}/> Finalize</button>
-                                        )}
+                                <tr><td colSpan="4" className="p-12 text-center"><BrandedSpinner size="medium"/></td></tr>
+                            ) : pendingLoans.map(loan => (
+                                <tr key={loan.id} className="hover:bg-amber-50/30 transition">
+                                    <td className="p-4 font-mono text-slate-500 text-xs">{loan.loanNumber}</td>
+                                    <td className="p-4 font-bold text-slate-700">{loan.memberName}</td>
+                                    <td className="p-4 text-right font-mono font-bold">KES {Number(loan.principalAmount).toLocaleString()}</td>
+                                    <td className="p-4 text-center">
+                                        <button
+                                            onClick={() => setSelectedLoan(loan)}
+                                            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition shadow-sm"
+                                        >
+                                            <Calendar size={14}/> Schedule
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
+
+                {/* 4. SCHEDULED LIST */}
+                {scheduledLoans.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden opacity-90 hover:opacity-100 transition">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                            <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                                <Users size={20} className="text-blue-600"/> Upcoming Agenda Items
+                            </h2>
+                        </div>
+                        <div className="p-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {scheduledLoans.map(loan => (
+                                <div key={loan.id} className="p-4 border rounded-xl flex items-center justify-between bg-slate-50">
+                                    <div>
+                                        <p className="font-bold text-sm text-slate-700">{loan.memberName}</p>
+                                        <p className="text-xs text-blue-600 font-bold mt-1">
+                                            {new Date(loan.meetingDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => handleStartVoting(loan.id)} className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700">Start Voting</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </main>
 
-            {/* Finalize Modal */}
-            {finalizeLoan && (
+            {/* MODAL */}
+            {selectedLoan && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-6">
-                        <h3 className="text-lg font-bold border-b pb-2">Finalize Voting Result</h3>
-                        {settings?.LOAN_VOTING_METHOD === 'MANUAL' ? (
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <button onClick={() => setManualDecision(true)} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 ${manualDecision === true ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100'}`}><CheckCircle size={24} /><span>Approve</span></button>
-                                    <button onClick={() => setManualDecision(false)} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 ${manualDecision === false ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-100'}`}><XCircle size={24} /><span>Reject</span></button>
-                                </div>
-                                <textarea className="w-full p-3 border rounded-xl text-sm" rows="3" placeholder="Decision comments..." value={secretaryComments} onChange={e => setSecretaryComments(e.target.value)} />
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="bg-slate-50 p-6 border-b border-slate-100">
+                            <h3 className="text-lg font-bold text-slate-800">Schedule Meeting</h3>
+                            <p className="text-sm text-slate-500">Select precise date & time for Loan {selectedLoan.loanNumber}</p>
+                        </div>
+                        <div className="p-6">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Meeting Date & Time</label>
+                            <input
+                                type="datetime-local"
+                                value={meetingDateTime}
+                                onChange={(e) => setMeetingDateTime(e.target.value)}
+                                className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none text-slate-700"
+                            />
+                            <div className="mt-6 flex gap-3">
+                                <button onClick={() => setSelectedLoan(null)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50">Cancel</button>
+                                <button onClick={handleTableLoan} className="flex-1 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition flex items-center justify-center gap-2"><CheckCircle size={18}/> Confirm</button>
                             </div>
-                        ) : (
-                            <div className="text-center py-4">
-                                <p className="text-sm text-slate-500">System will use automatic 50%+1 tally.</p>
-                                <div className="flex justify-center gap-8 mt-4"><p className="text-2xl font-bold text-emerald-600">{finalizeLoan.votesYes} Y</p><p className="text-2xl font-bold text-red-500">{finalizeLoan.votesNo} N</p></div>
-                            </div>
-                        )}
-                        <div className="flex gap-3"><button onClick={() => setFinalizeLoan(null)} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl">Cancel</button><button onClick={handleFinalizeVote} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl">Confirm</button></div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -175,11 +236,11 @@ export default function SecretaryDashboard() {
 }
 
 function StatCard({ icon, color, label, value }) {
-    const colors = { orange: "bg-orange-100 text-orange-600", pink: "bg-pink-100 text-pink-600" };
+    const colors = { amber: "bg-amber-100 text-amber-600", purple: "bg-purple-100 text-purple-600", blue: "bg-blue-100 text-blue-600" };
     return (
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
-            <div className={`p-3 rounded-xl ${colors[color]}`}>{icon}</div>
-            <div><p className="text-xs font-bold text-slate-400 uppercase">{label}</p><h3 className="text-2xl font-bold text-slate-800">{value}</h3></div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 hover:shadow-md transition">
+            <div className={`p-4 rounded-xl ${colors[color]}`}>{icon}</div>
+            <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</p><h3 className="text-3xl font-black text-slate-800 mt-1">{value}</h3></div>
         </div>
     );
 }

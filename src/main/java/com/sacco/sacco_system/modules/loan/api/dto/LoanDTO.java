@@ -30,6 +30,12 @@ public class LoanDTO {
     // Using String for simpler JSON serialization of date
     private String expectedRepaymentDate;
 
+    // ✅ ADDED: For displaying exact meeting time in dashboard
+    private String meetingDate;
+
+    // ✅ ADDED: For tracking technical approval date
+    private LocalDate approvalDate;
+
     private BigDecimal weeklyRepaymentAmount;
 
     // Fee & Voting info

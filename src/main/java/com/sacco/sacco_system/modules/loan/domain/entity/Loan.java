@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime; // ✅ Changed Import
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -46,7 +47,6 @@ public class Loan {
     private BigDecimal totalPrepaid;
     private BigDecimal totalArrears;
 
-    // ✅ ADDED THIS FIELD to store the calculated date
     private LocalDate expectedRepaymentDate;
 
     @Enumerated(EnumType.STRING)
@@ -56,13 +56,14 @@ public class Loan {
     private LocalDate submissionDate;
     private LocalDate approvalDate;
     private LocalDate disbursementDate;
-    private LocalDate meetingDate;
+
+    // ✅ CHANGED: Now stores Time as well
+    private LocalDateTime meetingDate;
 
     private boolean applicationFeePaid;
     private String checkNumber;
     private Integer gracePeriodWeeks;
 
-    // Governance / Voting Fields
     private boolean votingOpen;
     private Integer votesYes;
     private Integer votesNo;

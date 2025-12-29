@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import api from '../api';
-import { Users, TrendingUp, Activity, CheckCircle, Clock, Gavel } from 'lucide-react';
-import DashboardHeader from '../components/DashboardHeader';
-import BrandedSpinner from '../components/BrandedSpinner';
-import ShareCapitalCard from '../components/ShareCapitalCard';
+import api from '../api'; // ✅ FIXED PATH
+import { Users, TrendingUp, CheckCircle, Gavel } from 'lucide-react';
+import DashboardHeader from '../components/DashboardHeader'; // ✅ FIXED PATH
+import BrandedSpinner from '../components/BrandedSpinner'; // ✅ FIXED PATH
+import ShareCapitalCard from '../components/ShareCapitalCard'; // ✅ FIXED PATH
 
 export default function ChairpersonDashboard() {
     const [user, setUser] = useState(null);
-    const [agendaLoans, setAgendaLoans] = useState([]);
+    const [approvalQueue, setApprovalQueue] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -19,28 +19,26 @@ export default function ChairpersonDashboard() {
     const fetchAgenda = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/api/loans');
+            const res = await api.get('/api/loans/admin/pending');
             if (res.data.success) {
-                // Filter for loans that are either ON_AGENDA (waiting) or VOTING_OPEN (active)
-                const activeAgenda = res.data.data.filter(l =>
-                    l.status === 'ON_AGENDA' || l.status === 'VOTING_OPEN'
-                );
-                setAgendaLoans(activeAgenda);
+                // ✅ LOGIC: Chair sees loans PASSED by Secretary (SECRETARY_DECISION)
+                setApprovalQueue(res.data.data.filter(l => l.status === 'SECRETARY_DECISION'));
             }
         } catch (e) {
-            console.error("Failed to load agenda", e);
+            console.error("Failed to load dashboard", e);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleOpenVoting = async (loan) => {
-        if (!window.confirm(`Call for a vote on Loan ${loan.loanNumber}? This will open the floor.`)) return;
+    const handleFinalApproval = async (loan) => {
+        if (!window.confirm(`Grant Final Executive Approval for Loan ${loan.loanNumber}? This authorizes disbursement.`)) return;
 
         try {
-            await api.post(`/api/loans/${loan.id}/start-voting`);
-            alert("Voting floor is now open for this loan.");
-            fetchAgenda(); // Refresh list to show new status
+            // ✅ CALLS FINAL APPROVAL ENDPOINT
+            await api.post(`/api/loans/chairperson/${loan.id}/final-approval`);
+            alert("Final Approval Granted. Loan forwarded to Treasurer.");
+            fetchAgenda();
         } catch (error) {
             alert(error.response?.data?.message || "Action failed");
         }
@@ -71,9 +69,9 @@ export default function ChairpersonDashboard() {
                     </div>
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-blue-100 flex flex-col items-center text-center">
                         <div className="p-4 bg-blue-50 text-blue-600 rounded-full mb-4"><Gavel size={32}/></div>
-                        <h3 className="font-bold text-slate-700 text-lg">Pending Votes</h3>
+                        <h3 className="font-bold text-slate-700 text-lg">Pending Sign-offs</h3>
                         <div className="text-3xl font-bold text-indigo-600 mt-2">
-                            {agendaLoans.filter(l => l.status === 'ON_AGENDA').length}
+                            {approvalQueue.length}
                         </div>
                     </div>
 
@@ -81,14 +79,14 @@ export default function ChairpersonDashboard() {
                     <ShareCapitalCard />
                 </div>
 
-                {/* 2. MEETING AGENDA TABLE */}
+                {/* 2. FINAL APPROVAL TABLE */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <Gavel size={20} className="text-slate-400"/> Meeting Agenda
+                            <CheckCircle size={20} className="text-indigo-600"/> Executive Sign-Off Required
                         </h2>
                         <span className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-bold">
-                            {agendaLoans.length} Items
+                            {approvalQueue.length} Pending
                         </span>
                     </div>
 
@@ -98,16 +96,16 @@ export default function ChairpersonDashboard() {
                                 <th className="p-4">Ref</th>
                                 <th className="p-4">Applicant</th>
                                 <th className="p-4 text-right">Amount</th>
-                                <th className="p-4">Scheduled Date</th>
+                                <th className="p-4">Committee Status</th>
                                 <th className="p-4 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr><td colSpan="5" className="p-12 text-center"><BrandedSpinner size="medium"/></td></tr>
-                            ) : agendaLoans.length === 0 ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No agenda items pending. Waiting for Secretary to table loans.</td></tr>
-                            ) : agendaLoans.map(loan => (
+                            ) : approvalQueue.length === 0 ? (
+                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No loans pending final executive approval.</td></tr>
+                            ) : approvalQueue.map(loan => (
                                 <tr key={loan.id} className="hover:bg-slate-50 transition">
                                     <td className="p-4 font-mono text-slate-500 text-xs">{loan.loanNumber}</td>
                                     <td className="p-4">
@@ -116,23 +114,21 @@ export default function ChairpersonDashboard() {
                                     <td className="p-4 text-right font-mono font-bold text-slate-700">
                                         KES {Number(loan.principalAmount).toLocaleString()}
                                     </td>
-                                    <td className="p-4 text-slate-500 text-xs">
-                                        {loan.meetingDate || "Today"}
+
+                                    {/* ✅ SHOW STATUS FROM SECRETARY */}
+                                    <td className="p-4 text-xs">
+                                        <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold border border-emerald-100">
+                                            Passed Vote
+                                        </span>
                                     </td>
+
                                     <td className="p-4 flex justify-center">
-                                        {/* ACTION: Call Vote */}
-                                        {loan.status === 'ON_AGENDA' ? (
-                                            <button
-                                                onClick={() => handleOpenVoting(loan)}
-                                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20"
-                                            >
-                                                <CheckCircle size={14}/> Call for Vote
-                                            </button>
-                                        ) : (
-                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-100">
-                                                <Clock size={12}/> Voting In Progress...
-                                            </span>
-                                        )}
+                                        <button
+                                            onClick={() => handleFinalApproval(loan)}
+                                            className="flex items-center gap-2 px-6 py-2 bg-indigo-900 text-white rounded-lg text-xs font-bold hover:bg-indigo-800 transition shadow-lg shadow-indigo-900/20"
+                                        >
+                                            <Gavel size={14}/> Grant Final Approval
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

@@ -243,7 +243,9 @@ public class LoanService {
 
         // Lock details
         loan.setInterestRate(loan.getProduct().getInterestRate());
-        loan.setExpectedRepaymentDate(LocalDate.now().plusWeeks(duration));
+
+        // ✅ CORRECT: Do NOT calculate expectedRepaymentDate here. It is too early.
+        // It will be calculated upon disbursement.
 
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
@@ -369,7 +371,9 @@ public class LoanService {
                         Loan.LoanStatus.LOAN_OFFICER_REVIEW,
                         Loan.LoanStatus.APPROVED,
                         Loan.LoanStatus.SECRETARY_TABLED,
-                        Loan.LoanStatus.VOTING_OPEN
+                        Loan.LoanStatus.VOTING_OPEN,
+                        Loan.LoanStatus.SECRETARY_DECISION, // ✅ Added for Chair's View
+                        Loan.LoanStatus.TREASURER_DISBURSEMENT // ✅ Added so Treasurer sees approved loans
                 )).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
@@ -397,7 +401,8 @@ public class LoanService {
 
     // --- PHASE 3.5: GOVERNANCE (SECRETARY & CHAIR) ---
 
-    public void tableLoanForMeeting(UUID loanId, LocalDate meetingDate) {
+    // ✅ FIXED: Now takes LocalDateTime for exact scheduling
+    public void tableLoanForMeeting(UUID loanId, LocalDateTime meetingDate) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
         if (loan.getStatus() != Loan.LoanStatus.APPROVED) {
@@ -408,7 +413,7 @@ public class LoanService {
         loan.setMeetingDate(meetingDate);
         loanRepository.save(loan);
 
-        notificationService.notifyUser(loan.getMember().getId(), "Loan Tabled", "Your loan has been scheduled for the committee meeting on " + meetingDate, true, true);
+        notificationService.notifyUser(loan.getMember().getId(), "Loan Tabled", "Your loan has been scheduled for the committee meeting on " + meetingDate.toLocalDate() + " at " + meetingDate.toLocalTime(), true, true);
     }
 
     public void startVoting(UUID loanId) {
@@ -418,6 +423,11 @@ public class LoanService {
             throw new RuntimeException("This loan has not been tabled for a meeting yet.");
         }
 
+        // ✅ FIXED: Enforce Time Constraint
+        if (loan.getMeetingDate() != null && LocalDateTime.now().isBefore(loan.getMeetingDate())) {
+            throw new RuntimeException("Cannot start voting yet. Scheduled for " + loan.getMeetingDate().toString().replace("T", " "));
+        }
+
         loan.setStatus(Loan.LoanStatus.VOTING_OPEN);
         loan.setVotingOpen(true);
         loanRepository.save(loan);
@@ -425,14 +435,52 @@ public class LoanService {
         log.info("Voting opened for loan {}", loan.getLoanNumber());
     }
 
+    // ✅ NEW METHOD: Secretary Finalizes Vote -> Moves to Chair
+    public void closeVoting(UUID loanId, boolean approved, String minutes) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.VOTING_OPEN) {
+            throw new RuntimeException("Voting is not open for this loan.");
+        }
+
+        loan.setVotingOpen(false);
+        loan.setSecretaryComments(minutes); // Capture minutes/verdict
+
+        if (approved) {
+            // ✅ CHANGED: Moves to SECRETARY_DECISION (Chair Approval Required)
+            loan.setStatus(Loan.LoanStatus.SECRETARY_DECISION);
+            notificationService.notifyUser(loan.getMember().getId(), "Committee Approved", "Your loan passed the committee vote. Pending final sign-off by Chairperson.", true, true);
+        } else {
+            loan.setStatus(Loan.LoanStatus.REJECTED);
+            loan.setRejectionReason("Committee Rejected: " + minutes);
+            notificationService.notifyUser(loan.getMember().getId(), "Loan Rejected", "The committee voted against your loan.", true, true);
+        }
+        loanRepository.save(loan);
+    }
+
+    // ✅ NEW METHOD: Chairperson Final Approval -> Moves to Treasurer
+    public void chairpersonFinalApprove(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.SECRETARY_DECISION) {
+            throw new RuntimeException("Loan is not pending Chairperson approval.");
+        }
+
+        // ✅ MOVES TO TREASURER
+        loan.setStatus(Loan.LoanStatus.TREASURER_DISBURSEMENT);
+        loanRepository.save(loan);
+
+        notificationService.notifyUser(loan.getMember().getId(), "Final Approval", "Chairperson has signed off. Your loan is now in the disbursement queue.", true, true);
+    }
+
     // --- PHASE 4: DISBURSEMENT ---
 
     public void disburseLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
 
-        // Allow disbursement if Voting is Open OR Approved (Covers all flows)
-        if (loan.getStatus() != Loan.LoanStatus.VOTING_OPEN && loan.getStatus() != Loan.LoanStatus.APPROVED) {
-            throw new RuntimeException("Loan not ready for disbursement. Current status: " + loan.getStatus());
+        // ✅ STRICT LOCK: Ensure Chair Passed it
+        if (loan.getStatus() != Loan.LoanStatus.TREASURER_DISBURSEMENT) {
+            throw new RuntimeException("Loan not ready for disbursement. Chairperson approval required.");
         }
 
         String ref = referenceCodeService.generateReferenceCode();
@@ -460,10 +508,21 @@ public class LoanService {
                 .build();
         transactionRepository.save(transaction);
 
-        // 3. Update Loan Status
+        // 3. Update Loan Status & Calculate Dates
         loan.setStatus(Loan.LoanStatus.DISBURSED);
-        loan.setDisbursementDate(LocalDate.now());
+
+        LocalDate today = LocalDate.now();
+        loan.setDisbursementDate(today);
         loan.setLoanBalance(amount);
+
+        // ✅ FIXED: Calculate Repayment Date Here (Today + Grace + Duration)
+        int graceWeeks = loan.getGracePeriodWeeks() != null ? loan.getGracePeriodWeeks() : 0;
+        int durationWeeks = loan.getDuration() != null ? loan.getDuration() : 0;
+
+        LocalDate startDate = today.plusWeeks(graceWeeks);
+        LocalDate endDate = startDate.plusWeeks(durationWeeks);
+
+        loan.setExpectedRepaymentDate(endDate);
 
         loanRepository.save(loan);
 
@@ -536,6 +595,9 @@ public class LoanService {
                 .principalAmount(loan.getPrincipalAmount())
                 .loanBalance(loan.getLoanBalance())
                 .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
+                // ✅ ADDED: Pass meeting date to DTO
+                .meetingDate(loan.getMeetingDate() != null ? loan.getMeetingDate().toString() : null)
+                .approvalDate(loan.getApprovalDate())
                 .memberSavings(totalSavings)
                 .memberNetIncome(netIncome)
                 .build();
