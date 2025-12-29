@@ -4,7 +4,6 @@ import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,27 +12,13 @@ import java.util.UUID;
 
 @Repository
 public interface LoanRepaymentRepository extends JpaRepository<LoanRepayment, UUID> {
-
-    List<LoanRepayment> findByLoanId(UUID loanId);
-
-    List<LoanRepayment> findByStatus(LoanRepayment.RepaymentStatus status);
-
-    // âœ… FIXED: Added missing method required for Restructuring logic
-    List<LoanRepayment> findByLoanIdAndStatus(UUID loanId, LoanRepayment.RepaymentStatus status);
-
+    List<LoanRepayment> findByLoanIdOrderByDueDateAsc(UUID loanId);
     Optional<LoanRepayment> findFirstByLoanIdAndStatusOrderByDueDateAsc(UUID loanId, LoanRepayment.RepaymentStatus status);
 
-    // For fine calculation - find overdue payments
-    List<LoanRepayment> findByStatusAndDueDateBefore(LoanRepayment.RepaymentStatus status, LocalDate date);
-
-    @Query("SELECT SUM(lr.totalPaid) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
+    /** ✅ Fixes FinancialReportService 404/Compilation error */
+    @Query("SELECT COALESCE(SUM(lr.amountPaid), 0) FROM LoanRepayment lr WHERE lr.status = 'PAID'")
     BigDecimal getTotalRepaidAmount();
 
-    @Query("SELECT COUNT(lr) FROM LoanRepayment lr WHERE lr.status = 'OVERDUE'")
-    long countOverdueRepayments();
+    /** ✅ Fixes FineService compilation error */
+    List<LoanRepayment> findByStatusAndDueDateBefore(LoanRepayment.RepaymentStatus status, LocalDate date);
 }
-
-
-
-
-

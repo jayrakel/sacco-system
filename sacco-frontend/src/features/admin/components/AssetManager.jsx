@@ -14,12 +14,24 @@ export default function AssetManager() {
     const handleSave = async (e) => {
         e.preventDefault();
         try {
-            await api.post('/api/assets', form);
+            // FIX: Send 'form' instead of 'formData'
+            // Ensure numeric values are actually numbers if the backend expects it, 
+            // though your backend does parsing from strings, so strings are fine.
+            await api.post('/api/assets/register', {
+                ...form,
+                // Add defaults for missing fields if you don't add inputs for them
+                category: form.category || 'GENERAL', 
+                usefulLifeYears: form.usefulLifeYears || 5 
+            });
+            
             alert("Asset Saved!");
             setShowModal(false);
             const res = await api.get('/api/assets');
             setAssets(res.data.data);
-        } catch (err) { alert("Failed to save asset"); }
+        } catch (err) { 
+            console.error(err); // Log the error to see details
+            alert("Failed to save asset: " + (err.response?.data?.message || err.message)); 
+        }
     };
 
     return (

@@ -108,6 +108,30 @@ public class UserService {
         return convertToDTO(savedUser);
     }
 
+    // ✅ NEW: Admin Force Verify
+    @Transactional
+    public void adminVerifyUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        user.setEmailVerified(true);
+        user.setEnabled(true);
+        userRepository.save(user);
+        log.info("Admin manually verified user: {}", user.getEmail());
+    }
+
+    // ✅ NEW: Admin Reset Password
+    @Transactional
+    public void adminResetPassword(UUID userId, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(true); // Force them to change it on next login
+        userRepository.save(user);
+        log.info("Admin reset password for user: {}", user.getEmail());
+    }
+
     public List<UserDTO> getAllUsers() {
         return userRepository.findAll().stream()
                 .map(this::convertToDTO)
@@ -186,6 +210,7 @@ public class UserService {
                 .updatedAt(user.getUpdatedAt())
                 .build();
     }
+    
 
     public String generateTemporaryPassword() {
         return UUID.randomUUID().toString().substring(0, 8);

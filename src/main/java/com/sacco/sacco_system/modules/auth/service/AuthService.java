@@ -1,6 +1,5 @@
 package com.sacco.sacco_system.modules.auth.service;
 
-
 import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
 import com.sacco.sacco_system.modules.auth.dto.AuthResponse;
 import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
@@ -8,12 +7,12 @@ import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.auth.model.VerificationToken;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import com.sacco.sacco_system.modules.auth.repository.VerificationTokenRepository;
-import com.sacco.sacco_system.modules.auth.service.JwtService;
-// Custom JWT service - create if missing
+// Custom JWT service
 import com.sacco.sacco_system.modules.audit.domain.entity.AuditLog;
 import com.sacco.sacco_system.modules.audit.domain.service.AuditService;
 import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // ✅ 1. ADDED IMPORT
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,12 +21,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j // ✅ 2. ADDED ANNOTATION (Fixes "log cannot be resolved")
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -39,19 +38,15 @@ public class AuthService {
     private final AuditService auditService;
 
     @Transactional
-    // @Loggable removed - create separate audit service
     public Map<String, Object> register(User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
 
-        // Default role if not provided
         if (user.getRole() == null) user.setRole(User.Role.MEMBER);
 
         User savedUser = userRepository.save(user);
 
-        // Generate Token
-        String token = jwtService.generateToken(savedUser.getEmail()); // TODO: Fixed type - was passing User instead of String
+        String token = jwtService.generateToken(savedUser.getEmail());
 
-        // Send Verification Email
         String verificationToken = UUID.randomUUID().toString();
         VerificationToken vToken = VerificationToken.builder()
             .token(verificationToken)
@@ -67,6 +62,7 @@ public class AuthService {
                 "token", token
         );
     }
+
     public AuthResponse login(AuthRequest request) {
         String emailOrUsername = request.getEmailOrUsername();
         
@@ -75,7 +71,6 @@ public class AuthService {
                     new UsernamePasswordAuthenticationToken(emailOrUsername, request.getPassword())
             );
 
-            // Find user by either personal or official email
             User user = userRepository.findByEmailOrOfficialEmail(emailOrUsername)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -85,45 +80,40 @@ public class AuthService {
                 throw new RuntimeException("Access Denied: Please verify your email first.");
             }
 
-            // Determine portal access based on which email was used
             String loginEmail = emailOrUsername;
             boolean isOfficialLogin = loginEmail.equals(user.getOfficialEmail());
             boolean isMemberLogin = loginEmail.equals(user.getEmail());
 
-            // FLEXIBLE LOGIN: If official email not set, allow admin access with personal email
             if (user.getOfficialEmail() == null && user.getRole() != User.Role.MEMBER) {
-                // No official email set - allow admin access with personal email (for testing/setup)
                 isOfficialLogin = true;
                 isMemberLogin = false;
             }
 
-            // Log successful login
             auditService.logSuccess(user, AuditLog.Actions.LOGIN, "User", user.getId().toString(), 
                 String.format("Successful login as %s using %s", user.getRole(), loginEmail));
 
-        String token = jwtService.generateToken(user.getEmail());
+            String token = jwtService.generateToken(user.getEmail());
 
-        boolean setupRequired = false;
-        if (user.getRole() == User.Role.ADMIN) {
-            if (!userRepository.existsByRole(User.Role.CHAIRPERSON)) {
-                setupRequired = true;
+            boolean setupRequired = false;
+            if (user.getRole() == User.Role.ADMIN) {
+                if (!userRepository.existsByRole(User.Role.CHAIRPERSON)) {
+                    setupRequired = true;
+                }
             }
-        }
 
-        return AuthResponse.builder()
-                .token(token)
-                .userId(user.getId())
-                .username(user.getUsername())
-                .firstName(user.getFirstName())
-                .lastName(user.getLastName())
-                .role(user.getRole().toString())
-                .mustChangePassword(user.isMustChangePassword())
-                .systemSetupRequired(setupRequired)
-                .isOfficialLogin(isOfficialLogin) // NEW: Tells frontend which dashboard to show
-                .isMemberLogin(isMemberLogin)
-                .build();
+            return AuthResponse.builder()
+                    .token(token)
+                    .userId(user.getId())
+                    .username(user.getUsername())
+                    .firstName(user.getFirstName())
+                    .lastName(user.getLastName())
+                    .role(user.getRole().toString())
+                    .mustChangePassword(user.isMustChangePassword())
+                    .systemSetupRequired(setupRequired)
+                    .isOfficialLogin(isOfficialLogin)
+                    .isMemberLogin(isMemberLogin)
+                    .build();
         } catch (Exception e) {
-            // Log failed login attempt
             auditService.logFailure(null, AuditLog.Actions.LOGIN, "User", emailOrUsername, 
                 "Failed login attempt", e.getMessage());
             throw e;
@@ -144,7 +134,6 @@ public class AuthService {
         currentUser.setMustChangePassword(false);
         userRepository.save(currentUser);
         
-        // Log successful password change
         auditService.logSuccess(currentUser, AuditLog.Actions.PASSWORD_CHANGE, "User", 
             currentUser.getId().toString(), "Password changed successfully");
     }
@@ -165,10 +154,8 @@ public class AuthService {
         user.setEmailVerified(true);
         userRepository.save(user);
         
-        // Delete used token
         tokenRepository.delete(verificationToken);
         
-        // Log successful verification
         auditService.logSuccess(user, AuditLog.Actions.EMAIL_VERIFICATION, "User", 
             user.getId().toString(), "Email verified successfully");
     }
@@ -182,10 +169,8 @@ public class AuthService {
             throw new RuntimeException("Email is already verified");
         }
         
-        // Delete any existing tokens for this user
         tokenRepository.deleteByUser(user);
         
-        // Generate new verification token
         String tokenString = UUID.randomUUID().toString();
         VerificationToken verificationToken = VerificationToken.builder()
             .token(tokenString)
@@ -194,12 +179,65 @@ public class AuthService {
             .build();
         tokenRepository.save(verificationToken);
         
-        // Send new verification email
         emailService.sendVerificationEmail(user.getEmail(), user.getFirstName(), tokenString);
         
-        // Log action
         auditService.logSuccess(user, "RESEND_VERIFICATION", "User", 
             user.getId().toString(), "Verification email resent");
+    }
+
+    // ✅ FIXED: Robust "Forgot Password" to prevent Invalid Token error
+    @Transactional
+    public void forgotPassword(String email) {
+        User user = userRepository.findByEmailOrOfficialEmail(email)
+                .orElseThrow(() -> new RuntimeException("If that email exists, a reset link has been sent."));
+
+        // 1. Manually check for existing token
+        VerificationToken existingToken = tokenRepository.findByUser(user);
+        if (existingToken != null) {
+            tokenRepository.delete(existingToken);
+            tokenRepository.flush(); // Force DB to delete immediately to prevent conflicts
+        }
+
+        // 2. Create new token
+        String token = UUID.randomUUID().toString();
+        VerificationToken verificationToken = VerificationToken.builder()
+                .token(token)
+                .user(user)
+                .expiryDate(LocalDateTime.now().plusHours(24))
+                .build();
+        tokenRepository.save(verificationToken);
+
+        // 3. Send Email
+        try {
+            emailService.sendPasswordResetEmail(user.getEmail(), user.getFirstName(), token);
+            log.info("Reset email sent to: {}", user.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to send reset email: {}", e.getMessage());
+        }
+        
+        auditService.logSuccess(user, "FORGOT_PASSWORD_REQUEST", "User", user.getId().toString(), "Reset link sent");
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        VerificationToken verificationToken = tokenRepository.findByToken(token);
+
+        if (verificationToken == null) {
+            throw new RuntimeException("Invalid reset token.");
+        }
+
+        if (verificationToken.getExpiryDate().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Token has expired. Please request a new one.");
+        }
+
+        User user = verificationToken.getUser();
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false); 
+        userRepository.save(user);
+
+        tokenRepository.delete(verificationToken);
+
+        auditService.logSuccess(user, AuditLog.Actions.PASSWORD_CHANGE, "User", user.getId().toString(), "Password reset via email link");
     }
 
     public void logout(User user) {
@@ -209,6 +247,3 @@ public class AuthService {
         }
     }
 }
-
-
-

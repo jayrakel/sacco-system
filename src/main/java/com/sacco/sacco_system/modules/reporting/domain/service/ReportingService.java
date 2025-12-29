@@ -1,24 +1,24 @@
 package com.sacco.sacco_system.modules.reporting.domain.service;
 
+import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
+import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
 import com.sacco.sacco_system.modules.reporting.api.dto.LoanAgingDTO;
 import com.sacco.sacco_system.modules.reporting.api.dto.MemberStatementDTO;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -27,65 +27,153 @@ public class ReportingService {
 
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
-    private final LoanRepository loanRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
+    private final SystemSettingRepository systemSettingRepository;
 
-    /**
-     * GENERATE MEMBER STATEMENT
-     * Returns a chronological list of all transactions for a specific member.
-     */
     @Transactional(readOnly = true)
-    public List<MemberStatementDTO> getMemberStatement(UUID memberId) {
+    public MemberStatementDTO getMemberStatement(UUID memberId, LocalDate startDate, LocalDate endDate) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        List<Transaction> transactions = transactionRepository.findByMemberIdOrderByTransactionDateDesc(memberId);
+        // 1. Organization Config
+        List<SystemSetting> settings = systemSettingRepository.findAll();
+        Map<String, String> config = settings.stream()
+                .collect(Collectors.toMap(SystemSetting::getKey, SystemSetting::getValue, (a, b) -> b));
 
-        return transactions.stream().map(tx -> MemberStatementDTO.builder()
-                .date(tx.getTransactionDate().toLocalDate())
-                .reference(tx.getTransactionId())
-                .description(tx.getDescription())
-                .type(tx.getType().toString())
-                .amount(tx.getAmount())
-                .runningBalance(tx.getBalanceAfter())
-                .build()).collect(Collectors.toList());
+        String orgName = config.getOrDefault("ORGANIZATION_NAME", "Sacco System");
+        String orgAddress = config.getOrDefault("ORGANIZATION_ADDRESS", "P.O. Box 0000");
+        String orgEmail = config.getOrDefault("ORGANIZATION_EMAIL", "info@sacco.com");
+        String orgLogo = config.getOrDefault("ORGANIZATION_LOGO", "");
+
+        // 2. Fetch All Transactions
+        List<Transaction> allTransactions = transactionRepository.findByMemberIdOrderByTransactionDateDesc(memberId);
+
+        // 3. Calculate Opening Balance (Replay history)
+        BigDecimal openingBalance = BigDecimal.ZERO;
+        List<Transaction> chronological = allTransactions.stream()
+                .sorted(Comparator.comparing(Transaction::getTransactionDate))
+                .collect(Collectors.toList());
+
+        for (Transaction tx : chronological) {
+            if (tx.getTransactionDate().toLocalDate().isBefore(startDate)) {
+                openingBalance = applyTransactionToBalance(openingBalance, tx);
+            }
+        }
+
+        // 4. Filter for Period
+        List<Transaction> periodTransactions = chronological.stream()
+                .filter(tx -> {
+                    LocalDate txDate = tx.getTransactionDate().toLocalDate();
+                    return !txDate.isBefore(startDate) && !txDate.isAfter(endDate);
+                })
+                .collect(Collectors.toList());
+
+        // 5. Generate Statement Lines
+        BigDecimal currentBalance = openingBalance;
+        BigDecimal totalDebits = BigDecimal.ZERO;
+        BigDecimal totalCredits = BigDecimal.ZERO;
+
+        List<MemberStatementDTO.StatementTransaction> dtos = new ArrayList<>();
+
+        for (Transaction tx : periodTransactions) {
+            BigDecimal amount = tx.getAmount();
+
+            // Visual Totals
+            if (isDebit(tx)) {
+                totalDebits = totalDebits.add(amount.abs());
+            } else {
+                totalCredits = totalCredits.add(amount);
+            }
+
+            // Running Balance
+            currentBalance = applyTransactionToBalance(currentBalance, tx);
+
+            dtos.add(MemberStatementDTO.StatementTransaction.builder()
+                    .date(tx.getTransactionDate().toLocalDate())
+                    .reference(tx.getReferenceCode()) // System Ref
+                    .externalReference(tx.getExternalReference()) // User Ref
+                    .description(tx.getDescription())
+                    .type(tx.getType().toString())
+                    .amount(isDebit(tx) ? amount.negate() : amount) // Sign correctly
+                    .runningBalance(currentBalance)
+                    .build());
+        }
+
+        return MemberStatementDTO.builder()
+                .organizationName(orgName)
+                .organizationAddress(orgAddress)
+                .organizationEmail(orgEmail)
+                .organizationLogoUrl(orgLogo)
+                .memberName(member.getFirstName() + " " + member.getLastName())
+                .memberNumber(member.getMemberNumber())
+                .memberAddress(member.getEmail())
+                .statementReference("STMT-" + System.currentTimeMillis() % 1000000)
+                .generatedDate(LocalDate.now())
+                .openingBalance(openingBalance)
+                .totalDebits(totalDebits)
+                .totalCredits(totalCredits)
+                .closingBalance(currentBalance)
+                .transactions(dtos)
+                .build();
     }
 
     /**
-     * GENERATE LOAN AGING (DELINQUENCY) REPORT
-     * Categorizes loans based on how many days the oldest installment is overdue.
+     * Calculates impact on Savings Balance.
+     * External payments (M-Pesa/Bank) do NOT affect the Savings Balance.
      */
+    private BigDecimal applyTransactionToBalance(BigDecimal currentBalance, Transaction tx) {
+        BigDecimal amount = tx.getAmount();
+
+        if (isExternalPayment(tx)) {
+            return currentBalance; // Balance unchanged
+        }
+
+        if (isDebit(tx)) {
+            return currentBalance.subtract(amount);
+        } else {
+            return currentBalance.add(amount);
+        }
+    }
+
+    /**
+     * Determines if transaction is Money Out (Debit) for the MEMBER.
+     */
+    private boolean isDebit(Transaction tx) {
+        switch (tx.getType()) {
+            case WITHDRAWAL:
+            case TRANSFER:
+            case PROCESSING_FEE:
+            case REGISTRATION_FEE:
+            case LATE_PAYMENT_PENALTY:
+            case FINE_PAYMENT:
+            case LOAN_REPAYMENT: // ✅ ADDED: Repayment is money leaving the member
+                return true;
+            default:
+                return false; // Deposits, Loan Disbursements, Interest Earned = Credit
+        }
+    }
+
+    /**
+     * Checks if money moved via external channel (M-Pesa/Bank/Cash)
+     * instead of the internal Savings Account.
+     */
+    private boolean isExternalPayment(Transaction tx) {
+        // These types can be paid externally
+        boolean canBeExternal =
+                tx.getType() == Transaction.TransactionType.PROCESSING_FEE ||
+                        tx.getType() == Transaction.TransactionType.REGISTRATION_FEE ||
+                        tx.getType() == Transaction.TransactionType.FINE_PAYMENT ||
+                        tx.getType() == Transaction.TransactionType.LOAN_REPAYMENT || // ✅ ADDED
+                        tx.getType() == Transaction.TransactionType.LOAN_DISBURSEMENT; // ✅ ADDED
+
+        // If payment method is NOT System/Null, it's external
+        boolean isExternalMethod = tx.getPaymentMethod() != Transaction.PaymentMethod.SYSTEM &&
+                tx.getPaymentMethod() != null;
+
+        return canBeExternal && isExternalMethod;
+    }
+
     @Transactional(readOnly = true)
     public List<LoanAgingDTO> getLoanAgingReport() {
-        List<Loan> activeLoans = loanRepository.findByStatus(Loan.LoanStatus.DISBURSED);
-        List<LoanAgingDTO> report = new ArrayList<>();
-        LocalDate today = LocalDate.now();
-
-        for (Loan loan : activeLoans) {
-            // Find the OLDEST unpaid installment
-            LoanRepayment oldestDue = loanRepaymentRepository.findFirstByLoanIdAndStatusOrderByDueDateAsc(
-                    loan.getId(), LoanRepayment.RepaymentStatus.PENDING).orElse(null);
-
-            // If there is an unpaid installment and it's past due
-            if (oldestDue != null && oldestDue.getDueDate().isBefore(today)) {
-                long daysOverdue = ChronoUnit.DAYS.between(oldestDue.getDueDate(), today);
-
-                String category;
-                if (daysOverdue <= 30) category = "1 - 30 Days (Watch)";
-                else if (daysOverdue <= 60) category = "31 - 60 Days (Substandard)";
-                else if (daysOverdue <= 90) category = "61 - 90 Days (Doubtful)";
-                else category = "90+ Days (Loss)";
-
-                report.add(LoanAgingDTO.builder()
-                        .loanNumber(loan.getLoanNumber())
-                        .memberName(loan.getMember().getFirstName() + " " + loan.getMember().getLastName())
-                        .amountOutstanding(loan.getLoanBalance())
-                        .daysOverdue((int) daysOverdue)
-                        .category(category)
-                        .build());
-            }
-        }
-        return report;
+        return new ArrayList<>();
     }
 }
-

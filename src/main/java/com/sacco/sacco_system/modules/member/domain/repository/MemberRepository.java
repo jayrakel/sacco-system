@@ -8,20 +8,26 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 
 @Repository
 public interface MemberRepository extends JpaRepository<Member, UUID> {
+
+    /**
+     * Finds the Member record linked to a specific User UUID.
+     * Essential for the Member Dashboard and Eligibility checks.
+     */
+    Optional<Member> findByUserId(UUID userId);
+
     Optional<Member> findByMemberNumber(String memberNumber);
+
     Optional<Member> findByEmail(String email);
+
     Optional<Member> findByPhoneNumber(String phoneNumber);
+
     Optional<Member> findByIdNumber(String idNumber);
+
     List<Member> findByStatus(Member.MemberStatus status);
-    
+
     @Query("SELECT COUNT(m) FROM Member m WHERE m.status = 'ACTIVE'")
     long countActiveMembers();
 }
-
-
-
-

@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { SystemBranding, useSettings } from './context/SettingsContext';
 import BrandedSpinner from './components/BrandedSpinner';
 
@@ -11,6 +11,7 @@ import SystemSetup from './pages/SystemSetup';
 import VerifyEmail from './pages/VerifyEmail';
 import AddMember from './pages/members/AddMember';
 import SystemSettings from './pages/admin/SystemSettings';
+import ResetPassword from './pages/ResetPassword';
 
 // Role Dashboards
 import LoansDashboard from './pages/LoansDashboard';
@@ -30,7 +31,6 @@ function App() {
   const { loading, settings, getImageUrl } = useSettings();
   const iconUrl = getImageUrl(settings.SACCO_FAVICON);
 
-  // GLOBAL SPLASH SCREEN
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-6 animate-in fade-in duration-700">
@@ -53,12 +53,13 @@ function App() {
           <Route path="/change-password" element={<ChangePassword />} />
           <Route path="/system-setup" element={<SystemSetup />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Dashboards */}
           <Route path="/dashboard" element={<MemberDashboard />} />
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
-          {/* Role Dashboards (Now Separate) */}
+          {/* Role Dashboards */}
           <Route path="/loans-dashboard" element={<LoansDashboard />} />
           <Route path="/finance-dashboard" element={<FinanceDashboard />} />
           <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
@@ -76,7 +77,6 @@ function App() {
           <Route path="/session-expired" element={<SessionExpired />} />
           <Route path="/404" element={<NotFound />} />
 
-          {/* 404 Catch-All - Must be last */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>

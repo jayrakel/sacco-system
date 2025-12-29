@@ -58,6 +58,17 @@ public interface JournalLineRepository extends JpaRepository<JournalLine, Long> 
     List<Object[]> getAccountTotalsUpToDate(@Param("endDate") LocalDateTime endDate);
 
     /**
+     * Get account totals (debit, credit) STRICTLY BEFORE a specific date
+     * Used for calculating Opening Balances for a date range
+     * Returns: account_code, total_debit, total_credit
+     */
+    @Query("SELECT jl.account.code, COALESCE(SUM(jl.debit), 0), COALESCE(SUM(jl.credit), 0) " +
+           "FROM JournalLine jl JOIN jl.journalEntry je " +
+           "WHERE je.transactionDate < :startDate " +
+           "GROUP BY jl.account.code")
+    List<Object[]> getAccountTotalsBeforeDate(@Param("startDate") LocalDate startDate);
+
+    /**
      * Get account totals (debit, credit) within a date range
      * Returns: account_code, total_debit, total_credit
      */

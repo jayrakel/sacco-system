@@ -1,12 +1,10 @@
 package com.sacco.sacco_system.modules.member.api.controller;
-import com.sacco.sacco_system.modules.member.api.dto.MemberResponse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
-import com.sacco.sacco_system.modules.registration.domain.service.RegistrationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,10 +24,9 @@ import java.util.UUID;
 public class MemberController {
 
     private final MemberService memberService;
-    private final RegistrationService registrationService;
     private final MemberRepository memberRepository;
 
-    // âœ… NEW: Get Logged-in Member Profile
+    // Get Logged-in Member Profile
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getMyProfile() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -39,22 +36,25 @@ public class MemberController {
         return ResponseEntity.ok(Map.of("success", true, "data", memberService.convertToDTO(member)));
     }
 
-    // âœ… FIXED: Accepts Multipart File + JSON String + Payment Params
+    // Accepts Multipart File + JSON String + Payment Params
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> createMember(
             @RequestPart("member") String memberDtoString,
             @RequestPart(value = "file", required = false) MultipartFile file,
             @RequestParam("paymentMethod") String paymentMethod,
-            @RequestParam("referenceCode") String referenceCode
+            @RequestParam("referenceCode") String referenceCode,
+            @RequestParam(value = "bankAccountCode", required = false) String bankAccountCode
     ) {
         try {
             // Convert JSON string to DTO
             ObjectMapper mapper = new ObjectMapper();
             mapper.findAndRegisterModules(); // Handle Dates
+            
+            // This now deserializes nested Beneficiaries and EmploymentDetails
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
-
-            // Use RegistrationService to coordinate User + Member creation
-            MemberDTO created = registrationService.registerMember(memberDTO, file, paymentMethod, referenceCode);
+            
+            // Call the updated Service method
+            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode, null);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -63,10 +63,7 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "message", "Error creating member: " + e.getMessage()));
         }
     }
 
@@ -148,8 +145,6 @@ public class MemberController {
         return ResponseEntity.ok(response);
     }
 
-    // In MemberController.java
-
     @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> updateMyProfile(
             @RequestPart("member") String memberDtoString,
@@ -176,6 +171,3 @@ public class MemberController {
         }
     }
 }
-
-
-

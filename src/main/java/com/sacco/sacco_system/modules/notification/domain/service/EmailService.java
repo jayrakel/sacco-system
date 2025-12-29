@@ -219,6 +219,57 @@ public class EmailService {
         sendHtmlEmail(to, subject, htmlContent);
     }
 
+    @Async
+    public void sendPasswordResetEmail(String to, String firstName, String token) {
+        // Point to your frontend route
+        String resetLink = "http://localhost:5173/reset-password?token=" + token;
+        String subject = "Secure Password Reset Request";
+
+        String htmlContent = String.format(
+                """
+                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                    <div style="background-color: #111827; padding: 20px; text-align: center;">
+                        <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Secure Sacco</h2>
+                    </div>
+                    <div style="padding: 40px 30px;">
+                        <h2 style="color: #111827; font-size: 24px; margin-top: 0;">Password Reset Request</h2>
+                        <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">Hello <strong>%s</strong>,</p>
+                        <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">We received a request to reset the password for your account. If you didn't make this request, you can safely ignore this email.</p>
+                        
+                        <div style="text-align: center; margin: 35px 0;">
+                            <a href="%s" style="background-color: #059669; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);">Reset My Password</a>
+                        </div>
+                        
+                        <p style="color: #6b7280; font-size: 14px; text-align: center;">This link will expire in <strong>24 hours</strong>.</p>
+                    </div>
+                    <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
+                        <p style="margin: 0; color: #9ca3af; font-size: 12px;">© 2025 Secure Sacco System</p>
+                    </div>
+                </div>
+                """,
+                firstName, resetLink
+        );
+
+        sendHtmlEmail(to, subject, htmlContent);
+    }
+
+    @Async
+    public void sendGenericEmail(String to, String subject, String messageBody) {
+        String htmlContent = String.format(
+                """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                    <h2 style="color: #059669;">Sacco Notification</h2>
+                    <p style="font-size: 16px; color: #374151; line-height: 1.6;">%s</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #6b7280;">Log in to your dashboard to view more details.</p>
+                </div>
+                """,
+                messageBody.replace("\n", "<br>") // Handle new lines
+        );
+
+        sendHtmlEmail(to, subject, htmlContent);
+    }
+
     // --- HELPER: GENERIC SENDER ---
     private void sendHtmlEmail(String to, String subject, String htmlContent) {
         try {

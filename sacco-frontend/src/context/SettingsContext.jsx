@@ -13,25 +13,38 @@ export const SettingsProvider = ({ children }) => {
         SACCO_TAGLINE: 'Empowering Your Future',
         SACCO_LOGO: '',
         SACCO_FAVICON: '',
-        BRAND_COLOR_PRIMARY: '#059669',   // Default
-        BRAND_COLOR_SECONDARY: '#0f172a'  // Default
+        BRAND_COLOR_PRIMARY: '#059669',   
+        BRAND_COLOR_SECONDARY: '#0f172a'  
       };
   });
   const [loading, setLoading] = useState(true);
 
+  // ✅ FIXED: Smart Image URL Generator
   const getImageUrl = (filename) => {
-    return filename ? `http://localhost:8082/uploads/settings/${filename}` : null;
+    if (!filename) return null;
+    
+    // If it's a full URL (e.g. external link), return as is
+    if (filename.startsWith('http')) return filename;
+
+    // Base URL for uploads
+    const baseUrl = 'http://localhost:8082/uploads';
+
+    // If the filename already includes a folder (e.g., "profiles/pic.jpg"), use it directly
+    if (filename.includes('/')) {
+        return `${baseUrl}/${filename}`;
+    }
+
+    // Default Fallback: If no folder is specified, assume it's a System Setting
+    return `${baseUrl}/settings/${filename}`;
   };
 
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        console.log('🔄 Fetching settings from /api/settings...');
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2000));
+        // We add a small artificial delay to prevent flickering if api is too fast
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 500));
         const apiCall = api.get('/api/settings');
         const [response] = await Promise.all([apiCall, minLoadTime]);
-
-        console.log('✅ Settings response:', response.data);
 
         if (response.data.success) {
           const settingsMap = response.data.data.reduce((acc, curr) => {
@@ -40,19 +53,11 @@ export const SettingsProvider = ({ children }) => {
           }, {});
 
           const newSettings = { ...settings, ...settingsMap };
-          console.log('💾 Saving settings to localStorage:', newSettings);
           setSettings(newSettings);
           localStorage.setItem('sacco_settings', JSON.stringify(newSettings));
-        } else {
-          console.warn('⚠️ Settings fetch unsuccessful:', response.data);
         }
       } catch (error) {
-        console.error("❌ Failed to load settings:");
-        console.error('Error name:', error.name);
-        console.error('Error message:', error.message);
-        console.error('Error response:', error.response?.data);
-        console.error('Error status:', error.response?.status);
-        console.error('Full error:', error);
+        console.error("Failed to load settings:", error);
       } finally {
         setLoading(false);
       }
@@ -68,7 +73,7 @@ export const SettingsProvider = ({ children }) => {
   );
 };
 
-// Helper: Convert Hex (#ffffff) to RGB (255 255 255) for Tailwind
+// Helper: Convert Hex to RGB for Tailwind
 const hexToRgb = (hex) => {
     if (!hex) return null;
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -81,7 +86,6 @@ export const SystemBranding = () => {
   const { settings, getImageUrl } = useSettings();
 
   useEffect(() => {
-    // 1. Update Title & Favicon
     document.title = settings.SACCO_NAME;
     if (settings.SACCO_FAVICON) {
       const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
@@ -90,7 +94,6 @@ export const SystemBranding = () => {
       document.getElementsByTagName('head')[0].appendChild(link);
     }
 
-    // 2. ✅ Update CSS Variables (THEMING)
     const root = document.documentElement;
     const primaryRgb = hexToRgb(settings.BRAND_COLOR_PRIMARY);
     const secondaryRgb = hexToRgb(settings.BRAND_COLOR_SECONDARY);

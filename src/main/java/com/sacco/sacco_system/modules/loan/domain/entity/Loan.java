@@ -1,120 +1,118 @@
 package com.sacco.sacco_system.modules.loan.domain.entity;
 
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
 @Table(name = "loans")
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class Loan {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+    @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
     @Column(unique = true, nullable = false)
     private String loanNumber;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
     private LoanProduct product;
 
-    // --- Financials ---
+    @Column(nullable = false)
     private BigDecimal principalAmount;
-    private BigDecimal interestRate;
-    private BigDecimal totalInterest;
-    private BigDecimal loanBalance; // Outstanding Balance
 
-    // Installment Tracking
-    private BigDecimal monthlyRepayment; // The standard installment amount
+    private BigDecimal loanBalance;
+    private BigDecimal interestRate;
     private Integer duration;
 
     @Enumerated(EnumType.STRING)
-    private DurationUnit durationUnit; // WEEKS or MONTHS
+    private DurationUnit durationUnit;
 
-    // --- Repayment Engine ---
-    private BigDecimal totalPrepaid = BigDecimal.ZERO; // Buffer for overpayments
-    private BigDecimal totalArrears = BigDecimal.ZERO; // Buffer for underpayments
-    private int gracePeriodWeeks;
+    private BigDecimal weeklyRepaymentAmount;
+    private BigDecimal totalPrepaid;
+    private BigDecimal totalArrears;
 
-    // --- Workflow Status ---
+    // ✅ ADDED THIS FIELD to store the calculated date
+    private LocalDate expectedRepaymentDate;
+
     @Enumerated(EnumType.STRING)
     private LoanStatus status;
 
-    // --- Flags ---
-    private boolean applicationFeePaid;
-
-    // --- Voting & Approval Metadata ---
-    private LocalDate meetingDate;
-    private boolean votingOpen;
-    private int votesYes = 0;
-    private int votesNo = 0;
-    private String secretaryComments;
-    private String rejectionReason;
-    private String checkNumber; // Treasurer's Check/Receipt Ref
-
-    // --- Dates ---
     private LocalDate applicationDate;
     private LocalDate submissionDate;
     private LocalDate approvalDate;
     private LocalDate disbursementDate;
-    private LocalDate expectedRepaymentDate; // Start of repayment
+    private LocalDate meetingDate;
 
-    // --- Relationships ---
-    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL)
-    private List<LoanRepayment> repayments;
+    private boolean applicationFeePaid;
+    private String checkNumber;
+    private Integer gracePeriodWeeks;
 
-    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL)
-    private List<Guarantor> guarantors;
+    // Governance / Voting Fields
+    private boolean votingOpen;
+    private Integer votesYes;
+    private Integer votesNo;
 
     @ElementCollection
-    private List<UUID> votedUserIds = new java.util.ArrayList<>();
+    private List<UUID> votedUserIds = new ArrayList<>();
 
-    // âœ… THE MISSING ENUMS ARE DEFINED HERE
+    @Column(columnDefinition = "TEXT")
+    private String secretaryComments;
+
+    @Column(columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Guarantor> guarantors = new ArrayList<>();
+
+    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<LoanRepayment> repayments = new ArrayList<>();
+
     public enum LoanStatus {
-        DRAFT,                  // 1. Member editing
-        GUARANTORS_PENDING,     // 2. Sent to guarantors (Waiting for them to accept)
-        GUARANTORS_APPROVED,    // 3. All guarantors accepted
-        APPLICATION_FEE_PENDING,// 4. Waiting for fee payment (after guarantor approval)
-        SUBMITTED,              // 5. Sent to Loan Officer
-        LOAN_OFFICER_REVIEW,    // 6. Officer reviewing
-        SECRETARY_TABLED,       // 7. Tabled for meeting
+        DRAFT,
+        GUARANTORS_PENDING,
+        GUARANTORS_APPROVED,
+        APPLICATION_FEE_PENDING,
+        SUBMITTED,
+        LOAN_OFFICER_REVIEW,
+        APPROVED,
+        SECRETARY_TABLED,
         ON_AGENDA,
-        VOTING_OPEN,            // 8. Members voting
-        VOTING_CLOSED,          // 9. Voting ended
-        SECRETARY_DECISION,     // 10. Secretary calculating result
-        ADMIN_APPROVED,         // 11. High-level approval
-        TREASURER_DISBURSEMENT, // 12. Waiting for check/disbursement
-        DISBURSED,              // 13. Money sent
-        ACTIVE,                 // 14. Grace period over, repaying
-        COMPLETED,              // 15. Fully paid
-        DEFAULTED,              // 16. Failed to pay
+        VOTING_OPEN,
+        VOTING_CLOSED,
+        SECRETARY_DECISION,
+        TREASURER_DISBURSEMENT,
+        DISBURSED,
+        ACTIVE,
+        IN_ARREARS,
+        ADMIN_APPROVED,
         REJECTED,
-        WRITTEN_OFF,
-        APPROVED,               // Legacy/Simple status
-        PENDING                 // Legacy/Simple status
+        DEFAULTED,
+        COMPLETED,
+        WRITTEN_OFF
     }
 
     public enum DurationUnit {
-        WEEKS, MONTHS
+        WEEKS,
+        MONTHS,
+        YEARS
     }
 
     public String getMemberName() {
         return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
     }
 }
-
-
-

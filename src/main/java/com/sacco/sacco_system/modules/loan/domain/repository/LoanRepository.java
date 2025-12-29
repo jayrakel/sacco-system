@@ -6,26 +6,29 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, UUID> {
-    Optional<Loan> findByLoanNumber(String loanNumber);
+    long countByMemberIdAndStatusIn(UUID memberId, List<Loan.LoanStatus> statuses);
+
     List<Loan> findByMemberId(UUID memberId);
+
     List<Loan> findByStatus(Loan.LoanStatus status);
 
-    @Query("SELECT SUM(l.principalAmount) FROM Loan l WHERE l.status = 'DISBURSED'")
+    boolean existsByMemberIdAndStatusIn(UUID memberId, Collection<Loan.LoanStatus> statuses);
+
+    /**
+     * ✅ Added to resolve FinancialReportService errors
+     */
+    @Query("SELECT COALESCE(SUM(l.principalAmount), 0) FROM Loan l WHERE l.status = 'ACTIVE' OR l.status = 'DISBURSED'")
     BigDecimal getTotalDisbursedLoans();
 
-    @Query("SELECT SUM(l.loanBalance) FROM Loan l WHERE l.status IN ('DISBURSED', 'DEFAULTED')")
+    /**
+     * ✅ Added to resolve FinancialReportService errors
+     */
+    @Query("SELECT COALESCE(SUM(l.loanBalance), 0) FROM Loan l WHERE l.status = 'ACTIVE' OR l.status = 'IN_ARREARS'")
     BigDecimal getTotalOutstandingLoans();
-
-    @Query("SELECT SUM(l.totalInterest) FROM Loan l WHERE l.status != 'REJECTED'")
-    BigDecimal getTotalInterest();
 }
-
-
-

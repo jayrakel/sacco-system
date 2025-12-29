@@ -140,5 +140,8 @@ public class RepaymentScheduleService {
             return principalAmount.multiply(monthlyRate).multiply(BigDecimal.valueOf(duration));
         }
     }
+
+    public void generateSchedule(Loan activeLoan) {
+    }
 }
 

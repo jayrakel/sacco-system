@@ -8,12 +8,14 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -29,10 +31,13 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final SavingsService savingsService;
 
-    // âœ… FIXED: Return a DTO instead of the raw Entity to prevent Infinite Recursion
+    // ✅ UPDATED: Endpoint now accepts optional Date Params
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getAllTransactions() {
-        List<Transaction> transactions = transactionService.getAllTransactions();
+    public ResponseEntity<Map<String, Object>> getAllTransactions(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        
+        List<Transaction> transactions = transactionService.getAllTransactions(startDate, endDate);
 
         // Convert to simplified DTO
         List<TransactionDTO> dtos = transactions.stream().map(t -> TransactionDTO.builder()
@@ -55,7 +60,6 @@ public class TransactionController {
         response.put("data", dtos);
         return ResponseEntity.ok(response);
     }
-
 
     @PostMapping("/{id}/reverse")
     public ResponseEntity<?> reverseTransaction(@PathVariable String id, @RequestParam String reason) {
@@ -99,7 +103,6 @@ public class TransactionController {
         }
     }
 
-    // ✅ Simple Inner DTO Classes
     @Data
     @Builder
     public static class TransactionDTO {
@@ -120,8 +123,3 @@ public class TransactionController {
         private String lastName;
     }
 }
-
-
-
-
-

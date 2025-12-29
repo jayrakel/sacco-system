@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import {
     Settings, Save, AlertCircle, ArrowLeft, Upload, Image as ImageIcon,
-    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw
+    Banknote, Package, Link, FileText, PiggyBank, Calendar, Sliders, Wrench, RefreshCw, Plus, X
 } from 'lucide-react';
 
-// Import Sub-Components (Ensure these files exist in your project structure)
+// Import Sub-Components
 import LoanProducts from '../../features/loans/components/LoanProducts';
 import SavingsProducts from '../../features/savings/components/SavingsProducts';
 import AccountingConfig from '../../features/finance/components/AccountingConfig';
@@ -22,11 +22,15 @@ export default function SystemSettings() {
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
 
+    // --- ADD SETTING STATE ---
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
+
     // --- MAINTENANCE STATE ---
     const [recalculating, setRecalculating] = useState(false);
     const [recalculateMessage, setRecalculateMessage] = useState('');
 
-    // Base URL for image display - matches the API base URL
+    // Base URL for image display
     const BASE_URL = "http://localhost:8082/uploads/settings/";
 
     useEffect(() => {
@@ -87,6 +91,19 @@ export default function SystemSettings() {
         setSaving(false);
     };
 
+    const handleAddSetting = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post('/api/settings', newSetting);
+            alert("Setting Added!");
+            setShowAddModal(false);
+            setNewSetting({ key: '', value: '', description: '' });
+            fetchSettings();
+        } catch (err) {
+            alert("Failed to add setting");
+        }
+    };
+
     const recalculateShares = async () => {
         if (!window.confirm('This will recalculate all share capital records based on the current SHARE_VALUE setting. Continue?')) {
             return;
@@ -109,30 +126,24 @@ export default function SystemSettings() {
 
     if (loading) return <div className="p-10 text-center text-slate-400">Loading Configuration...</div>;
 
-    // Categorize Settings for General Tab
+    // Categorize Settings
     const brandingSettings = settings.filter(s => s.key.includes('SACCO') || s.key.includes('BRAND'));
     const bankSettings = settings.filter(s => s.key.includes('BANK') || s.key.includes('PAYBILL'));
 
-    // Categorize Settings for System Parameters Tab
     const operationalSettings = settings.filter(s =>
-        s.key.includes('FEE') ||
-        s.key.includes('RATE') ||
-        s.key.includes('CONTRIBUTION') ||
-        s.key.includes('INTEREST') ||
-        s.key.includes('GRACE') ||
-        s.key.includes('MULTIPLIER') ||
-        s.key.includes('VOTING') ||
-        s.key.includes('LOAN_APPLICATION_FEE') ||
-        s.key.includes('MIN_SAVINGS_FOR_LOAN') ||
-        s.key.includes('MIN_MONTHS_MEMBERSHIP') ||
-        s.key.includes('MIN_SHARE_CAPITAL') ||
-        s.key.includes('MIN_SAVINGS_TO_GUARANTEE') ||
-        s.key.includes('MIN_MONTHS_TO_GUARANTEE') ||
-        s.key.includes('MAX_GUARANTOR_LIMIT_RATIO') ||
+        s.key.includes('FEE') || s.key.includes('RATE') || s.key.includes('CONTRIBUTION') ||
+        s.key.includes('INTEREST') || s.key.includes('GRACE') || s.key.includes('MULTIPLIER') ||
+        s.key.includes('VOTING') || s.key.includes('MIN_') || s.key.includes('MAX_') ||
         s.key === 'SHARE_VALUE'
     );
 
-    // --- RENDER ---
+    // ✅ Catch-all for new custom settings that don't fit the above filters
+    const miscSettings = settings.filter(s =>
+        !brandingSettings.includes(s) &&
+        !bankSettings.includes(s) &&
+        !operationalSettings.includes(s)
+    );
+
     return (
         <div className="min-h-screen bg-slate-50 p-4 sm:p-8 font-sans flex justify-center">
             <div className="max-w-6xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -143,53 +154,43 @@ export default function SystemSettings() {
                         <Settings className="text-emerald-400" size={28} />
                         <div>
                             <h2 className="text-xl font-bold">System Configuration</h2>
-                            <p className="text-slate-400 text-sm">Manage branding, products, and accounting rules.</p>
+                            <p className="text-slate-400 text-sm">Manage branding, products, and system rules.</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => navigate('/admin-dashboard')}
-                        className="flex items-center gap-2 text-slate-400 hover:text-white transition"
-                    >
-                        <ArrowLeft size={20} /> Back
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded text-sm font-bold transition"
+                        >
+                            <Plus size={16} /> Add Setting
+                        </button>
+                        <button
+                            onClick={() => navigate('/admin-dashboard')}
+                            className="flex items-center gap-2 text-slate-400 hover:text-white transition"
+                        >
+                            <ArrowLeft size={20} /> Back
+                        </button>
+                    </div>
                 </div>
 
                 {/* Navigation Tabs */}
                 <div className="bg-slate-100 p-2 flex gap-2 overflow-x-auto border-b border-slate-200">
-                    <button
-                        onClick={() => setActiveTab('general')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('general')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Settings size={16}/> General & Branding
                     </button>
-                    <button
-                        onClick={() => setActiveTab('parameters')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'parameters' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('parameters')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'parameters' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Sliders size={16}/> System Parameters
                     </button>
-                    <button
-                        onClick={() => setActiveTab('products')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('products')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Package size={16}/> Loan & Savings Products
                     </button>
-                    <button
-                        onClick={() => setActiveTab('deposit-products')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'deposit-products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('deposit-products')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'deposit-products' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <PiggyBank size={16}/> Deposit Products
                     </button>
-                    <button
-                        onClick={() => setActiveTab('accounting')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('accounting')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'accounting' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Link size={16}/> Accounting Rules
                     </button>
-                    <button
-                        onClick={() => setActiveTab('maintenance')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
+                    <button onClick={() => setActiveTab('maintenance')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${activeTab === 'maintenance' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
                         <Wrench size={16}/> Maintenance
                     </button>
                 </div>
@@ -230,7 +231,6 @@ export default function SystemSettings() {
                                                             <Upload size={14} /> Upload Image
                                                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(setting.key, e.target.files[0])} />
                                                         </label>
-                                                        <p className="text-xs text-slate-400 mt-1">Recommended: PNG or JPG</p>
                                                     </div>
                                                 </div>
                                             ) : (
@@ -239,6 +239,13 @@ export default function SystemSettings() {
                                                         <input type="color" value={setting.value || '#000000'} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-12 h-12 rounded cursor-pointer border-0 p-0" />
                                                         <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-mono text-sm" />
                                                     </div>
+                                                ) : setting.key.includes('ADDRESS') ? (
+                                                    <textarea
+                                                        value={setting.value}
+                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                        rows="3"
+                                                        className="w-full p-2 border rounded font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+                                                    />
                                                 ) : (
                                                     <input type="text" value={setting.value} onChange={(e) => handleValueChange(setting.key, e.target.value)} className="w-full p-2 border rounded font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" />
                                                 )
@@ -264,22 +271,14 @@ export default function SystemSettings() {
                                                 value={setting.value}
                                                 onChange={(e) => handleValueChange(setting.key, e.target.value)}
                                                 className="w-full p-2 border border-indigo-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                                                placeholder={setting.description}
                                             />
-                                            <p className="text-xs text-indigo-400 mt-2">{setting.description}</p>
                                         </div>
                                     ))}
-                                    {bankSettings.length === 0 && <p className="text-slate-400 italic text-sm">No bank details configured. Restart backend to initialize.</p>}
                                 </div>
                             </div>
 
-                            {/* Save Button */}
                             <div className="flex justify-end pt-4 border-t border-slate-200">
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={saving}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
-                                >
+                                <button onClick={saveSettings} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50">
                                     {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
                                 </button>
                             </div>
@@ -296,167 +295,84 @@ export default function SystemSettings() {
                                 </div>
                             )}
 
-                            {/* Operational Parameters */}
                             <div>
                                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
                                     <Sliders size={20} className="text-purple-600"/> Operational Parameters
                                 </h3>
-                                <p className="text-sm text-slate-500 mb-6">Configure fees, interest rates, and operational rules for your SACCO.</p>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {operationalSettings.map((setting) => (
                                         <div key={setting.key} className="bg-purple-50 p-4 rounded-lg border border-purple-100">
                                             <label className="block text-xs font-bold text-purple-800 mb-2 uppercase tracking-wide">
                                                 {setting.key.replace(/_/g, ' ')}
                                             </label>
-
-                                            {setting.key === 'LOAN_VOTING_METHOD' ? (
-                                                <select
-                                                    value={setting.value}
-                                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                                    className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
-                                                >
-                                                    <option value="MANUAL">Manual Approval</option>
-                                                    <option value="DEMOCRATIC">Democratic Voting</option>
-                                                    <option value="AUTO">Automatic Approval</option>
-                                                </select>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        value={setting.value}
-                                                        onChange={(e) => handleValueChange(setting.key, e.target.value)}
-                                                        className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
-                                                        step={setting.key.includes('RATE') ? '0.1' : '1'}
-                                                        min="0"
-                                                    />
-                                                    <span className="text-sm font-bold text-purple-600 whitespace-nowrap">
-                                                        {setting.key.includes('RATE') ? '%' :
-                                                         setting.key.includes('WEEKS') ? 'weeks' :
-                                                         setting.key.includes('MULTIPLIER') ? 'x' : 'KES'}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            <p className="text-xs text-purple-500 mt-2">
-                                                {setting.key === 'REGISTRATION_FEE' && 'One-time fee paid when joining the SACCO'}
-                                                {setting.key === 'MIN_MONTHLY_CONTRIBUTION' && 'Minimum monthly savings contribution required'}
-                                                {setting.key === 'LOAN_APPLICATION_FEE' && 'Fee paid to start a loan application (non-refundable)'}
-                                                {setting.key === 'LOAN_INTEREST_RATE' && 'Annual interest rate applied to loans'}
-                                                {setting.key === 'LOAN_GRACE_PERIOD_WEEKS' && 'Grace period before first repayment is due'}
-                                                {setting.key === 'LOAN_LIMIT_MULTIPLIER' && 'Maximum loan = savings × this multiplier'}
-                                                {setting.key === 'LOAN_VOTING_METHOD' && 'How loan applications are approved'}
-                                                {setting.key === 'MIN_SAVINGS_FOR_LOAN' && 'Minimum savings balance required to apply for a loan'}
-                                                {setting.key === 'MIN_MONTHS_MEMBERSHIP' && 'Minimum membership duration (in months) to apply for a loan'}
-                                                {setting.key === 'MIN_SHARE_CAPITAL' && 'Minimum share capital required to apply for a loan'}
-                                                {setting.key === 'SHARE_VALUE' && 'Price per share for share capital contributions (use Maintenance tab to recalculate existing shares after changing)'}
-                                                {setting.key === 'MIN_SAVINGS_TO_GUARANTEE' && 'Minimum savings required to be a guarantor'}
-                                                {setting.key === 'MIN_MONTHS_TO_GUARANTEE' && 'Minimum membership duration to be a guarantor'}
-                                                {setting.key === 'MAX_GUARANTOR_LIMIT_RATIO' && 'Maximum guarantee exposure = savings × this ratio'}
-                                            </p>
+                                            <input
+                                                type="text"
+                                                value={setting.value}
+                                                onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                className="w-full p-2 border border-purple-200 rounded font-bold text-slate-800 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
+                                            />
                                         </div>
                                     ))}
-                                    {operationalSettings.length === 0 && (
-                                        <div className="col-span-2 p-6 text-center text-slate-400 italic text-sm bg-slate-50 rounded-lg border border-slate-200">
-                                            No operational parameters configured. Restart backend to initialize default values.
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
-                            {/* Save Button */}
-                            <div className="flex justify-end pt-4 border-t border-slate-200">
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={saving}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50"
-                                >
+                            {/* Miscellaneous Settings (Newly Added) */}
+                            {miscSettings.length > 0 && (
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                                        <Settings size={20} className="text-gray-600"/> Other Settings
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {miscSettings.map((setting) => (
+                                            <div key={setting.key} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                                                    {setting.key.replace(/_/g, ' ')}
+                                                </label>
+                                                <div className="text-xs text-gray-500 mb-1">{setting.description}</div>
+                                                <input
+                                                    type="text"
+                                                    value={setting.value}
+                                                    onChange={(e) => handleValueChange(setting.key, e.target.value)}
+                                                    className="w-full p-2 border border-gray-300 rounded font-medium text-slate-800 focus:ring-2 focus:ring-gray-500 outline-none bg-white"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end pt-4 border-t border-slate-200 mt-6">
+                                <button onClick={saveSettings} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition disabled:opacity-50">
                                     {saving ? "Saving..." : <><Save size={20} /> Save Changes</>}
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    {/* VIEW 3: PRODUCTS */}
+                    {/* OTHER TABS */}
                     {activeTab === 'products' && (
                         <div className="space-y-12 animate-in fade-in">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <FileText size={20} className="text-purple-600"/> Loan Products
-                                </h3>
-                                <LoanProducts />
-                            </div>
-
-
-                            <div className="border-t pt-8">
-                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                    <PiggyBank size={20} className="text-emerald-600"/> Savings Products
-                                </h3>
-                                <SavingsProducts />
-                            </div>
+                            <div><h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><FileText size={20} className="text-purple-600"/> Loan Products</h3><LoanProducts /></div>
+                            <div className="border-t pt-8"><h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><PiggyBank size={20} className="text-emerald-600"/> Savings Products</h3><SavingsProducts /></div>
                         </div>
                     )}
 
-                    {/* VIEW 4: DEPOSIT PRODUCTS */}
-                    {activeTab === 'deposit-products' && (
-                        <DepositProductsManager />
-                    )}
+                    {activeTab === 'deposit-products' && <DepositProductsManager />}
 
-                    {/* VIEW 5: ACCOUNTING */}
-                    {activeTab === 'accounting' && (
-                        <AccountingConfig />
-                    )}
+                    {activeTab === 'accounting' && <AccountingConfig />}
 
-                    {/* VIEW 6: MAINTENANCE TOOLS */}
                     {activeTab === 'maintenance' && (
                         <div className="space-y-6 animate-in fade-in">
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
-                                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                    <Wrench size={20} className="text-blue-600"/> System Maintenance Tools
-                                </h3>
-                                <p className="text-sm text-slate-600 mb-6">
-                                    Administrative tools for data maintenance and system health.
-                                </p>
-
-                                {/* Share Capital Recalculation */}
-                                <div className="bg-white border border-slate-200 rounded-lg p-6">
+                                <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2"><Wrench size={20} className="text-blue-600"/> System Maintenance Tools</h3>
+                                <div className="bg-white border border-slate-200 rounded-lg p-6 mt-4">
                                     <div className="flex items-start gap-4">
-                                        <div className="p-3 bg-amber-100 rounded-lg">
-                                            <RefreshCw size={24} className="text-amber-600"/>
-                                        </div>
+                                        <div className="p-3 bg-amber-100 rounded-lg"><RefreshCw size={24} className="text-amber-600"/></div>
                                         <div className="flex-1">
                                             <h4 className="font-bold text-slate-800 mb-2">Recalculate Share Capital</h4>
-                                            <p className="text-sm text-slate-600 mb-4">
-                                                Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong> system setting. 
-                                                Use this when:
-                                            </p>
-                                            <ul className="text-sm text-slate-600 mb-4 ml-4 list-disc space-y-1">
-                                                <li>Share value has been updated in System Parameters</li>
-                                                <li>Share counts appear incorrect or inconsistent</li>
-                                                <li>After migrating data from another system</li>
-                                            </ul>
-                                            
-                                            {recalculateMessage && (
-                                                <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                                                    {recalculateMessage}
-                                                </div>
-                                            )}
-
-                                            <button
-                                                onClick={recalculateShares}
-                                                disabled={recalculating}
-                                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                                            >
-                                                {recalculating ? (
-                                                    <>
-                                                        <RefreshCw size={18} className="animate-spin"/> Recalculating...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <RefreshCw size={18}/> Recalculate All Shares
-                                                    </>
-                                                )}
-                                            </button>
+                                            <p className="text-sm text-slate-600 mb-4">Recalculates all member share capital records based on the current <strong>SHARE_VALUE</strong>.</p>
+                                            {recalculateMessage && <div className={`mb-4 p-3 rounded-lg text-sm ${recalculateMessage.includes('✅') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>{recalculateMessage}</div>}
+                                            <button onClick={recalculateShares} disabled={recalculating} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">{recalculating ? "Recalculating..." : "Recalculate All Shares"}</button>
                                         </div>
                                     </div>
                                 </div>
@@ -466,6 +382,37 @@ export default function SystemSettings() {
 
                 </div>
             </div>
+
+            {/* ADD SETTING MODAL */}
+            {showAddModal && (
+                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">Add New Setting</h3>
+                            <button onClick={() => setShowAddModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                        </div>
+                        <form onSubmit={handleAddSetting} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Key (Unique Name)</label>
+                                <input className="w-full p-2 border rounded uppercase" placeholder="e.g. MPESA_API_KEY" required value={newSetting.key} onChange={e => setNewSetting({...newSetting, key: e.target.value.replace(/\s+/g, '_')})} />
+                                <p className="text-[10px] text-slate-400 mt-1">Use SACCO_ prefix for branding, FEE_ for fees.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Value</label>
+                                <input className="w-full p-2 border rounded" placeholder="Setting Value" required value={newSetting.value} onChange={e => setNewSetting({...newSetting, value: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Description</label>
+                                <textarea className="w-full p-2 border rounded" placeholder="What is this setting for?" value={newSetting.description} onChange={e => setNewSetting({...newSetting, description: e.target.value})} />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Save Setting</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -9,17 +9,16 @@ import com.sacco.sacco_system.modules.finance.domain.repository.GLAccountReposit
 import com.sacco.sacco_system.modules.finance.domain.repository.GlMappingRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.JournalEntryRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
-import com.sacco.sacco_system.modules.finance.domain.service.ChartOfAccountsSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/accounting")
@@ -29,9 +28,6 @@ public class AccountingController {
     private final GLAccountRepository accountRepository;
     private final JournalEntryRepository journalRepository;
     private final AccountingService accountingService;
-    private final ChartOfAccountsSetupService setupService;
-
-    // âœ… NEW REPOSITORIES
     private final GlMappingRepository glMappingRepository;
     private final FiscalPeriodRepository fiscalPeriodRepository;
 
@@ -40,15 +36,14 @@ public class AccountingController {
     @PostMapping("/setup/initialize")
     public ResponseEntity<Map<String, Object>> initializeAccounting() {
         try {
-            if (setupService.isInitialized()) {
+            if (accountRepository.count() > 0) {
                 return ResponseEntity.ok(Map.of(
                         "success", false,
                         "message", "Chart of Accounts already initialized. Use /reset endpoint to reinitialize."
                 ));
             }
-
-            setupService.initializeChartOfAccounts();
-            setupService.initializeGLMappings();
+            accountingService.initChartOfAccounts();
+            accountingService.initDefaultMappings();
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -57,29 +52,21 @@ public class AccountingController {
                     "mappingsCreated", glMappingRepository.count()
             ));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "success", false,
-                    "message", "Error initializing accounting: " + e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Error initializing accounting: " + e.getMessage()));
         }
     }
 
     @PostMapping("/setup/reset")
     public ResponseEntity<Map<String, Object>> resetAccounting() {
         try {
-            setupService.resetChartOfAccounts();
-            setupService.initializeChartOfAccounts();
-            setupService.initializeGLMappings();
+            glMappingRepository.deleteAll();
+            accountRepository.deleteAll();
+            accountingService.initChartOfAccounts();
+            accountingService.initDefaultMappings();
 
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Chart of Accounts reset and reinitialized successfully"
-            ));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Chart of Accounts reset and reinitialized successfully"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "success", false,
-                    "message", "Error resetting accounting: " + e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Error resetting accounting: " + e.getMessage()));
         }
     }
 
@@ -87,11 +74,25 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> getSetupStatus() {
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "initialized", setupService.isInitialized(),
+                "initialized", accountRepository.count() > 0,
                 "accountsCount", accountRepository.count(),
                 "mappingsCount", glMappingRepository.count(),
                 "journalEntriesCount", journalRepository.count()
         ));
+    }
+
+    // ✅ NEW ENDPOINT: Get only Active Asset Accounts (Potential Banks)
+    @GetMapping("/accounts/active-banks")
+    public ResponseEntity<Map<String, Object>> getActiveBankAccounts() {
+        List<GLAccount> accounts = accountRepository.findAll(Sort.by("code"));
+        
+        // Filter for Active Assets. 
+        // Note: In a robust system, you might have a 'SUB_TYPE' = 'BANK', but 'ASSET' is a safe default for now.
+        List<GLAccount> activeBanks = accounts.stream()
+            .filter(a -> a.isActive() && "ASSET".equals(a.getType().toString())) 
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(Map.of("success", true, "data", activeBanks));
     }
 
     // --- 1. CORE ACCOUNTING ---
@@ -114,14 +115,21 @@ public class AccountingController {
             @RequestParam(required = false) LocalDate endDate
     ) {
         if (endDate == null) endDate = LocalDate.now();
-        // Service returns List<GLAccount> with balances
         List<GLAccount> reportData = accountingService.getAccountsWithBalancesAsOf(startDate, endDate);
         return ResponseEntity.ok(Map.of("success", true, "data", reportData != null ? reportData : List.of()));
     }
 
+    @GetMapping("/report/activity")
+    public ResponseEntity<Map<String, Object>> getLedgerActivityReport(
+            @RequestParam LocalDate startDate,
+            @RequestParam LocalDate endDate
+    ) {
+        List<Map<String, Object>> activity = accountingService.getLedgerActivity(startDate, endDate);
+        return ResponseEntity.ok(Map.of("success", true, "data", Map.of("activity", activity)));
+    }
+
     @PutMapping("/accounts/{code}/toggle")
     public ResponseEntity<Map<String, Object>> toggleAccountStatus(@PathVariable String code) {
-        // TODO: Service method returns void, stubbing with success response
         accountingService.toggleAccountStatus(code);
         return ResponseEntity.ok(Map.of("success", true, "message", "Account status updated"));
     }
@@ -130,17 +138,9 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> createAccount(@RequestBody GLAccount account) {
         try {
             GLAccount created = accountingService.createManualAccount(account);
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Account created successfully",
-                    "data", created
-            ));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Account created successfully", "data", created));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "success", false,
-                    "message", "Failed to create account: " + e.getMessage(),
-                    "error", e.getClass().getSimpleName()
-            ));
+            return ResponseEntity.status(500).body(Map.of("success", false, "message", "Failed to create account: " + e.getMessage()));
         }
     }
 
@@ -150,11 +150,21 @@ public class AccountingController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Journal Entry Posted Successfully"));
     }
 
-    // --- 2. CONFIGURATION: GL MAPPINGS ---
+    // --- 2. CONFIGURATION: GL MAPPINGS (UPDATED) ---
 
     @GetMapping("/config/mappings")
     public ResponseEntity<Map<String, Object>> getGlMappings() {
         return ResponseEntity.ok(Map.of("success", true, "data", glMappingRepository.findAll()));
+    }
+
+    // ✅ ADDED: Create New Rule Endpoint
+    @PostMapping("/config/mappings")
+    public ResponseEntity<Map<String, Object>> createGlMapping(@RequestBody GlMapping mapping) {
+        if(glMappingRepository.findByEventName(mapping.getEventName()).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Mapping for '" + mapping.getEventName() + "' already exists."));
+        }
+        GlMapping saved = glMappingRepository.save(mapping);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Mapping Created Successfully", "data", saved));
     }
 
     @PutMapping("/config/mappings")
@@ -162,6 +172,13 @@ public class AccountingController {
         GlMapping saved = glMappingRepository.save(mapping);
         return ResponseEntity.ok(Map.of("success", true, "message", "Mapping Updated", "data", saved));
     }
+
+    // ✅ ADDED: Delete Rule Endpoint
+   @DeleteMapping("/config/mappings/{eventName}") // Change from {id}
+public ResponseEntity<Map<String, Object>> deleteGlMapping(@PathVariable String eventName) { // Change UUID to String
+    glMappingRepository.deleteById(eventName); // Fixes incompatible types error
+    return ResponseEntity.ok(Map.of("success", true, "message", "Mapping Deleted"));
+}
 
     // --- 3. CONFIGURATION: FISCAL PERIODS ---
 
@@ -174,29 +191,15 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> createFiscalPeriod(@RequestBody FiscalPeriod period) {
         try {
             if (period.getStartDate() == null || period.getEndDate() == null) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "success", false,
-                        "message", "Start date and end date are required"
-                ));
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Start date and end date are required"));
             }
             if (period.getStartDate().isAfter(period.getEndDate())) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "success", false,
-                        "message", "Start date must be before end date"
-                ));
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Start date must be before end date"));
             }
             FiscalPeriod saved = fiscalPeriodRepository.save(period);
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Period Created",
-                    "data", saved
-            ));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Period Created", "data", saved));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "success", false,
-                    "message", "Failed to create fiscal period: " + e.getMessage(),
-                    "error", e.getClass().getSimpleName()
-            ));
+            return ResponseEntity.status(500).body(Map.of("success", false, "message", "Failed to create fiscal period: " + e.getMessage()));
         }
     }
 
@@ -204,15 +207,7 @@ public class AccountingController {
     public ResponseEntity<Map<String, Object>> toggleFiscalPeriod(@PathVariable UUID id) {
         FiscalPeriod period = fiscalPeriodRepository.findById(id).orElseThrow();
         period.setActive(!period.isActive());
-        if (period.isActive()) {
-            // Deactivate others? Logic can be added here if needed to enforce single active period
-        }
         fiscalPeriodRepository.save(period);
         return ResponseEntity.ok(Map.of("success", true, "message", "Status Changed"));
     }
 }
-
-
-
-
-

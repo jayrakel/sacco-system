@@ -50,6 +50,28 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody Map<String, String> payload) {
+        try {
+            authService.forgotPassword(payload.get("email"));
+            // Always return success to prevent email scanning
+            return ResponseEntity.ok(Map.of("success", true, "message", "If an account exists, a reset link has been sent."));
+        } catch (Exception e) {
+            // Log real error internally, return generic success externally
+            return ResponseEntity.ok(Map.of("success", true, "message", "If an account exists, a reset link has been sent."));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody Map<String, String> payload) {
+        try {
+            authService.resetPassword(payload.get("token"), payload.get("newPassword"));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Password updated successfully. Please login."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout(@AuthenticationPrincipal User user) {
         try {

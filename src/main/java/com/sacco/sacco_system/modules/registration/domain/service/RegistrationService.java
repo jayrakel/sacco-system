@@ -9,6 +9,7 @@ import com.sacco.sacco_system.modules.auth.model.VerificationToken;
 import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder; // ✅ Import this
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,12 +30,14 @@ public class RegistrationService {
     private final MemberService memberService;
     private final EmailService emailService;
     private final VerificationTokenRepository tokenRepository;
+    private final PasswordEncoder passwordEncoder; // ✅ Inject PasswordEncoder
 
     @Transactional
     public MemberDTO registerMember(MemberDTO memberDTO, MultipartFile file, String paymentMethod, String referenceCode) throws IOException {
         log.info("Starting member registration for email: {}", memberDTO.getEmail());
 
         // Step 1: Create User account (authentication)
+        // This creates the user with a placeholder/random password
         User user = userService.createUser(
                 memberDTO.getFirstName(),
                 memberDTO.getLastName(),
@@ -43,18 +46,23 @@ public class RegistrationService {
                 User.Role.MEMBER
         );
 
-        // Generate temporary password for email
+        // Step 2: Generate the ACTUAL temporary password for email
         String tempPassword = userService.generateTemporaryPassword();
 
-        // Step 2: Create Member record (SACCO membership)
-        MemberDTO createdMember = memberService.createMember(memberDTO, file, paymentMethod, referenceCode);
+        // ✅ CRITICAL FIX: Update the user's password in the DB to match the one we are sending
+        user.setPassword(passwordEncoder.encode(tempPassword));
+        // Since this method is @Transactional and 'user' is a managed entity, 
+        // this change will be automatically saved to the database at the end of the method.
 
-        // Step 3: Create email verification token
+        // Step 3: Create Member record (SACCO membership)
+        MemberDTO createdMember = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, null, user);
+
+        // Step 4: Create email verification token
         String token = UUID.randomUUID().toString();
         VerificationToken verificationToken = new VerificationToken(user, token);
         tokenRepository.save(verificationToken);
 
-        // Step 4: Send welcome email
+        // Step 5: Send welcome email with the CORRECT password
         try {
             emailService.sendMemberWelcomeEmail(user.getEmail(), user.getFirstName(), tempPassword, token);
             log.info("Welcome email sent to: {}", user.getEmail());
