@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/loans")
@@ -47,7 +48,7 @@ public class LoanController {
         try {
             UUID userId = getCurrentUserId();
             Member member = memberRepository.findByUserId(userId)
-                    .orElseThrow(() -> new RuntimeException("Member record not found"));
+                    .orElseThrow(() -> new RuntimeException("Member record not found for this user."));
 
             BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
             return ResponseEntity.ok(Map.of("success", true, "limit", limit));
@@ -158,30 +159,23 @@ public class LoanController {
         }
     }
 
-    // --- PHASE 3: ADMIN REVIEW (NEW) ---
+    // --- PHASE 3: ADMIN GOVERNANCE & DISBURSEMENT ---
 
-    /**
-     * ✅ NEW: Get all loans with status SUBMITTED for admin to review
-     */
     @GetMapping("/admin/pending")
     public ResponseEntity<?> getPendingLoans() {
         try {
-            // Note: In real app, check if user is ADMIN via roles
             return ResponseEntity.ok(Map.of("success", true, "data", loanService.getPendingLoansForAdmin()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
-    /**
-     * ✅ NEW: Approve or Reject a loan
-     */
     @PostMapping("/admin/{loanId}/review")
     public ResponseEntity<?> reviewLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
-            String decision = payload.get("decision"); // "APPROVE" or "REJECT"
+            String decision = payload.get("decision");
             String remarks = payload.getOrDefault("remarks", "");
-            UUID adminId = getCurrentUserId(); // Log who made the decision
+            UUID adminId = getCurrentUserId();
 
             loanService.reviewLoanApplication(adminId, loanId, decision, remarks);
 
@@ -191,7 +185,44 @@ public class LoanController {
         }
     }
 
-    // --- HELPERS ---
+    // --- GOVERNANCE ENDPOINTS ---
+
+    @PostMapping("/secretary/{loanId}/table")
+    public ResponseEntity<?> tableLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
+        try {
+            LocalDate date = LocalDate.parse(payload.get("meetingDate"));
+            loanService.tableLoanForMeeting(loanId, date);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled for meeting successfully."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/chairperson/{loanId}/start-voting")
+    public ResponseEntity<?> startVoting(@PathVariable UUID loanId) {
+        try {
+            loanService.startVoting(loanId);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Voting is now open for this loan."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    /**
+     * ✅ NEW: Disburse Loan Funds
+     * Moves money from Sacco accounts to Member Savings
+     */
+    @PostMapping("/admin/{loanId}/disburse")
+    public ResponseEntity<?> disburseLoan(@PathVariable UUID loanId) {
+        try {
+            loanService.disburseLoan(loanId);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan disbursed successfully. Funds moved to Member account."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // --- SHARED HELPERS ---
 
     @GetMapping("/my-loans")
     public ResponseEntity<?> getMyLoans() {
@@ -212,6 +243,6 @@ public class LoanController {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmailOrOfficialEmail(email)
                 .map(User::getId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new RuntimeException("Authenticated user session not found"));
     }
 }

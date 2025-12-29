@@ -30,12 +30,15 @@ export default function LoansDashboard() {
 
     const loadAllData = async () => {
         try {
+            // Fetch Pending Review & Approved (Disbursement) Loans
             const pendingRes = await api.get('/api/loans/admin/pending');
             if (pendingRes.data.success) {
                 const loans = pendingRes.data.data;
                 setPendingLoans(loans);
                 setStats(prev => ({ ...prev, pending: loans.length }));
             }
+
+            // Note: You can add another API call here for stats if you have a summary endpoint
         } catch (e) {
             console.error("Failed to load dashboard data", e);
         } finally {
@@ -57,6 +60,7 @@ export default function LoansDashboard() {
         }
     };
 
+    // --- ACTION: APPROVE / REJECT ---
     const handleDecision = async (decision) => {
         if (decision === 'REJECT' && !remarks.trim()) {
             alert("Please provide remarks for rejection.");
@@ -67,12 +71,28 @@ export default function LoansDashboard() {
         setProcessing(true);
         try {
             await api.post(`/api/loans/admin/${selectedLoan.id}/review`, { decision, remarks });
-            setPendingLoans(prev => prev.filter(l => l.id !== selectedLoan.id));
-            setStats(prev => ({ ...prev, pending: prev.pending - 1 }));
-            setSelectedLoan(null);
             alert(`Loan ${decision}ED successfully.`);
+            loadAllData(); // Refresh the list
+            setSelectedLoan(null);
         } catch (error) {
             alert(error.response?.data?.message || "Operation failed");
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    // --- ✅ NEW ACTION: DISBURSE ---
+    const handleDisburse = async () => {
+        if (!window.confirm("ARE YOU SURE? This will move KES " + selectedLoan.principalAmount.toLocaleString() + " to the member's account.")) return;
+
+        setProcessing(true);
+        try {
+            await api.post(`/api/loans/admin/${selectedLoan.id}/disburse`);
+            alert("Loan disbursed successfully! Funds are now in the member's savings.");
+            loadAllData();
+            setSelectedLoan(null);
+        } catch (error) {
+            alert(error.response?.data?.message || "Disbursement failed");
         } finally {
             setProcessing(false);
         }
@@ -86,7 +106,7 @@ export default function LoansDashboard() {
                 <div className="flex justify-between items-end">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800">Technical Review Portfolio</h1>
-                        <p className="text-slate-500 text-sm">Validate eligibility & guarantors before approval.</p>
+                        <p className="text-slate-500 text-sm">Validate eligibility & guarantors before approval or disbursement.</p>
                     </div>
                     <button onClick={loadAllData} className="p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-50 text-slate-400 transition">
                         <RefreshCw size={18} />
@@ -103,7 +123,7 @@ export default function LoansDashboard() {
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <Briefcase size={20} className="text-slate-400"/> Application Queue
+                            <Briefcase size={20} className="text-slate-400"/> Technical Action Queue
                         </h2>
                     </div>
 
@@ -113,7 +133,7 @@ export default function LoansDashboard() {
                         <div className="p-12 text-center text-slate-500">
                             <CheckCircle className="mx-auto h-12 w-12 text-slate-300 mb-4" />
                             <h3 className="text-lg font-medium text-slate-900">Queue Empty</h3>
-                            <p>No applications pending review.</p>
+                            <p>No applications pending review or disbursement.</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-100">
@@ -122,7 +142,11 @@ export default function LoansDashboard() {
                                     <div className="flex-1 space-y-1">
                                         <div className="flex items-center gap-3">
                                             <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">{loan.loanNumber}</span>
-                                            <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded uppercase tracking-wide">{loan.status}</span>
+                                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide ${
+                                                loan.status === 'APPROVED' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'
+                                            }`}>
+                                                {loan.status}
+                                            </span>
                                         </div>
                                         <h3 className="text-lg font-bold text-slate-900">{loan.memberName}</h3>
                                         <div className="flex items-center gap-4 text-sm text-slate-500">
@@ -132,9 +156,11 @@ export default function LoansDashboard() {
                                     </div>
                                     <button
                                         onClick={() => openReviewModal(loan)}
-                                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm flex items-center gap-2"
+                                        className={`px-6 py-2 text-white text-sm font-bold rounded-lg shadow-sm flex items-center gap-2 ${
+                                            loan.status === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                                        }`}
                                     >
-                                        Review Application <ChevronRight size={16}/>
+                                        {loan.status === 'APPROVED' ? 'Disburse Funds' : 'Review Application'} <ChevronRight size={16}/>
                                     </button>
                                 </div>
                             ))}
@@ -143,20 +169,22 @@ export default function LoansDashboard() {
                 </div>
             </main>
 
-            {/* --- REVIEW MODAL --- */}
+            {/* --- REVIEW & DISBURSE MODAL --- */}
             {selectedLoan && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                             <div>
-                                <h3 className="text-xl font-bold text-slate-800">Review Application</h3>
+                                <h3 className="text-xl font-bold text-slate-800">
+                                    {selectedLoan.status === 'APPROVED' ? 'Finalize Disbursement' : 'Review Application'}
+                                </h3>
                                 <p className="text-sm text-slate-500 font-mono">{selectedLoan.loanNumber}</p>
                             </div>
-                            <button onClick={() => setSelectedLoan(null)} className="text-slate-400 hover:text-red-500"><XCircle size={28}/></button>
+                            <button onClick={() => setSelectedLoan(null)} className="text-slate-400 hover:text-red-500 transition"><XCircle size={28}/></button>
                         </div>
 
                         <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-                            {/* 1. Applicant Financial Snapshot */}
+                            {/* 1. Financial Snapshot */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                                     <p className="text-xs text-slate-400 uppercase font-bold mb-1">Applicant</p>
@@ -170,8 +198,6 @@ export default function LoansDashboard() {
                                         <DollarSign size={18} className="text-slate-400"/> KES {selectedLoan.principalAmount?.toLocaleString()}
                                     </p>
                                 </div>
-
-                                {/* ✅ NEW: Financial Health Check */}
                                 <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
                                     <p className="text-xs text-emerald-600 uppercase font-bold mb-1">Total Savings</p>
                                     <p className="font-bold text-emerald-800 text-lg">
@@ -197,7 +223,7 @@ export default function LoansDashboard() {
                                             <div key={g.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-lg bg-white">
                                                 <div>
                                                     <p className="font-bold text-sm text-slate-700">{g.memberName}</p>
-                                                    <p className="text-xs text-slate-400">Guaranteed: KES {g.guaranteeAmount.toLocaleString()}</p>
+                                                    <p className="text-xs text-slate-400">KES {g.guaranteeAmount.toLocaleString()}</p>
                                                 </div>
                                                 <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${g.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                                                     {g.status}
@@ -208,35 +234,69 @@ export default function LoansDashboard() {
                                 )}
                             </div>
 
-                            {/* 3. Officer Remarks */}
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Officer Remarks / Rejection Reason</label>
-                                <textarea
-                                    value={remarks}
-                                    onChange={(e) => setRemarks(e.target.value)}
-                                    placeholder="Enter comments here (Required for rejection)..."
-                                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
-                                    rows="3"
-                                ></textarea>
-                            </div>
+                            {/* 3. Remarks (Only shown if NOT approved yet) */}
+                            {selectedLoan.status !== 'APPROVED' && (
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Officer Remarks / Rejection Reason</label>
+                                    <textarea
+                                        value={remarks}
+                                        onChange={(e) => setRemarks(e.target.value)}
+                                        placeholder="Enter comments here (Required for rejection)..."
+                                        className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                                        rows="3"
+                                    ></textarea>
+                                </div>
+                            )}
+
+                            {/* Disbursement Warning (Only for approved) */}
+                            {selectedLoan.status === 'APPROVED' && (
+                                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex gap-3 items-start">
+                                    <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-900">Pending Disbursement</p>
+                                        <p className="text-xs text-amber-700">This loan is fully approved. Clicking 'Disburse' will instantly credit the member's savings account.</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-4">
-                            <button
-                                onClick={() => handleDecision('REJECT')}
-                                disabled={processing}
-                                className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
-                            >
-                                Reject Application
-                            </button>
-                            <button
-                                onClick={() => handleDecision('APPROVE')}
-                                disabled={processing}
-                                className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-md hover:shadow-lg transition flex justify-center items-center gap-2"
-                            >
-                                {processing ? <RefreshCw className="animate-spin" size={20}/> : <CheckCircle size={20}/>}
-                                Approve Loan
-                            </button>
+                            {selectedLoan.status === 'APPROVED' ? (
+                                <>
+                                    <button
+                                        onClick={() => setSelectedLoan(null)}
+                                        className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleDisburse}
+                                        disabled={processing}
+                                        className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-md transition flex justify-center items-center gap-2"
+                                    >
+                                        {processing ? <RefreshCw className="animate-spin" size={20}/> : <Wallet size={20}/>}
+                                        Disburse Funds
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={() => handleDecision('REJECT')}
+                                        disabled={processing}
+                                        className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
+                                    >
+                                        Reject
+                                    </button>
+                                    <button
+                                        onClick={() => handleDecision('APPROVE')}
+                                        disabled={processing}
+                                        className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-md transition flex justify-center items-center gap-2"
+                                    >
+                                        {processing ? <RefreshCw className="animate-spin" size={20}/> : <CheckCircle size={20}/>}
+                                        Approve Loan
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -253,7 +313,7 @@ function StatCard({ icon, color, label, value }) {
         red: "bg-red-100 text-red-600",
     };
     return (
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 transition hover:shadow-md">
             <div className={`p-3 rounded-xl ${colors[color] || colors.indigo}`}>{icon}</div>
             <div>
                 <p className="text-xs font-bold text-slate-400 uppercase">{label}</p>

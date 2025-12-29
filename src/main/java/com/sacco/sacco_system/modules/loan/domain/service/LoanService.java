@@ -30,7 +30,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.Collections;
 
 @Slf4j
 @Service
@@ -51,24 +50,30 @@ public class LoanService {
     private final NotificationService notificationService;
     private final ReferenceCodeService referenceCodeService;
 
+    // --- HELPER: SAFE MEMBER LOOKUP ---
+    private Optional<Member> getMemberSafely(UUID userId) {
+        return memberRepository.findByUserId(userId);
+    }
+
     // --- PHASE 1: ELIGIBILITY & LIMITS ---
 
     public Map<String, Object> checkEligibility(UUID userId) {
-        Member member = memberRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("Member record not found"));
+        Optional<Member> memberOpt = getMemberSafely(userId);
 
+        if (memberOpt.isEmpty()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("eligible", false);
+            errorResponse.put("reasons", List.of("Admin/User does not have a Member profile."));
+            return errorResponse;
+        }
+
+        Member member = memberOpt.get();
         int requiredMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_MEMBERSHIP", "3"));
         BigDecimal requiredSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_FOR_LOAN", "5000"));
         int maxActiveLoans = Integer.parseInt(systemSettingService.getString("MAX_ACTIVE_LOANS", "1"));
 
-        Map<String, Object> response = new HashMap<>();
         List<String> reasons = new ArrayList<>();
-
-        BigDecimal currentSavings = savingsAccountRepository.findByMember_Id(member.getId())
-                .stream()
-                .map(SavingsAccount::getBalance)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal currentSavings = calculateNewBalance(member);
 
         long activeLoanCount = loanRepository.countByMemberIdAndStatusIn(
                 member.getId(),
@@ -92,6 +97,7 @@ public class LoanService {
             reasons.add("Minimum membership of " + requiredMonths + " month(s) required.");
         }
 
+        Map<String, Object> response = new HashMap<>();
         response.put("eligible", reasons.isEmpty());
         response.put("reasons", reasons);
         response.put("currentSavings", currentSavings);
@@ -110,10 +116,7 @@ public class LoanService {
         List<Member> eligible = new ArrayList<>();
 
         for (Member m : candidates) {
-            BigDecimal savings = savingsAccountRepository.findByMember_Id(m.getId()).stream()
-                    .map(SavingsAccount::getBalance)
-                    .filter(Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal savings = calculateNewBalance(m);
 
             if (savings.compareTo(minSavings) < 0) continue;
 
@@ -134,12 +137,18 @@ public class LoanService {
         return eligible;
     }
 
+    // --- PHASE 1: INITIATION (ORIGINAL SINGLE-STEP FLOW) ---
+
     public LoanDTO initiateWithFee(UUID userId, UUID productId, String userExternalRef, String paymentMethodStr) {
-        Member member = memberRepository.findByUserId(userId).orElseThrow();
-        LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
+        Member member = getMemberSafely(userId)
+                .orElseThrow(() -> new RuntimeException("Only registered Members can apply for loans."));
+
+        LoanProduct product = loanProductRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
 
         BigDecimal fee = product.getProcessingFee() != null ? product.getProcessingFee() : BigDecimal.ZERO;
 
+        // 1. Process Payment Immediately
         if (fee.compareTo(BigDecimal.ZERO) > 0) {
             String systemRef = referenceCodeService.generateReferenceCode();
             String sourceAccount = "1002"; // Default M-Pesa
@@ -162,12 +171,7 @@ public class LoanService {
                     null
             );
 
-            BigDecimal currentTotalSavings = savingsAccountRepository.findByMember_Id(member.getId())
-                    .stream()
-                    .map(SavingsAccount::getBalance)
-                    .filter(Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+            BigDecimal currentTotalSavings = calculateNewBalance(member);
             Transaction feeTransaction = Transaction.builder()
                     .member(member)
                     .amount(fee)
@@ -191,12 +195,13 @@ public class LoanService {
             );
         }
 
+        // 2. Create Loan in DRAFT status
         Loan loan = Loan.builder()
                 .loanNumber("LN-" + System.currentTimeMillis())
                 .member(member)
                 .product(product)
                 .principalAmount(BigDecimal.ZERO)
-                .status(Loan.LoanStatus.DRAFT)
+                .status(Loan.LoanStatus.DRAFT) // Original Status
                 .applicationDate(LocalDate.now())
                 .applicationFeePaid(true)
                 .gracePeriodWeeks(0)
@@ -220,7 +225,6 @@ public class LoanService {
         if (amount.compareTo(availableLimit) > 0)
             throw new RuntimeException("Exceeds limit of KES " + availableLimit);
 
-        // ✅ FIX 1: Treat duration as WEEKS, not MONTHS
         BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(amount,
                 loan.getProduct().getInterestRate(), duration, Loan.DurationUnit.WEEKS);
 
@@ -236,10 +240,12 @@ public class LoanService {
         loan.setPrincipalAmount(amount);
         loan.setDuration(duration);
         loan.setWeeklyRepaymentAmount(weeklyRepayment);
-        loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
-        // ✅ FIX 2: Correct Date Calculation (Today + X Weeks)
+        // Lock details
+        loan.setInterestRate(loan.getProduct().getInterestRate());
         loan.setExpectedRepaymentDate(LocalDate.now().plusWeeks(duration));
+
+        loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
         return convertToDTO(loanRepository.save(loan));
     }
@@ -278,14 +284,7 @@ public class LoanService {
                     loan.getLoanNumber(),
                     amount
             );
-
-            notificationService.notifyUser(
-                    guarantor.getId(),
-                    "Action Required: Guarantorship Request",
-                    guarantorMessage,
-                    true,
-                    false
-            );
+            notificationService.notifyUser(guarantor.getId(), "Action Required: Guarantorship Request", guarantorMessage, true, false);
         } catch (Exception e) {
             log.error("Failed to send immediate notification to guarantor: {}", e.getMessage());
         }
@@ -354,6 +353,8 @@ public class LoanService {
 
         if (allAccepted) {
             loan.setStatus(Loan.LoanStatus.SUBMITTED);
+            loan.setSubmissionDate(LocalDate.now());
+
             loanRepository.save(loan);
             notificationService.notifyUser(loan.getMember().getId(), "Loan Application Submitted", "Great news! All guarantors have accepted. Your application is now with the Loan Officer for review.", true, true);
         }
@@ -362,50 +363,122 @@ public class LoanService {
     // --- PHASE 3: LOAN OFFICER REVIEW ---
 
     public List<LoanDTO> getPendingLoansForAdmin() {
-        return loanRepository.findByStatus(Loan.LoanStatus.SUBMITTED).stream()
+        // Return ALL statuses relevant to Admin, Secretary, and Chairperson
+        return loanRepository.findByStatusIn(List.of(
+                        Loan.LoanStatus.SUBMITTED,
+                        Loan.LoanStatus.LOAN_OFFICER_REVIEW,
+                        Loan.LoanStatus.APPROVED,
+                        Loan.LoanStatus.SECRETARY_TABLED,
+                        Loan.LoanStatus.VOTING_OPEN
+                )).stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
     public void reviewLoanApplication(UUID adminUserId, UUID loanId, String decision, String remarks) {
-        Loan loan = loanRepository.findById(loanId)
-                .orElseThrow(() -> new RuntimeException("Loan not found"));
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        if (loan.getStatus() != Loan.LoanStatus.SUBMITTED) {
-            throw new RuntimeException("This loan is not in the correct stage for review (Current: " + loan.getStatus() + ")");
+        if (loan.getStatus() != Loan.LoanStatus.SUBMITTED && loan.getStatus() != Loan.LoanStatus.LOAN_OFFICER_REVIEW) {
+            throw new RuntimeException("This loan is not in the correct stage for review.");
         }
 
         if ("APPROVE".equalsIgnoreCase(decision)) {
             loan.setStatus(Loan.LoanStatus.APPROVED);
-
-            notificationService.notifyUser(
-                    loan.getMember().getId(),
-                    "Loan Approved!",
-                    "Congratulations! Your loan application has been approved by the loan officer. It is now awaiting final disbursement.",
-                    true,
-                    true
-            );
-
+            loan.setApprovalDate(LocalDate.now());
+            notificationService.notifyUser(loan.getMember().getId(), "Loan Approved!", "Your application has been approved and forwarded to the Secretary.", true, true);
         } else if ("REJECT".equalsIgnoreCase(decision)) {
             loan.setStatus(Loan.LoanStatus.REJECTED);
-
-            String rejectionMsg = "We regret to inform you that your loan application was rejected. Reason: " + remarks;
-            notificationService.notifyUser(
-                    loan.getMember().getId(),
-                    "Loan Application Rejected",
-                    rejectionMsg,
-                    true,
-                    true
-            );
-        } else {
-            throw new RuntimeException("Invalid decision. Use APPROVE or REJECT.");
+            loan.setRejectionReason(remarks);
+            notificationService.notifyUser(loan.getMember().getId(), "Loan Application Rejected", "Reason: " + remarks, true, true);
         }
 
         loanRepository.save(loan);
-        log.info("Loan {} was {} by Admin {}", loan.getLoanNumber(), decision, adminUserId);
+    }
+
+    // --- PHASE 3.5: GOVERNANCE (SECRETARY & CHAIR) ---
+
+    public void tableLoanForMeeting(UUID loanId, LocalDate meetingDate) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.APPROVED) {
+            throw new RuntimeException("Only technically approved loans can be tabled for a meeting.");
+        }
+
+        loan.setStatus(Loan.LoanStatus.SECRETARY_TABLED);
+        loan.setMeetingDate(meetingDate);
+        loanRepository.save(loan);
+
+        notificationService.notifyUser(loan.getMember().getId(), "Loan Tabled", "Your loan has been scheduled for the committee meeting on " + meetingDate, true, true);
+    }
+
+    public void startVoting(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.SECRETARY_TABLED) {
+            throw new RuntimeException("This loan has not been tabled for a meeting yet.");
+        }
+
+        loan.setStatus(Loan.LoanStatus.VOTING_OPEN);
+        loan.setVotingOpen(true);
+        loanRepository.save(loan);
+
+        log.info("Voting opened for loan {}", loan.getLoanNumber());
+    }
+
+    // --- PHASE 4: DISBURSEMENT ---
+
+    public void disburseLoan(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
+
+        // Allow disbursement if Voting is Open OR Approved (Covers all flows)
+        if (loan.getStatus() != Loan.LoanStatus.VOTING_OPEN && loan.getStatus() != Loan.LoanStatus.APPROVED) {
+            throw new RuntimeException("Loan not ready for disbursement. Current status: " + loan.getStatus());
+        }
+
+        String ref = referenceCodeService.generateReferenceCode();
+        BigDecimal amount = loan.getPrincipalAmount();
+
+        // 1. Accounting
+        accountingService.postEvent(
+                "LOAN_DISBURSEMENT",
+                "Disbursement: " + loan.getLoanNumber(),
+                ref,
+                amount,
+                "1002",
+                "2001"
+        );
+
+        // 2. Transaction
+        Transaction transaction = Transaction.builder()
+                .member(loan.getMember())
+                .amount(amount)
+                .type(Transaction.TransactionType.LOAN_DISBURSEMENT)
+                .referenceCode(ref)
+                .description("Disbursement for Loan: " + loan.getLoanNumber())
+                .transactionDate(LocalDateTime.now())
+                .balanceAfter(calculateNewBalance(loan.getMember()))
+                .build();
+        transactionRepository.save(transaction);
+
+        // 3. Update Loan Status
+        loan.setStatus(Loan.LoanStatus.DISBURSED);
+        loan.setDisbursementDate(LocalDate.now());
+        loan.setLoanBalance(amount);
+
+        loanRepository.save(loan);
+
+        notificationService.notifyUser(loan.getMember().getId(), "Funds Disbursed", "KES " + amount + " has been deposited to your savings account.", true, true);
     }
 
     // --- HELPERS & GETTERS ---
+
+    private BigDecimal calculateNewBalance(Member member) {
+        return savingsAccountRepository.findByMember_Id(member.getId())
+                .stream()
+                .map(SavingsAccount::getBalance)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
 
     public List<GuarantorDTO> getGuarantorsByLoan(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
@@ -415,17 +488,17 @@ public class LoanService {
     }
 
     public List<GuarantorDTO> getGuarantorRequests(UUID userId) {
-        Member member = memberRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("Member record not found"));
+        Optional<Member> memberOpt = getMemberSafely(userId);
+        if (memberOpt.isEmpty()) return Collections.emptyList();
 
-        return guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING)
+        return guarantorRepository.findByMemberAndStatus(memberOpt.get(), Guarantor.GuarantorStatus.PENDING)
                 .stream()
                 .map(this::convertToGuarantorDTO)
                 .collect(Collectors.toList());
     }
 
     public List<LoanDTO> getLoansByMember(UUID userId) {
-        return memberRepository.findByUserId(userId)
+        return getMemberSafely(userId)
                 .map(member -> loanRepository.findByMemberId(member.getId()).stream()
                         .map(this::convertToDTO)
                         .collect(Collectors.toList()))
@@ -449,14 +522,7 @@ public class LoanService {
     }
 
     private LoanDTO convertToDTO(Loan loan) {
-        // ✅ NEW: Calculate Member Total Savings
-        BigDecimal totalSavings = savingsAccountRepository.findByMember_Id(loan.getMember().getId())
-                .stream()
-                .map(SavingsAccount::getBalance)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // ✅ NEW: Get Net Monthly Income
+        BigDecimal totalSavings = calculateNewBalance(loan.getMember());
         BigDecimal netIncome = BigDecimal.ZERO;
         if (loan.getMember().getEmploymentDetails() != null && loan.getMember().getEmploymentDetails().getNetMonthlyIncome() != null) {
             netIncome = loan.getMember().getEmploymentDetails().getNetMonthlyIncome();
@@ -470,7 +536,6 @@ public class LoanService {
                 .principalAmount(loan.getPrincipalAmount())
                 .loanBalance(loan.getLoanBalance())
                 .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
-                // ✅ POPULATE NEW DTO FIELDS
                 .memberSavings(totalSavings)
                 .memberNetIncome(netIncome)
                 .build();
@@ -483,7 +548,7 @@ public class LoanService {
                     .memberId(g.getMember().getId())
                     .loanId(null)
                     .loanNumber("N/A")
-                    .applicantName("Unknown (Deleted Loan)")
+                    .applicantName("Unknown")
                     .memberName(g.getMember().getFirstName())
                     .guaranteeAmount(g.getGuaranteeAmount())
                     .status(g.getStatus() != null ? g.getStatus().toString() : "UNKNOWN")
