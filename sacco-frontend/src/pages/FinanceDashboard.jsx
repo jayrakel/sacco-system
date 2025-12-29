@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Landmark, CheckCircle, PieChart } from 'lucide-react';
+import { Landmark, CheckCircle, PieChart, AlertCircle, DollarSign } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import BrandedSpinner from '../components/BrandedSpinner';
 
-export default function FinanceDashboard() { // Treasurer View
+export default function FinanceDashboard() {
     const [user, setUser] = useState(null);
     const [pendingDisbursements, setPendingDisbursements] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -21,9 +21,10 @@ export default function FinanceDashboard() { // Treasurer View
             // Fetch loans ready for money movement
             const res = await api.get('/api/loans/admin/pending');
             if (res.data.success) {
-                // Loans ready for Treasurer: VOTING_OPEN (Voting passed/active) or APPROVED (Direct)
+                // ✅ LOGIC UPDATE: Treasurer ONLY sees loans approved by Chairperson
+                // Status must be: TREASURER_DISBURSEMENT
                 setPendingDisbursements(res.data.data.filter(l =>
-                    l.status === 'VOTING_OPEN' || l.status === 'APPROVED'
+                    l.status === 'TREASURER_DISBURSEMENT'
                 ));
             }
         } catch (e) {
@@ -34,13 +35,14 @@ export default function FinanceDashboard() { // Treasurer View
     };
 
     const handleDisburse = async (loanId) => {
-        if (!window.confirm("Confirm Disbursement: Transfer funds to member?")) return;
+        if (!window.confirm("CONFIRM: Release funds to member account? This action moves actual money.")) return;
+
         try {
             await api.post(`/api/loans/admin/${loanId}/disburse`);
-            alert("Disbursement successful. Funds transferred.");
+            alert("Disbursement Successful. Funds have been transferred.");
             fetchPending();
         } catch (err) {
-            alert("Failed: " + (err.response?.data?.message || err.message));
+            alert("Disbursement Failed: " + (err.response?.data?.message || err.message));
         }
     };
 
@@ -56,44 +58,53 @@ export default function FinanceDashboard() { // Treasurer View
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800">Financial Operations</h1>
-                        <p className="text-slate-500">Manage disbursements and liquidity.</p>
+                        <p className="text-slate-500">Manage liquidity and finalize loan disbursements.</p>
                     </div>
                 </div>
 
                 {/* Disbursement Queue */}
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                            <Landmark size={20} className="text-emerald-600"/> Pending Disbursements
+                            <Landmark size={20} className="text-emerald-600"/> Disbursement Queue
                         </h2>
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full">
+                            {pendingDisbursements.length} Pending
+                        </span>
                     </div>
 
                     {loading ? <div className="p-12 text-center"><BrandedSpinner /></div> : (
                         <div className="divide-y divide-slate-100">
                             {pendingDisbursements.length === 0 ? (
-                                <div className="p-12 text-center text-slate-400">No loans waiting for funds.</div>
+                                <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-2">
+                                    <CheckCircle size={40} className="text-slate-200"/>
+                                    <p>All clear. No loans awaiting disbursement.</p>
+                                </div>
                             ) : pendingDisbursements.map(loan => (
                                 <div key={loan.id} className="p-6 flex flex-col md:flex-row justify-between items-center gap-4 hover:bg-slate-50 transition">
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <h3 className="font-bold text-lg text-slate-800">{loan.memberName}</h3>
-                                            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold uppercase">{loan.status}</span>
+                                            <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold uppercase border border-blue-200">
+                                                Executive Approved
+                                            </span>
                                         </div>
                                         <p className="text-slate-500 text-sm mt-1">
-                                            Ref: <span className="font-mono">{loan.loanNumber}</span>
+                                            Ref: <span className="font-mono text-slate-700">{loan.loanNumber}</span>
                                         </p>
                                     </div>
 
                                     <div className="flex items-center gap-6">
-                                        <p className="text-right">
-                                            <span className="block text-xs font-bold text-slate-400 uppercase">Amount</span>
-                                            <span className="block font-mono font-bold text-emerald-600 text-xl">KES {loan.principalAmount.toLocaleString()}</span>
-                                        </p>
+                                        <div className="text-right">
+                                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Net Amount</span>
+                                            <span className="block font-mono font-black text-emerald-600 text-xl">KES {Number(loan.principalAmount).toLocaleString()}</span>
+                                        </div>
+
                                         <button
                                             onClick={() => handleDisburse(loan.id)}
-                                            className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition"
+                                            className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition transform active:scale-95"
                                         >
-                                            <CheckCircle size={20}/> Disburse
+                                            <DollarSign size={20}/> Release Funds
                                         </button>
                                     </div>
                                 </div>

@@ -244,8 +244,7 @@ public class LoanService {
         // Lock details
         loan.setInterestRate(loan.getProduct().getInterestRate());
 
-        // ✅ CORRECT: Do NOT calculate expectedRepaymentDate here. It is too early.
-        // It will be calculated upon disbursement.
+        // Note: expectedRepaymentDate is calculated upon disbursement
 
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
@@ -435,7 +434,7 @@ public class LoanService {
         log.info("Voting opened for loan {}", loan.getLoanNumber());
     }
 
-    // ✅ NEW: Member Casting Vote (Before Secretary Finalizes)
+    // ✅ MEMBER VOTE (Filters out Applicant)
     public void castVote(UUID loanId, UUID userId, boolean voteYes) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
@@ -445,9 +444,9 @@ public class LoanService {
 
         Member voter = getMemberSafely(userId).orElseThrow(() -> new RuntimeException("Voter must be a member"));
 
-        // Prevent voting on own loan
+        // Strict Rule: Applicant cannot vote on their own loan
         if (loan.getMember().getId().equals(voter.getId())) {
-            throw new RuntimeException("You cannot vote on your own loan.");
+            throw new RuntimeException("Conflict of Interest: You cannot vote on your own loan application.");
         }
 
         // Prevent Double Voting
@@ -477,9 +476,9 @@ public class LoanService {
         Member voter = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
 
         return openLoans.stream()
-                // STRICT EXCLUSION: Applicant cannot see their own loan in voting list
+                // Strict Exclusion: Applicant cannot see their own loan in voting list
                 .filter(loan -> !loan.getMember().getId().equals(voter.getId()))
-                // EXCLUSION: Remove already voted
+                // Exclusion: Filter out loans they have already voted on
                 .filter(loan -> loan.getVotedUserIds() == null || !loan.getVotedUserIds().contains(userId))
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
@@ -526,35 +525,40 @@ public class LoanService {
     // --- PHASE 4: DISBURSEMENT ---
 
     public void disburseLoan(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
         // ✅ STRICT LOCK: Ensure Chair Passed it
         if (loan.getStatus() != Loan.LoanStatus.TREASURER_DISBURSEMENT) {
-            throw new RuntimeException("Loan not ready for disbursement. Chairperson approval required.");
+            throw new RuntimeException("Loan not ready for disbursement. Status: " + loan.getStatus());
         }
 
         String ref = referenceCodeService.generateReferenceCode();
         BigDecimal amount = loan.getPrincipalAmount();
 
-        // 1. Accounting
+        // 1. Accounting: Credit Bank (1002), Debit Loan Portfolio (2001)
+        // Asset (Bank) Decreases = Credit
+        // Asset (Loan Receivable) Increases = Debit
         accountingService.postEvent(
                 "LOAN_DISBURSEMENT",
                 "Disbursement: " + loan.getLoanNumber(),
                 ref,
                 amount,
-                "1002",
-                "2001"
+                "1002", // Source: Sacco Bank Account (Money Leaves)
+                "2001"  // Destination: Loan Portfolio (Receivable)
         );
 
-        // 2. Transaction
+        // 2. Transaction Log - Record the event for history
+        // Note: calculateNewBalance only sums savings accounts.
+        // Since we are NOT crediting the savings account here, the balance will logically remain the same.
+        // This effectively means the money has gone "out" to an external destination (M-Pesa/Bank).
         Transaction transaction = Transaction.builder()
                 .member(loan.getMember())
                 .amount(amount)
                 .type(Transaction.TransactionType.LOAN_DISBURSEMENT)
                 .referenceCode(ref)
-                .description("Disbursement for Loan: " + loan.getLoanNumber())
+                .description("Disbursement to External Account (M-Pesa/Bank)") // Updated description
                 .transactionDate(LocalDateTime.now())
-                .balanceAfter(calculateNewBalance(loan.getMember()))
+                .balanceAfter(calculateNewBalance(loan.getMember())) // Savings balance unchanged
                 .build();
         transactionRepository.save(transaction);
 
@@ -565,7 +569,7 @@ public class LoanService {
         loan.setDisbursementDate(today);
         loan.setLoanBalance(amount);
 
-        // ✅ FIXED: Calculate Repayment Date Here (Today + Grace + Duration)
+        // Calculate Repayment Date (Today + Grace + Duration)
         int graceWeeks = loan.getGracePeriodWeeks() != null ? loan.getGracePeriodWeeks() : 0;
         int durationWeeks = loan.getDuration() != null ? loan.getDuration() : 0;
 
@@ -576,7 +580,14 @@ public class LoanService {
 
         loanRepository.save(loan);
 
-        notificationService.notifyUser(loan.getMember().getId(), "Funds Disbursed", "KES " + amount + " has been deposited to your savings account.", true, true);
+        // ✅ Updated Notification to be clear
+        notificationService.notifyUser(
+                loan.getMember().getId(),
+                "Funds Disbursed",
+                "KES " + amount + " has been sent to your external account/M-Pesa.",
+                true,
+                true
+        );
     }
 
     // --- HELPERS & GETTERS ---
@@ -618,6 +629,7 @@ public class LoanService {
         return loanRepository.findById(loanId).map(this::convertToDTO).orElseThrow();
     }
 
+    // ✅ VALIDATE ABILITY TO PAY (Restored)
     private void validateAbilityToPay(Member member, BigDecimal weeklyRepayment) {
         EmploymentDetails emp = member.getEmploymentDetails();
         if (emp != null && emp.getNetMonthlyIncome() != null) {

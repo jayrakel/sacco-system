@@ -190,7 +190,6 @@ public class LoanController {
     @PostMapping("/secretary/{loanId}/table")
     public ResponseEntity<?> tableLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
-            // ✅ UPDATED: Parse LocalDateTime for exact scheduling
             LocalDateTime dateTime = LocalDateTime.parse(payload.get("meetingDate"));
             loanService.tableLoanForMeeting(loanId, dateTime);
             return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled for meeting successfully."));
@@ -257,7 +256,6 @@ public class LoanController {
 
     /**
      * ✅ NEW: Disburse Loan Funds
-     * Moves money from Sacco accounts to Member Savings
      */
     @PostMapping("/admin/{loanId}/disburse")
     public ResponseEntity<?> disburseLoan(@PathVariable UUID loanId) {
