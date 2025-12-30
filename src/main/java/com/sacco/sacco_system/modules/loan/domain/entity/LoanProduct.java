@@ -9,33 +9,53 @@ import java.util.UUID;
 @Table(name = "loan_products")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class LoanProduct {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String name;
 
     private String description;
 
-    // Terms
+    // --- Terms ---
     @Column(nullable = false)
-    private BigDecimal interestRate;
+    private BigDecimal interestRate; // Annual %
+
+    // ✅ FEATURE: Interest Calculation Logic
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private InterestType interestType = InterestType.FLAT_RATE;
 
     @Column(nullable = false)
-    private Integer maxDurationWeeks;
+    private Integer maxDurationWeeks; // Standardized duration unit
 
     @Column(nullable = false)
-    private BigDecimal maxAmount;
+    private BigDecimal maxAmount;     // Maximum loan limit
 
-    // --- Accounting Integration ---
-    // Links to GLAccount codes in the Finance Module
+    // --- Fee Configurations ---
+    @Column(name = "application_fee", nullable = false)
+    @Builder.Default
+    private BigDecimal applicationFee = BigDecimal.ZERO;
+
+    @Column(name = "penalty_rate", nullable = false)
+    @Builder.Default
+    private BigDecimal penaltyRate = BigDecimal.ZERO;
+
+    // --- Accounting Integration (The Admin's Job to Map These) ---
     @Column(name = "receivable_account_code")
-    private String receivableAccountCode; // e.g. "1201" (Asset)
+    private String receivableAccountCode; // e.g. "1201" (Loan Portfolio Asset)
 
     @Column(name = "income_account_code")
-    private String incomeAccountCode; // e.g. "4001" (Income)
+    private String incomeAccountCode;     // e.g. "4001" (Interest Income)
 
     @Builder.Default
-    private boolean isActive = true;
+    private Boolean isActive = true;
+
+    // ✅ ENUM DEFINITION
+    public enum InterestType {
+        FLAT_RATE,
+        REDUCING_BALANCE
+    }
 }
