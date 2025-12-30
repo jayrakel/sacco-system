@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
+// ✅ 1. Import the Hook
+import { useSettings } from '../../../context/SettingsContext';
 import {
     CreditCard, PlusCircle, CheckCircle, Clock, XCircle,
     FileText, Edit, AlertCircle, ChevronRight, Gavel,
@@ -9,6 +11,9 @@ import LoanApplicationModal from './LoanApplicationModal';
 import LoanFeePaymentModal from './LoanFeePaymentModal';
 
 export default function MemberLoans({ user, onUpdate, onVoteCast }) {
+    // ✅ 2. Consume Settings
+    const { settings } = useSettings();
+
     const [loans, setLoans] = useState([]);
     const [activeVotes, setActiveVotes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -79,7 +84,6 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         loadDashboardData();
     };
 
-    // ✅ HELPER: Calculate Days Remaining (Grace Period)
     const getDaysRemaining = (nextDate) => {
         if (!nextDate) return 0;
         const today = new Date();
@@ -104,8 +108,12 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         return <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${styles[status] || 'bg-slate-100'}`}>{status?.replace(/_/g, ' ')}</span>;
     };
 
-    // ✅ FIND ACTIVE LOAN (To show the main card)
     const activeLoan = loans.find(l => l.status === 'ACTIVE' || l.status === 'IN_ARREARS');
+
+    // ✅ 3. Helper to safely get settings
+    const MIN_SAVINGS = settings?.MIN_SAVINGS_FOR_LOAN || 5000;
+    const MIN_MONTHS = settings?.MIN_MONTHS_MEMBERSHIP || 3;
+    const MAX_LOANS = settings?.MAX_ACTIVE_LOANS || 1;
 
     if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse">Synchronizing Loan Data...</div>;
 
@@ -119,7 +127,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 </div>
             )}
 
-            {/* --- 1. ACTIVE LOAN CARD (RESTORED) --- */}
+            {/* --- 1. ACTIVE LOAN CARD --- */}
             {activeLoan && (
                 <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
@@ -221,7 +229,6 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                                     <div className="flex gap-4 mt-2 text-xs text-slate-500">
                                         <span>Duration: {loan.duration} {loan.durationUnit}</span>
                                     </div>
-                                    {/* Show Savings if available (Context for voters) */}
                                     <div className="flex justify-between text-sm pt-2 border-t border-slate-50 mt-2">
                                         <span className="text-slate-500">Member Savings</span>
                                         <span className="font-medium text-emerald-600">
@@ -250,7 +257,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 </div>
             )}
 
-            {/* --- 3. PREREQUISITES & ELIGIBILITY (Hide if active loan exists) --- */}
+            {/* --- 3. PREREQUISITES & ELIGIBILITY --- */}
             {!activeLoan && !isEligible && (
                 <div className="bg-white p-8 rounded-3xl border-2 border-amber-100 shadow-sm overflow-hidden relative">
                     <div className="flex items-center gap-4 mb-8">
@@ -262,34 +269,32 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        {/* Savings Check */}
-                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.currentSavings || 0) >= Number(eligibilityData?.requiredSavings || 5000) ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 opacity-80'}`}>
+                        {/* ✅ 4. Use Settings Variables */}
+                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.currentSavings || 0) >= Number(eligibilityData?.requiredSavings || MIN_SAVINGS) ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 opacity-80'}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Savings Status</p>
-                                {Number(eligibilityData?.currentSavings || 0) >= Number(eligibilityData?.requiredSavings || 5000) ? <CheckCircle size={14} className="text-emerald-500"/> : <Clock size={14} className="text-slate-300"/>}
+                                {Number(eligibilityData?.currentSavings || 0) >= Number(eligibilityData?.requiredSavings || MIN_SAVINGS) ? <CheckCircle size={14} className="text-emerald-500"/> : <Clock size={14} className="text-slate-300"/>}
                             </div>
                             <p className="text-lg font-black text-slate-700">KES {Number(eligibilityData?.currentSavings || 0).toLocaleString()}</p>
-                            <p className="text-xs text-slate-400">Target: KES {Number(eligibilityData?.requiredSavings).toLocaleString()}</p>
+                            <p className="text-xs text-slate-400">Target: KES {Number(eligibilityData?.requiredSavings || MIN_SAVINGS).toLocaleString()}</p>
                         </div>
 
-                        {/* Membership Check */}
-                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.membershipMonths || 0) >= Number(eligibilityData?.requiredMonths || 0) ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 opacity-80'}`}>
+                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.membershipMonths || 0) >= Number(eligibilityData?.requiredMonths || MIN_MONTHS) ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100 opacity-80'}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Membership</p>
-                                {Number(eligibilityData?.membershipMonths || 0) >= Number(eligibilityData?.requiredMonths || 0) ? <CheckCircle size={14} className="text-emerald-500"/> : <Clock size={14} className="text-slate-300"/>}
+                                {Number(eligibilityData?.membershipMonths || 0) >= Number(eligibilityData?.requiredMonths || MIN_MONTHS) ? <CheckCircle size={14} className="text-emerald-500"/> : <Clock size={14} className="text-slate-300"/>}
                             </div>
                             <p className="text-lg font-black text-slate-700">{eligibilityData?.membershipMonths || 0} Months</p>
-                            <p className="text-xs text-slate-400">Req: {eligibilityData?.requiredMonths || 0} Months</p>
+                            <p className="text-xs text-slate-400">Req: {eligibilityData?.requiredMonths || MIN_MONTHS} Months</p>
                         </div>
 
-                        {/* Active Loan Check */}
-                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.currentActiveLoans || 0) < Number(eligibilityData?.maxActiveLoans || 1) ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                        <div className={`p-5 rounded-2xl border transition-all ${Number(eligibilityData?.currentActiveLoans || 0) < Number(eligibilityData?.maxActiveLoans || MAX_LOANS) ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Loans</p>
-                                {Number(eligibilityData?.currentActiveLoans || 0) < Number(eligibilityData?.maxActiveLoans || 1) ? <CheckCircle size={14} className="text-emerald-500"/> : <XCircle size={14} className="text-red-500"/>}
+                                {Number(eligibilityData?.currentActiveLoans || 0) < Number(eligibilityData?.maxActiveLoans || MAX_LOANS) ? <CheckCircle size={14} className="text-emerald-500"/> : <XCircle size={14} className="text-red-500"/>}
                             </div>
-                            <p className="text-lg font-black text-slate-700">{eligibilityData?.currentActiveLoans || 0} / {eligibilityData?.maxActiveLoans || 1}</p>
-                            <p className="text-xs text-slate-400">Limit: {eligibilityData?.maxActiveLoans || 1} active</p>
+                            <p className="text-lg font-black text-slate-700">{eligibilityData?.currentActiveLoans || 0} / {eligibilityData?.maxActiveLoans || MAX_LOANS}</p>
+                            <p className="text-xs text-slate-400">Limit: {eligibilityData?.maxActiveLoans || MAX_LOANS} active</p>
                         </div>
                     </div>
 
@@ -302,12 +307,15 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400"/> {reason}
                                 </li>
                             ))}
+                            {(!eligibilityData?.reasons || eligibilityData.reasons.length === 0) && (
+                                <li className="text-xs text-amber-600/60 italic">No specific actions pending.</li>
+                            )}
                         </ul>
                     </div>
                 </div>
             )}
 
-            {/* --- 4. START APPLICATION (Hide if active loan exists) --- */}
+            {/* --- 4. START APPLICATION --- */}
             {!activeLoan && isEligible && (
                 <div className="bg-indigo-900 rounded-3xl p-10 text-white flex flex-col md:flex-row justify-between items-center shadow-2xl shadow-indigo-900/20 border border-white/10 group relative overflow-hidden">
                     <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-colors duration-700" />

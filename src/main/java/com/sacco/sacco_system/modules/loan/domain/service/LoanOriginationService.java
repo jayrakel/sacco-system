@@ -71,7 +71,8 @@ public class LoanOriginationService {
         // We calculate the limit first to get the total savings value
         Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
 
-        double minSavings = systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN", 50000);
+        // ✅ FIX: Changed default from 50000 to 5000 to match Admin defaults
+        double minSavings = systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN", 5000);
         BigDecimal totalSavings = (BigDecimal) limitDetails.get("memberSavings");
 
         // Handle potential null savings in calculation
@@ -89,15 +90,32 @@ public class LoanOriginationService {
             }
         }
 
+        // 4. ✅ ADDED: Check Active Loans Count against System Setting
+        int maxActiveLoans = (int) systemSettingService.getDouble("MAX_ACTIVE_LOANS", 1);
+        long currentActiveLoans = loanRepository.findByMemberId(member.getId()).stream()
+                .filter(l -> l.getStatus() == Loan.LoanStatus.ACTIVE || l.getStatus() == Loan.LoanStatus.IN_ARREARS)
+                .count();
+
+        if (currentActiveLoans >= maxActiveLoans) {
+            rejectionReasons.add("You have reached the maximum number of active loans (" + maxActiveLoans + ").");
+        }
+
         // Final Decision
         boolean isEligible = rejectionReasons.isEmpty();
 
         Map<String, Object> response = new HashMap<>();
         response.put("eligible", isEligible);
         response.put("reasons", rejectionReasons);
+
+        // ✅ ADDED: Return actual user stats so Frontend can display them
+        response.put("currentSavings", totalSavings);
+        response.put("membershipMonths", monthsJoined);
+        response.put("currentActiveLoans", currentActiveLoans);
+
+        // Requirements for UI comparison
         response.put("requiredMonths", minMonths);
         response.put("requiredSavings", minSavings);
-        response.put("maxActiveLoans", 1);
+        response.put("maxActiveLoans", maxActiveLoans);
 
         return response;
     }
@@ -136,7 +154,7 @@ public class LoanOriginationService {
                 .applicationDate(LocalDate.now())
                 .applicationFeePaid(true)
 
-                // ✅ FIX: Initialize amounts to ZERO to satisfy DB constraints
+                // Initialize amounts to ZERO to satisfy DB constraints
                 .principalAmount(BigDecimal.ZERO)
                 .loanBalance(BigDecimal.ZERO)
                 .weeklyRepaymentAmount(BigDecimal.ZERO)

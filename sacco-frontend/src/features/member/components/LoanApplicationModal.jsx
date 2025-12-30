@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
+import { useSettings } from '../../../context/SettingsContext';
 import { X, CheckCircle, Calculator, UserPlus, Search, ArrowRight, ArrowLeft, Users, AlertCircle, Loader, Lock, Info } from 'lucide-react';
 
 export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user, resumeLoan }) {
+    // ✅ FIXED: Actually consume the context to get the settings object
+    const { settings } = useSettings();
+
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [loanId, setLoanId] = useState(null);
@@ -268,7 +272,11 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, user,
                             <AlertCircle size={32}/>
                         </div>
                         <h3 className="text-xl font-bold text-slate-800 mb-2">Not Eligible</h3>
-                        <p className="text-slate-500 mb-6">You do not meet the requirements to apply for a new loan at this time.</p>
+
+                        {/* ✅ IMPROVEMENT: Display dynamic settings from the Admin context */}
+                        <p className="text-slate-500 mb-6">
+                            Minimum savings required: <b>KES {Number(settings?.MIN_SAVINGS_FOR_LOAN || 0).toLocaleString()}</b>
+                        </p>
 
                         <div className="w-full bg-red-50 border border-red-100 rounded-xl p-4 text-left mb-6">
                             <h4 className="text-xs font-bold text-red-800 uppercase mb-2">Reasons:</h4>
