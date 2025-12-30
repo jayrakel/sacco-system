@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -48,9 +49,55 @@ public class LoanOriginationService {
         Member member = memberRepository.findByUserId(userId).orElse(null);
         if (member == null) return Map.of("eligible", false, "reasons", List.of("Member not found"));
 
+        List<String> rejectionReasons = new ArrayList<>();
+
+        // 1. GLOBAL SETTING CHECK: Minimum Membership Duration
+        // Default is 3 months if setting is missing
+        int minMonths = (int) systemSettingService.getDouble("MIN_MONTHS_MEMBERSHIP", 3);
+
+        long monthsJoined = 0;
+        if (member.getRegistrationDate() != null) {
+            monthsJoined = ChronoUnit.MONTHS.between(
+                    member.getRegistrationDate(),
+                    LocalDate.now()
+            );
+        }
+
+        if (monthsJoined < minMonths) {
+            rejectionReasons.add("You must be a member for at least " + minMonths + " months. (Current: " + monthsJoined + ")");
+        }
+
+        // 2. GLOBAL SETTING CHECK: Minimum Savings & Financial Limits
+        // We calculate the limit first to get the total savings value
         Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
 
-        return Map.of("eligible", true, "details", limitDetails);
+        double minSavings = systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN", 5000);
+        BigDecimal totalSavings = (BigDecimal) limitDetails.get("memberSavings");
+
+        // Handle potential null savings in calculation
+        if (totalSavings == null) totalSavings = BigDecimal.ZERO;
+
+        if (totalSavings.compareTo(BigDecimal.valueOf(minSavings)) < 0) {
+            rejectionReasons.add("Minimum savings of " + minSavings + " required to apply. (Current: " + totalSavings + ")");
+        }
+
+        // 3. Check Financial Limit (Ability to Pay / Multiplier Limit)
+        if (!(boolean) limitDetails.get("canBorrow")) {
+            rejectionReasons.add("You do not have sufficient loan limit available.");
+            if ((boolean) limitDetails.get("hasDefaults")) {
+                rejectionReasons.add("You have defaulted on previous loans.");
+            }
+        }
+
+        // Final Decision
+        boolean isEligible = rejectionReasons.isEmpty();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("eligible", isEligible);
+        response.put("reasons", rejectionReasons);
+        response.put("details", limitDetails);
+
+        return response;
     }
 
     public List<Member> getEligibleGuarantors(UUID applicantUserId) {
@@ -100,7 +147,7 @@ public class LoanOriginationService {
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
-        // 1. Check Limits
+        // 1. Check Limits (Re-verify before submission)
         if (!loanLimitService.canMemberBorrow(loan.getMember(), amount)) {
             throw new RuntimeException("Amount exceeds available limit.");
         }
@@ -176,9 +223,12 @@ public class LoanOriginationService {
         EmploymentDetails emp = member.getEmploymentDetails();
         if (emp != null && emp.getNetMonthlyIncome() != null) {
             BigDecimal monthly = weeklyRepayment.multiply(BigDecimal.valueOf(4.33));
+
+            // GLOBAL SETTING CHECK: Max Debt Ratio (default 66%)
             double maxRatio = systemSettingService.getDouble("MAX_DEBT_RATIO", 0.66);
+
             if (monthly.compareTo(emp.getNetMonthlyIncome().multiply(BigDecimal.valueOf(maxRatio))) > 0) {
-                throw new RuntimeException("Repayment too high for income.");
+                throw new RuntimeException("Repayment too high for income. (Max Ratio: " + (maxRatio * 100) + "%)");
             }
         }
     }

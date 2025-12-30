@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.member.domain.service;
 
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
+
 import com.sacco.sacco_system.modules.member.api.dto.BeneficiaryDTO;
 import com.sacco.sacco_system.modules.member.api.dto.EmploymentDetailsDTO;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
@@ -12,7 +13,7 @@ import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
-import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService; // ✅ Added
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 
@@ -45,7 +46,7 @@ public class MemberService {
     private final SystemSettingService systemSettingService;
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
-    private final ReferenceCodeService referenceCodeService; // ✅ Inject Reference Service
+    private final ReferenceCodeService referenceCodeService;
 
     @Value("${app.upload.dir:uploads/profiles/}")
     private String uploadDir;
@@ -79,7 +80,8 @@ public class MemberService {
                 .address(memberDTO.getAddress())
                 .dateOfBirth(memberDTO.getDateOfBirth())
                 .profileImageUrl(imagePath)
-                .status(Member.MemberStatus.ACTIVE)
+                // ✅ FIX: Status is INACTIVE until email verification
+                .status(Member.MemberStatus.INACTIVE)
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
                 .beneficiaries(new ArrayList<>())
@@ -123,7 +125,6 @@ public class MemberService {
 
         Member savedMember = memberRepository.save(member);
 
-        // ✅ Process fee using strict System Reference logic
         processRegistrationFee(savedMember, paymentMethod, userExternalRef, bankAccountCode);
 
         createDefaultSavingsAccount(savedMember);
@@ -195,45 +196,45 @@ public class MemberService {
 
         if (feeAmount > 0) {
             BigDecimal amount = BigDecimal.valueOf(feeAmount);
-
-            // 1. Generate System Reference (The "PCM..." Code)
             String systemRef = referenceCodeService.generateReferenceCode();
 
-            // 2. Determine Source Account
             Transaction.PaymentMethod payMethod = Transaction.PaymentMethod.MPESA;
             String sourceAccount = "1002"; // Default Paybill (MPESA)
 
             if ("BANK".equalsIgnoreCase(paymentMethodStr) || "BANK_TRANSFER".equalsIgnoreCase(paymentMethodStr)) {
                 payMethod = Transaction.PaymentMethod.BANK;
-                sourceAccount = (bankAccountCode != null && !bankAccountCode.isEmpty()) ? bankAccountCode : "1010";
+
+                // ✅ FIX: Dynamic Bank Account Selection
+                if (bankAccountCode != null && !bankAccountCode.isEmpty()) {
+                    sourceAccount = bankAccountCode; // Use specific bank selected in frontend
+                } else {
+                    // Fallback to configured default, else 1010
+                    sourceAccount = systemSettingService.getString("DEFAULT_BANK_GL_CODE", "1010");
+                }
+
             } else if ("CASH".equalsIgnoreCase(paymentMethodStr)) {
                 payMethod = Transaction.PaymentMethod.CASH;
                 sourceAccount = "1001"; // Cash on Hand
             }
 
-            // 3. Post to General Ledger using SYSTEM REFERENCE
-            // Debit: Source (Asset), Credit: 4001 (Registration Fee Income)
             accountingService.postEvent(
                     "REGISTRATION_FEE",
                     "Registration Fee - " + member.getMemberNumber(),
-                    systemRef, // ✅ Uses System Ref for Accounting
+                    systemRef,
                     amount,
-                    sourceAccount, // Override Debit
-                    "4001"         // Override Credit
+                    sourceAccount,
+                    "4001"
             );
 
-            // 4. Create Transaction Record
-            // Reference Code = System Ref (PCM...)
-            // External Reference = User's Code (M-Pesa)
             Transaction registrationTx = Transaction.builder()
                     .member(member)
                     .type(Transaction.TransactionType.REGISTRATION_FEE)
                     .amount(amount)
                     .paymentMethod(payMethod)
-                    .referenceCode(systemRef)        // ✅ Primary Ref = System Code
-                    .externalReference(userExternalRef) // ✅ Secondary Ref = M-Pesa Code
+                    .referenceCode(systemRef)
+                    .externalReference(userExternalRef)
                     .description("Registration Fee")
-                    .balanceAfter(BigDecimal.ZERO) // Registration fee does not affect savings balance
+                    .balanceAfter(BigDecimal.ZERO)
                     .build();
 
             transactionRepository.save(registrationTx);
