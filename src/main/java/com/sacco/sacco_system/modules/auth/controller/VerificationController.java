@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.auth.controller;
 
-import com.sacco.sacco_system.modules.auth.service.auth.AuthService;
+import com.sacco.sacco_system.modules.auth.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

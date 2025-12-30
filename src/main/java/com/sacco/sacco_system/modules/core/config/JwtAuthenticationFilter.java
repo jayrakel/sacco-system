@@ -1,7 +1,7 @@
 package com.sacco.sacco_system.modules.core.config;
 
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
-import com.sacco.sacco_system.modules.auth.service.jwt.JwtService;
+import com.sacco.sacco_system.modules.auth.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

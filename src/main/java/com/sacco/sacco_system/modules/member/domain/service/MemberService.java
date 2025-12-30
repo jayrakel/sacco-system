@@ -1,6 +1,6 @@
 package com.sacco.sacco_system.modules.member.domain.service;
 
-import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.member.api.dto.BeneficiaryDTO;
 import com.sacco.sacco_system.modules.member.api.dto.EmploymentDetailsDTO;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;

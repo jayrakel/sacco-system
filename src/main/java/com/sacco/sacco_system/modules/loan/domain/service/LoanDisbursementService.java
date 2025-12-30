@@ -7,7 +7,7 @@ import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanDisbursement;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanDisbursementRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

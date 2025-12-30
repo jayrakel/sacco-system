@@ -4,7 +4,7 @@ import com.sacco.sacco_system.modules.finance.domain.entity.ShareCapital;
 import com.sacco.sacco_system.modules.finance.domain.repository.ShareCapitalRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
-import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

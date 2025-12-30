@@ -1,9 +1,9 @@
-package com.sacco.sacco_system.modules.auth.controller.auth;
+package com.sacco.sacco_system.modules.auth.controller;
 
 import com.sacco.sacco_system.modules.auth.dto.AuthRequest;
 import com.sacco.sacco_system.modules.auth.dto.ChangePasswordRequest;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
-import com.sacco.sacco_system.modules.auth.service.auth.AuthService;
+import com.sacco.sacco_system.modules.auth.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

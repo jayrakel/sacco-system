@@ -21,7 +21,7 @@ import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 import com.sacco.sacco_system.modules.savings.domain.service.SavingsService;
-import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
+import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

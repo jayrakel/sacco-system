@@ -1,14 +1,12 @@
-package com.sacco.sacco_system.modules.auth.service.jwt;
+package com.sacco.sacco_system.modules.auth.service;
 
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,46 +18,45 @@ public class JwtService {
     @Value("${jwt.secret:mysecretkeyforjwttokensignatureitshouldbelongenoughforhs256}")
     private String jwtSecret;
 
-    @Value("${jwt.expiration:86400000}") // 24 Hours
+    @Value("${jwt.expiration:86400000}")
     private Long jwtExpiration;
 
-    private SecretKey key;
-
-    @PostConstruct
-    public void init() {
-        // Optimization: Create the key object once at startup
-        this.key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-    }
-
     public String generateToken(String username) {
-        return createToken(new HashMap<>(), username);
+        Map<String, Object> claims = new HashMap<>();
+        return createToken(claims, username);
     }
 
-    public String generateToken(String username, Map<String, Object> extraClaims) {
-        return createToken(extraClaims, username);
+    public String generateToken(String username, Map<String, Object> claims) {
+        claims.putAll(new HashMap<>(claims));
+        return createToken(claims, username);
     }
 
+    /**
+     * Generate token with view mode (MEMBER or ADMIN)
+     * Used when officials switch between member and admin views
+     */
     public String generateTokenWithView(String username, String viewMode) {
-        return createToken(Map.of("viewMode", viewMode), username);
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("viewMode", viewMode);
+        return createToken(claims, username);
     }
 
     private String createToken(Map<String, Object> claims, String subject) {
-        long nowMillis = System.currentTimeMillis();
-        Date now = new Date(nowMillis);
-        Date expiration = new Date(nowMillis + jwtExpiration);
+        Date now = new Date();
+        Date expirationDate = new Date(now.getTime() + jwtExpiration);
 
         return Jwts.builder()
-                .claims(claims)
-                .subject(subject)
-                .issuedAt(now)
-                .expiration(expiration)
-                .signWith(key)
+                .setClaims(claims)
+                .setSubject(subject)
+                .setIssuedAt(now)
+                .setExpiration(expirationDate)
+                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public String getUsernameFromToken(String token) {
         return Jwts.parser()
-                .verifyWith(key)
+                .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
                 .build()
                 .parseSignedClaims(token)
                 .getPayload()
@@ -69,7 +66,7 @@ public class JwtService {
     public boolean validateToken(String token) {
         try {
             Jwts.parser()
-                    .verifyWith(key)
+                    .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
                     .build()
                     .parseSignedClaims(token);
             return true;
