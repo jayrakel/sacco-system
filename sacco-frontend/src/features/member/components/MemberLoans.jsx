@@ -269,7 +269,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                                 {Number(eligibilityData?.currentSavings || 0) >= Number(eligibilityData?.requiredSavings || 5000) ? <CheckCircle size={14} className="text-emerald-500"/> : <Clock size={14} className="text-slate-300"/>}
                             </div>
                             <p className="text-lg font-black text-slate-700">KES {Number(eligibilityData?.currentSavings || 0).toLocaleString()}</p>
-                            <p className="text-xs text-slate-400">Target: KES {Number(eligibilityData?.requiredSavings || 5000).toLocaleString()}</p>
+                            <p className="text-xs text-slate-400">Target: KES {Number(eligibilityData?.requiredSavings).toLocaleString()}</p>
                         </div>
 
                         {/* Membership Check */}

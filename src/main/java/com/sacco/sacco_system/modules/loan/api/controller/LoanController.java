@@ -18,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -43,10 +44,24 @@ public class LoanController {
     @GetMapping("/eligibility/check")
     public ResponseEntity<?> checkEligibility() {
         try {
-            return ResponseEntity.ok(Map.of("success", true, "data", originationService.checkEligibility(getCurrentUserId())));
+            UUID userId = getCurrentUserId();
+            // Log the ID to your terminal to verify the session is active
+            log.info("Checking eligibility for user: {}", userId);
+
+            var result = originationService.checkEligibility(userId);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data", result
+            ));
         } catch (Exception e) {
-            log.error("Eligibility check failed", e);
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            log.error("Eligibility check failed: ", e);
+            // Returning 200 with success: false is safer for Frontend catch blocks than a 400/500
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "message", e.getMessage(),
+                    "data", Map.of("eligible", false, "reasons", List.of("System session error: " + e.getMessage()))
+            ));
         }
     }
 
@@ -213,10 +228,21 @@ public class LoanController {
     @PostMapping("/secretary/{loanId}/table")
     public ResponseEntity<?> tableLoan(@PathVariable UUID loanId, @RequestBody Map<String, String> payload) {
         try {
-            LocalDateTime dateTime = LocalDateTime.parse(payload.get("meetingDate"));
+            String dateStr = payload.get("meetingDate");
+            LocalDateTime dateTime;
+
+            // Check if the string contains a time component (usually indicated by 'T' or ':')
+            if (dateStr.contains("T") || dateStr.contains(":")) {
+                dateTime = LocalDateTime.parse(dateStr);
+            } else {
+                // If it's just a date, convert it to the start of that day
+                dateTime = LocalDate.parse(dateStr).atStartOfDay();
+            }
+
             governanceService.tableLoan(loanId, dateTime);
-            return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled for meeting successfully."));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Loan tabled successfully."));
         } catch (Exception e) {
+            log.error("Tabling failed", e);
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }

@@ -71,7 +71,7 @@ public class LoanOriginationService {
         // We calculate the limit first to get the total savings value
         Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
 
-        double minSavings = systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN", 5000);
+        double minSavings = systemSettingService.getDouble("MIN_SAVINGS_FOR_LOAN", 50000);
         BigDecimal totalSavings = (BigDecimal) limitDetails.get("memberSavings");
 
         // Handle potential null savings in calculation
@@ -95,7 +95,9 @@ public class LoanOriginationService {
         Map<String, Object> response = new HashMap<>();
         response.put("eligible", isEligible);
         response.put("reasons", rejectionReasons);
-        response.put("details", limitDetails);
+        response.put("requiredMonths", minMonths);
+        response.put("requiredSavings", minSavings);
+        response.put("maxActiveLoans", 1);
 
         return response;
     }
