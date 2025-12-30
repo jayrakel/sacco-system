@@ -1,5 +1,4 @@
 package com.sacco.sacco_system.modules.loan.domain.entity;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -8,39 +7,35 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "loan_products")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class LoanProduct {
-
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String name;
 
     private String description;
 
-    private BigDecimal interestRate; // Annual %
+    // Terms
+    @Column(nullable = false)
+    private BigDecimal interestRate;
 
-    @Enumerated(EnumType.STRING)
-    private InterestType interestType;
+    @Column(nullable = false)
+    private Integer maxDurationWeeks;
 
-    private Integer maxTenureMonths;
+    @Column(nullable = false)
+    private BigDecimal maxAmount;
 
-    private BigDecimal maxLimit;
+    // --- Accounting Integration ---
+    // Links to GLAccount codes in the Finance Module
+    @Column(name = "receivable_account_code")
+    private String receivableAccountCode; // e.g. "1201" (Asset)
 
-    // âœ… NEW: Fee Configurations
-    private BigDecimal processingFee; // Flat fee (e.g., 500)
-    private BigDecimal penaltyRate;   // % of overdue amount (e.g., 10%)
+    @Column(name = "income_account_code")
+    private String incomeAccountCode; // e.g. "4001" (Income)
 
-    public enum InterestType {
-        FLAT_RATE,
-        REDUCING_BALANCE
-    }
+    @Builder.Default
+    private boolean isActive = true;
 }
-
-
-

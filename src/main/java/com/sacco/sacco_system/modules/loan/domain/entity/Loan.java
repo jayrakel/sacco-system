@@ -5,21 +5,17 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime; // ✅ Changed Import
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Entity
 @Table(name = "loans")
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Loan {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(unique = true, nullable = false)
@@ -29,92 +25,52 @@ public class Loan {
     @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "product_id", nullable = false)
     private LoanProduct product;
 
+    // --- Financials ---
     @Column(nullable = false)
     private BigDecimal principalAmount;
 
-    private BigDecimal loanBalance;
-    private BigDecimal interestRate;
-    private Integer duration;
+    @Column(nullable = false)
+    private BigDecimal interestRate; // Locked at time of application
 
-    @Enumerated(EnumType.STRING)
-    private DurationUnit durationUnit;
+    @Builder.Default
+    private BigDecimal loanBalance = BigDecimal.ZERO;
+
+    // --- Terms ---
+    // ✅ FIX: Renamed from 'duration' to 'durationWeeks' to match LoanApplicationService
+    private Integer durationWeeks;
 
     private BigDecimal weeklyRepaymentAmount;
-    private BigDecimal totalPrepaid;
-    private BigDecimal totalArrears;
 
-    private LocalDate expectedRepaymentDate;
-
+    // --- Status & Dates ---
     @Enumerated(EnumType.STRING)
     private LoanStatus status;
 
     private LocalDate applicationDate;
-    private LocalDate submissionDate;
     private LocalDate approvalDate;
+
+    // ✅ Required by LoanRepaymentService
     private LocalDate disbursementDate;
 
-    // ✅ CHANGED: Now stores Time as well
-    private LocalDateTime meetingDate;
-
-    private boolean applicationFeePaid;
-    private String checkNumber;
-    private Integer gracePeriodWeeks;
-
-    private boolean votingOpen;
-    private Integer votesYes;
-    private Integer votesNo;
-
-    @ElementCollection
-    private List<UUID> votedUserIds = new ArrayList<>();
-
-    @Column(columnDefinition = "TEXT")
-    private String secretaryComments;
-
-    @Column(columnDefinition = "TEXT")
-    private String rejectionReason;
-
+    // --- Relationships ---
     @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private List<Guarantor> guarantors = new ArrayList<>();
 
-    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<LoanRepayment> repayments = new ArrayList<>();
-
+    // ✅ Statuses required by FineService & Frontend
     public enum LoanStatus {
         DRAFT,
-        GUARANTORS_PENDING,
-        GUARANTORS_APPROVED,
-        APPLICATION_FEE_PENDING,
+        PENDING_GUARANTORS,
         SUBMITTED,
-        LOAN_OFFICER_REVIEW,
         APPROVED,
-        VERIFIED,
-        SECRETARY_TABLED,
-        ON_AGENDA,
-        VOTING_OPEN,
-        VOTING_CLOSED,
-        SECRETARY_DECISION,
-        TREASURER_DISBURSEMENT,
-        DISBURSED,
         ACTIVE,
         IN_ARREARS,
-        ADMIN_APPROVED,
+        DISBURSED,
         REJECTED,
-        DEFAULTED,
         COMPLETED,
-        WRITTEN_OFF
-    }
-
-    public enum DurationUnit {
-        WEEKS,
-        MONTHS,
-        YEARS
-    }
-
-    public String getMemberName() {
-        return member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown";
+        DEFAULTED
     }
 }

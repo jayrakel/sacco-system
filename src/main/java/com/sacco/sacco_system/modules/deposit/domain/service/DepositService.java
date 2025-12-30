@@ -190,14 +190,14 @@ public class DepositService {
 
         // Make loan repayment using the determined Source Account
         loanRepaymentService.processPayment(
-            loan, 
-            allocation.getAmount(), 
+            loan,
+            allocation.getAmount(),
             sourceAccount
         );
 
         allocation.setLoan(loan);
         allocation.setStatus(AllocationStatus.COMPLETED);
-        
+
         log.info("Routed {} to loan repayment for loan {} via {}", allocation.getAmount(), loan.getLoanNumber(), sourceAccount);
     }
 
