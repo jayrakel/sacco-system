@@ -12,6 +12,7 @@ import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/loans")
 @RequiredArgsConstructor
@@ -43,6 +45,7 @@ public class LoanController {
         try {
             return ResponseEntity.ok(Map.of("success", true, "data", originationService.checkEligibility(getCurrentUserId())));
         } catch (Exception e) {
+            log.error("Eligibility check failed", e);
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
@@ -57,22 +60,50 @@ public class LoanController {
             BigDecimal limit = loanLimitService.calculateMemberLoanLimit(member);
             return ResponseEntity.ok(Map.of("success", true, "limit", limit));
         } catch (Exception e) {
+            log.error("Limit check failed", e);
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
 
+    /**
+     * ✅ FIXED: Robust input validation to prevent HTTP 400 Errors on null values
+     */
     @PostMapping("/initiate-with-fee")
     public ResponseEntity<?> initiateWithFee(@RequestBody Map<String, Object> payload) {
         try {
-            UUID productId = UUID.fromString(payload.get("productId").toString());
-            String reference = payload.get("referenceCode").toString();
-            String paymentMethod = payload.getOrDefault("paymentMethod", "MPESA").toString();
-            String externalRef = payload.getOrDefault("externalReference", reference).toString();
+            // 1. Validate Payload Keys exist
+            if (payload.get("productId") == null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Product ID is missing"));
+            }
+            if (payload.get("referenceCode") == null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Payment Reference Code is missing"));
+            }
 
+            // 2. Parse Data Safely
+            UUID productId;
+            try {
+                productId = UUID.fromString(payload.get("productId").toString());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Invalid Product ID format"));
+            }
+
+            String reference = String.valueOf(payload.get("referenceCode"));
+            String paymentMethod = payload.containsKey("paymentMethod") ? String.valueOf(payload.get("paymentMethod")) : "MPESA";
+
+            // 3. Safe Fallback for External Reference (prevents NullPointerException)
+            Object extRefObj = payload.get("externalReference");
+            String externalRef = (extRefObj != null && !extRefObj.toString().isEmpty())
+                    ? extRefObj.toString()
+                    : reference;
+
+            // 4. Call Service
             LoanDTO draft = originationService.initiateWithFee(getCurrentUserId(), productId, externalRef, paymentMethod);
+
             return ResponseEntity.ok(Map.of("success", true, "data", draft));
+
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            log.error("Initiate loan failed", e); // Print full error to console
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Error: " + e.getMessage()));
         }
     }
 
@@ -86,6 +117,7 @@ public class LoanController {
             return ResponseEntity.ok(Map.of("success", true, "data",
                     originationService.submitApplication(loanId, amount, duration)));
         } catch (Exception e) {
+            log.error("Submit application failed", e);
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }
     }
@@ -204,6 +236,15 @@ public class LoanController {
         try {
             governanceService.castVote(loanId, getCurrentUserId(), payload.get("vote"));
             return ResponseEntity.ok(Map.of("success", true, "message", "Vote cast successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/products")
+    public ResponseEntity<?> createLoanProduct(@RequestBody com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct product) {
+        try {
+            return ResponseEntity.ok(Map.of("success", true, "data", loanProductRepository.save(product)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

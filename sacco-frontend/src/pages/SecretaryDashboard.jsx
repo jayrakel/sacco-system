@@ -28,7 +28,7 @@ export default function SecretaryDashboard() {
             const res = await api.get('/api/loans/admin/pending');
             if (res.data.success) {
                 const allData = res.data.data;
-                setPendingLoans(allData.filter(l => l.status === 'APPROVED'));
+                setPendingLoans(allData.filter(l => l.status === 'VERIFIED'));
                 setScheduledLoans(allData.filter(l => l.status === 'SECRETARY_TABLED'));
                 // ✅ NEW: Fetch active votes to monitor progress
                 setActiveVotes(allData.filter(l => l.status === 'VOTING_OPEN'));

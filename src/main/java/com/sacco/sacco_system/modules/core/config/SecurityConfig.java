@@ -4,6 +4,7 @@ import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -63,11 +64,14 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        // 1. ALLOW PRE-FLIGHT REQUESTS (OPTIONS)
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+                        // 2. PUBLIC ENDPOINTS
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/public/**",
-                                "/api/settings/**",
-                                "/api/verify/**",            // <--- ADD THIS LINE
+                                "/api/verify/**",
                                 "/api/resend-verification/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
@@ -75,6 +79,21 @@ public class SecurityConfig {
                                 "/uploads/**",
                                 "/error"
                         ).permitAll()
+
+                        // 3. SETTINGS READ (Open to all authenticated users for frontend config)
+                        .requestMatchers(HttpMethod.GET, "/api/settings/**").authenticated()
+
+                        // 4. SETTINGS WRITE (Admin Only - Adjusted to catch ROLE_ prefix issues)
+                        .requestMatchers(HttpMethod.PUT, "/api/settings/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "CHAIRPERSON", "ROLE_CHAIRPERSON", "TREASURER", "ROLE_TREASURER")
+                        .requestMatchers(HttpMethod.POST, "/api/settings/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "CHAIRPERSON", "ROLE_CHAIRPERSON", "TREASURER", "ROLE_TREASURER")
+
+                        // 5. SETUP WIZARD
+                        .requestMatchers("/api/setup/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "CHAIRPERSON", "ROLE_CHAIRPERSON", "TREASURER", "ROLE_TREASURER")
+
+                        // 6. LOAN PRODUCTS
+                        .requestMatchers("/api/loans/products/**").hasAnyAuthority("ADMIN", "ROLE_ADMIN", "TREASURER", "ROLE_TREASURER")
+
+                        // 7. DEFAULT
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
@@ -89,7 +108,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
+        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With"));
         configuration.setExposedHeaders(List.of("Authorization"));
@@ -101,4 +120,3 @@ public class SecurityConfig {
         return source;
     }
 }
-

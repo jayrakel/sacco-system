@@ -14,17 +14,17 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -34,6 +34,7 @@ public class LoanOriginationService {
     private final MemberRepository memberRepository;
     private final LoanProductRepository loanProductRepository;
     private final GuarantorRepository guarantorRepository;
+
     private final AccountingService accountingService;
     private final TransactionRepository transactionRepository;
     private final LoanLimitService loanLimitService;
@@ -42,10 +43,14 @@ public class LoanOriginationService {
     private final NotificationService notificationService;
     private final ReferenceCodeService referenceCodeService;
 
+    // --- ELIGIBILITY ---
     public Map<String, Object> checkEligibility(UUID userId) {
-        Member member = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
-        Map<String, Object> details = loanLimitService.calculateMemberLoanLimitWithDetails(member);
-        return Map.of("eligible", (boolean)details.get("canBorrow"), "details", details);
+        Member member = memberRepository.findByUserId(userId).orElse(null);
+        if (member == null) return Map.of("eligible", false, "reasons", List.of("Member not found"));
+
+        Map<String, Object> limitDetails = loanLimitService.calculateMemberLoanLimitWithDetails(member);
+
+        return Map.of("eligible", true, "details", limitDetails);
     }
 
     public List<Member> getEligibleGuarantors(UUID applicantUserId) {
@@ -55,56 +60,79 @@ public class LoanOriginationService {
                 .collect(Collectors.toList());
     }
 
+    // --- INITIATION ---
     public LoanDTO initiateWithFee(UUID userId, UUID productId, String userExtRef, String method) {
-        Member member = memberRepository.findByUserId(userId).orElseThrow();
-        LoanProduct product = loanProductRepository.findById(productId).orElseThrow();
+        Member member = memberRepository.findByUserId(userId).orElseThrow(() -> new RuntimeException("Member not found"));
+        LoanProduct product = loanProductRepository.findById(productId).orElseThrow(() -> new RuntimeException("Product not found"));
+
         BigDecimal fee = product.getProcessingFee() != null ? product.getProcessingFee() : BigDecimal.ZERO;
 
+        // Process Fee Transaction if applicable
         if (fee.compareTo(BigDecimal.ZERO) > 0) {
             String ref = referenceCodeService.generateReferenceCode();
             accountingService.postEvent("LOAN_PROCESSING_FEE", "App Fee", ref, fee, "1002", null);
+
             transactionRepository.save(Transaction.builder()
                     .member(member).amount(fee).type(Transaction.TransactionType.PROCESSING_FEE)
                     .paymentMethod(Transaction.PaymentMethod.MPESA).referenceCode(ref)
                     .transactionDate(LocalDateTime.now()).build());
         }
 
+        // Create Draft Loan
         Loan loan = Loan.builder()
                 .loanNumber("LN-" + System.currentTimeMillis())
-                .member(member).product(product).status(Loan.LoanStatus.DRAFT)
-                .applicationDate(LocalDate.now()).applicationFeePaid(true).build();
+                .member(member)
+                .product(product)
+                .status(Loan.LoanStatus.DRAFT)
+                .applicationDate(LocalDate.now())
+                .applicationFeePaid(true)
+
+                // ✅ FIX: Initialize amounts to ZERO to satisfy DB constraints
+                .principalAmount(BigDecimal.ZERO)
+                .loanBalance(BigDecimal.ZERO)
+                .weeklyRepaymentAmount(BigDecimal.ZERO)
+
+                .build();
+
         return LoanDTO.fromEntity(loanRepository.save(loan));
     }
 
     public LoanDTO submitApplication(UUID loanId, BigDecimal amount, Integer duration) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
 
+        // 1. Check Limits
         if (!loanLimitService.canMemberBorrow(loan.getMember(), amount)) {
             throw new RuntimeException("Amount exceeds available limit.");
         }
 
-        // Default to WEEKS if not specified (Standardizing on weeks for Sacco micro-loans)
+        // 2. Set Default Unit to WEEKS (As requested)
         Loan.DurationUnit unit = Loan.DurationUnit.WEEKS;
         loan.setDurationUnit(unit);
 
-        BigDecimal installment = repaymentScheduleService.calculateWeeklyRepayment(
-                amount, loan.getProduct().getInterestRate(), duration, unit
+        // 3. Calculate Repayment (Passing WEEKS unit)
+        BigDecimal weeklyRepayment = repaymentScheduleService.calculateWeeklyRepayment(
+                amount,
+                loan.getProduct().getInterestRate(),
+                duration,
+                unit
         );
 
-        validateAbilityToPay(loan.getMember(), installment);
+        // 4. Validate Ability to Pay
+        validateAbilityToPay(loan.getMember(), weeklyRepayment);
 
         loan.setPrincipalAmount(amount);
         loan.setDuration(duration);
-        loan.setWeeklyRepaymentAmount(installment);
+        loan.setWeeklyRepaymentAmount(weeklyRepayment);
         loan.setInterestRate(loan.getProduct().getInterestRate());
         loan.setStatus(Loan.LoanStatus.GUARANTORS_PENDING);
 
         return LoanDTO.fromEntity(loanRepository.save(loan));
     }
 
+    // --- GUARANTORS ---
     public GuarantorDTO addGuarantor(UUID loanId, UUID guarantorId, BigDecimal amount) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
-        Member guarantor = memberRepository.findById(guarantorId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+        Member guarantor = memberRepository.findById(guarantorId).orElseThrow(() -> new RuntimeException("Guarantor not found"));
 
         if (guarantor.getId().equals(loan.getMember().getId())) throw new RuntimeException("Cannot guarantee self");
 
@@ -112,12 +140,13 @@ public class LoanOriginationService {
                 .status(Guarantor.GuarantorStatus.PENDING).dateRequestSent(LocalDate.now()).build();
 
         g = guarantorRepository.save(g);
-        notificationService.notifyUser(guarantorId, "Guarantorship Request", "Please guarantee loan " + loan.getLoanNumber(), true, false);
+        notificationService.notifyUser(guarantorId, "Guarantorship Request",
+                "Please guarantee loan " + loan.getLoanNumber(), true, false);
         return GuarantorDTO.fromEntity(g);
     }
 
     public void finalizeGuarantorRequests(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
         boolean sent = false;
         for(Guarantor g : loan.getGuarantors()) {
             if(g.getStatus() == Guarantor.GuarantorStatus.PENDING) {
@@ -129,7 +158,7 @@ public class LoanOriginationService {
     }
 
     public void respondToGuarantorRequest(UUID userId, UUID requestId, String statusStr) {
-        Guarantor req = guarantorRepository.findById(requestId).orElseThrow();
+        Guarantor req = guarantorRepository.findById(requestId).orElseThrow(() -> new RuntimeException("Request not found"));
         if(!req.getMember().getUser().getId().equals(userId)) throw new RuntimeException("Unauthorized");
 
         req.setStatus(Guarantor.GuarantorStatus.valueOf(statusStr.toUpperCase()));

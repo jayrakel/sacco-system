@@ -8,6 +8,7 @@ import com.sacco.sacco_system.modules.loan.domain.entity.LoanDisbursement;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanDisbursementRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.admin.domain.service.systemsetting.SystemSettingService;
+import com.sacco.sacco_system.modules.notification.domain.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,19 +34,61 @@ public class LoanDisbursementService {
     private final AccountingService accountingService;
     private final LoanRepaymentService repaymentService;
     private final SystemSettingService systemSettingService;
+    private final NotificationService notificationService;
 
-    // --- WRITE OPERATIONS ---
-
-    public LoanDisbursement prepareDisbursement(UUID loanId, LoanDisbursement.DisbursementMethod method,
-                                                Map<String, String> methodDetails, String notes) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Loan not found"));
+    /**
+     * ✅ ONE-CLICK DISBURSEMENT (Finance Dashboard)
+     */
+    public void processDisbursement(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
 
         if (loan.getStatus() != Loan.LoanStatus.TREASURER_DISBURSEMENT) {
             throw new RuntimeException("Loan is not ready for disbursement. Current status: " + loan.getStatus());
         }
 
+        // Create Disbursement Record
+        LoanDisbursement disbursement = LoanDisbursement.builder()
+                .loan(loan)
+                .member(loan.getMember())
+                .amount(loan.getPrincipalAmount())
+                .method(LoanDisbursement.DisbursementMethod.MPESA)
+                .status(LoanDisbursement.DisbursementStatus.DISBURSED)
+                .preparedBy(getCurrentUserId())
+                .approvedBy(getCurrentUserId())
+                .disbursedBy(getCurrentUserId())
+                .approvedAt(LocalDateTime.now())
+                .disbursedAt(LocalDateTime.now())
+                .notes("Direct disbursement via Admin Dashboard")
+                .build();
+
+        disbursementRepository.save(disbursement);
+
+        // ✅ FIX: Use shared helper to set status to ACTIVE
+        updateLoanStatusAndFinancials(loan);
+
+        // Accounting & Notify
+        accountingService.postLoanDisbursement(loan, "1002");
+        notificationService.notifyUser(loan.getMember().getId(), "Funds Disbursed",
+                "KES " + loan.getPrincipalAmount() + " has been disbursed. Loan is now ACTIVE.", true, true);
+
+        log.info("Loan {} processed and activated via Direct Process.", loan.getLoanNumber());
+    }
+
+    /**
+     * TREASURER: Prepare disbursement
+     */
+    public LoanDisbursement prepareDisbursement(UUID loanId, LoanDisbursement.DisbursementMethod method,
+                                                Map<String, String> methodDetails, String notes) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        if (loan.getStatus() != Loan.LoanStatus.ADMIN_APPROVED && loan.getStatus() != Loan.LoanStatus.TREASURER_DISBURSEMENT) {
+            throw new RuntimeException("Loan must be approved before disbursement preparation.");
+        }
+
         if (disbursementRepository.findByLoan(loan).isPresent()) {
-            throw new RuntimeException("Disbursement process already started for this loan.");
+            throw new RuntimeException("Disbursement already exists for this loan");
         }
 
         LoanDisbursement disbursement = LoanDisbursement.builder()
@@ -58,65 +101,85 @@ public class LoanDisbursementService {
                 .notes(notes)
                 .build();
 
-        mapMethodDetails(disbursement, method, methodDetails);
+        LoanDisbursement saved = disbursementRepository.save(disbursement);
+
+        loan.setStatus(Loan.LoanStatus.TREASURER_DISBURSEMENT);
+        loanRepository.save(loan);
+
+        return saved;
+    }
+
+    /**
+     * CHAIRPERSON/ADMIN: Approve disbursement
+     */
+    public LoanDisbursement approveDisbursement(UUID disbursementId, String approvalNotes) {
+        LoanDisbursement disbursement = disbursementRepository.findById(disbursementId)
+                .orElseThrow(() -> new RuntimeException("Disbursement not found"));
+
+        if (disbursement.getStatus() != LoanDisbursement.DisbursementStatus.PREPARED) {
+            throw new RuntimeException("Disbursement must be in PREPARED status for approval");
+        }
+
+        disbursement.setStatus(LoanDisbursement.DisbursementStatus.APPROVED);
+        disbursement.setApprovedBy(getCurrentUserId());
+        disbursement.setApprovedAt(LocalDateTime.now());
+        if (approvalNotes != null) {
+            disbursement.setNotes(disbursement.getNotes() + "\nApproval: " + approvalNotes);
+        }
 
         return disbursementRepository.save(disbursement);
     }
 
-    public LoanDisbursement completeDisbursement(UUID disbursementId, String transactionRef, String notes) {
+    /**
+     * TREASURER: Complete disbursement
+     */
+    public LoanDisbursement completeDisbursement(UUID disbursementId, String transactionReference,
+                                                 String completionNotes, Map<String, String> additionalDetails) {
         LoanDisbursement disbursement = disbursementRepository.findById(disbursementId)
                 .orElseThrow(() -> new RuntimeException("Disbursement not found"));
+
+        if (disbursement.getStatus() != LoanDisbursement.DisbursementStatus.APPROVED) {
+            throw new RuntimeException("Disbursement must be approved before completion");
+        }
 
         disbursement.setStatus(LoanDisbursement.DisbursementStatus.DISBURSED);
         disbursement.setDisbursedBy(getCurrentUserId());
         disbursement.setDisbursedAt(LocalDateTime.now());
-        disbursement.setTransactionReference(transactionRef);
-        if (notes != null) disbursement.setNotes(disbursement.getNotes() + "\nCompleted: " + notes);
+        if (transactionReference != null) disbursement.setTransactionReference(transactionReference);
 
         LoanDisbursement saved = disbursementRepository.save(disbursement);
-        Loan loan = disbursement.getLoan();
 
-        // Critical State Transition: DISBURSED -> ACTIVE
-        loan.setStatus(Loan.LoanStatus.ACTIVE);
-        loan.setDisbursementDate(LocalDate.now());
-        loan.setLoanBalance(loan.getPrincipalAmount());
+        // ✅ FIX: Use shared helper to set status to ACTIVE
+        updateLoanStatusAndFinancials(disbursement.getLoan());
 
-        repaymentService.generateSchedule(loan);
-        loanRepository.save(loan);
-
+        // Accounting
         String sourceAccount = getCreditAccountForDisbursement(disbursement);
-        accountingService.postEvent(
-                "LOAN_DISBURSEMENT",
-                "Disbursement: " + loan.getLoanNumber(),
-                transactionRef,
-                loan.getPrincipalAmount(),
-                sourceAccount,
-                "2001"
-        );
+        accountingService.postLoanDisbursement(disbursement.getLoan(), sourceAccount);
 
-        log.info("Loan {} Activated. Disbursement Complete.", loan.getLoanNumber());
+        // Notify
+        notificationService.notifyUser(disbursement.getMember().getId(), "Funds Disbursed",
+                "Your loan has been disbursed and is now ACTIVE.", true, true);
+
         return saved;
     }
 
-    // --- READ OPERATIONS ---
+    // ✅ HELPER: Updates Loan to ACTIVE so it appears on Dashboard
+    private void updateLoanStatusAndFinancials(Loan loan) {
+        loan.setStatus(Loan.LoanStatus.ACTIVE); // ✅ CHANGED FROM DISBURSED TO ACTIVE
+        loan.setDisbursementDate(LocalDate.now());
+        loan.setLoanBalance(loan.getPrincipalAmount());
 
-    public LoanDisbursement getDisbursementByLoan(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
-        return disbursementRepository.findByLoan(loan).orElse(null);
+        int graceWeeks = 1;
+        try {
+            graceWeeks = Integer.parseInt(systemSettingService.getSetting("LOAN_GRACE_PERIOD_WEEKS").orElse("1"));
+        } catch (Exception e) {
+            log.warn("Using default grace period.");
+        }
+        loan.setGracePeriodWeeks(graceWeeks);
+        repaymentService.generateSchedule(loan);
+        loanRepository.save(loan);
     }
 
-    public List<LoanDisbursement> getPendingDisbursements() {
-        // Items that are prepared but not yet completed
-        return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.PREPARED);
-    }
-
-    // ✅ FIXED: Added this method to satisfy the controller
-    // In the new flow, "Awaiting Approval" effectively means "Prepared, waiting for completion"
-    public List<LoanDisbursement> getDisbursementsAwaitingApproval() {
-        return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.PREPARED);
-    }
-
-    // ✅ FIXED: Added this method for the dashboard
     public Map<String, Object> getDisbursementStatistics() {
         Map<String, Object> stats = new HashMap<>();
         for (LoanDisbursement.DisbursementStatus status : LoanDisbursement.DisbursementStatus.values()) {
@@ -126,35 +189,33 @@ public class LoanDisbursementService {
         return stats;
     }
 
-    // --- HELPERS ---
-
-    private void mapMethodDetails(LoanDisbursement d, LoanDisbursement.DisbursementMethod method, Map<String, String> details) {
-        switch (method) {
+    private String getCreditAccountForDisbursement(LoanDisbursement disbursement) {
+        switch (disbursement.getMethod()) {
+            case MPESA: return "1002";
             case CHEQUE:
-                d.setChequeNumber(details.get("chequeNumber"));
-                d.setBankName(details.get("bankName"));
-                d.setPayableTo(details.get("payableTo"));
-                break;
-            case MPESA:
-                d.setMpesaPhoneNumber(details.get("phoneNumber"));
-                break;
-            case BANK_TRANSFER:
-                d.setAccountNumber(details.get("accountNumber"));
-                d.setBankCode(details.get("bankCode"));
-                break;
+            case BANK_TRANSFER: return "1010";
+            case CASH: return "1001";
+            default: return "1002";
         }
     }
 
-    private String getCreditAccountForDisbursement(LoanDisbursement d) {
-        switch (d.getMethod()) {
-            case MPESA: return "1002";
-            case CASH: return "1001";
-            default: return "1010";
-        }
+    public LoanDisbursement getDisbursementByLoan(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        return disbursementRepository.findByLoan(loan).orElse(null);
+    }
+
+    public List<LoanDisbursement> getPendingDisbursements() {
+        return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.APPROVED);
+    }
+
+    public List<LoanDisbursement> getDisbursementsAwaitingApproval() {
+        return disbursementRepository.findByStatus(LoanDisbursement.DisbursementStatus.PREPARED);
     }
 
     private UUID getCurrentUserId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByEmailOrOfficialEmail(username).map(User::getId).orElse(null);
+        return userRepository.findByEmailOrOfficialEmail(username)
+                .map(User::getId)
+                .orElse(null);
     }
 }

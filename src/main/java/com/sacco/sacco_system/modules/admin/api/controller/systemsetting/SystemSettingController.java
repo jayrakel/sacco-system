@@ -18,7 +18,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SystemSettingController {
 
-    // ✅ Inject the 3 specialized handlers
     private final SystemSettingReadHandler readHandler;
     private final SystemSettingWriteHandler writeHandler;
     private final SystemSettingFileHandler fileHandler;
@@ -26,29 +25,36 @@ public class SystemSettingController {
     // --- READ ENDPOINTS ---
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'MANAGER')")
+    @PreAuthorize("isAuthenticated()") // ✅ Correct: Allows all logged-in users (Members/Admins)
     public ResponseEntity<?> getAllSettings() {
         return readHandler.getAllSettings();
     }
 
-    // --- WRITE ENDPOINTS ---
+    // --- WRITE ENDPOINTS (Text/JSON) ---
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    // ✅ FIX: Updated roles to match your actual system roles
+    @PreAuthorize("hasRole('ADMIN', 'CHAIRPERSON', 'TREASURER')")
     public ResponseEntity<?> createOrUpdateSetting(@RequestBody Map<String, String> body) {
         return writeHandler.createOrUpdateSetting(body);
     }
 
     @PutMapping("/{key}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    // ✅ FIX: Updated roles to match your actual system roles
+    @PreAuthorize("hasRole('ADMIN', 'CHAIRPERSON', 'TREASURER')")
     public ResponseEntity<?> updateSetting(@PathVariable String key, @RequestBody Map<String, String> body) {
         return writeHandler.updateSetting(key, body);
     }
 
-    // --- FILE ENDPOINTS ---
+    // --- FILE UPLOAD ENDPOINTS ---
 
+    /**
+     * Endpoint for uploading Logos/Favicons.
+     * Frontend MUST send a POST request to: /api/settings/upload/{key}
+     * Form Data Key MUST be: "file"
+     */
     @PostMapping(value = "/upload/{key}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN', 'CHAIRPERSON', 'TREASURER')")
     public ResponseEntity<?> uploadSettingImage(
             @PathVariable String key,
             @RequestPart("file") MultipartFile file

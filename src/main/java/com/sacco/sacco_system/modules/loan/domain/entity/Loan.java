@@ -91,6 +91,7 @@ public class Loan {
         SUBMITTED,
         LOAN_OFFICER_REVIEW,
         APPROVED,
+        VERIFIED,
         SECRETARY_TABLED,
         ON_AGENDA,
         VOTING_OPEN,

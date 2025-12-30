@@ -26,10 +26,14 @@ public class LoanDTO {
 
     // Loan Financials
     private BigDecimal principalAmount;
-    private BigDecimal loanBalance;       // Total Outstanding (Principal + Interest)
-    private BigDecimal weeklyRepaymentAmount; // Amount due per installment
-    private BigDecimal totalArrears;      // ✅ NEW: Amount overdue
-    private BigDecimal totalPrepaid;      // ✅ NEW: Excess paid (Wallet)
+    private BigDecimal loanBalance;
+    private BigDecimal weeklyRepaymentAmount;
+    private BigDecimal totalArrears;
+    private BigDecimal totalPrepaid;
+
+    // ✅ NEW: Member Financial Context (For Loan Officer)
+    private BigDecimal memberSavings;
+    private BigDecimal memberNetIncome;
 
     // Timeline
     private Integer duration;
@@ -38,7 +42,7 @@ public class LoanDTO {
     private LocalDate applicationDate;
     private LocalDate disbursementDate;
     private String expectedRepaymentDate;
-    private LocalDate nextPaymentDate;    // ✅ NEW: Critical for "Days Remaining" countdown
+    private LocalDate nextPaymentDate;
 
     // Metadata
     private String meetingDate;
@@ -47,16 +51,18 @@ public class LoanDTO {
     private BigDecimal processingFee;
     private Integer votesYes;
     private Integer votesNo;
-    private BigDecimal memberNetIncome;
 
     public static LoanDTO fromEntity(Loan loan) {
+        if (loan == null) return null;
+
         Member member = loan.getMember();
         BigDecimal netIncome = BigDecimal.ZERO;
-        if (member.getEmploymentDetails() != null && member.getEmploymentDetails().getNetMonthlyIncome() != null) {
+
+        // Extract Income safely
+        if (member != null && member.getEmploymentDetails() != null && member.getEmploymentDetails().getNetMonthlyIncome() != null) {
             netIncome = member.getEmploymentDetails().getNetMonthlyIncome();
         }
 
-        // ✅ Calculate Next Payment Date (First Pending Installment)
         LocalDate nextDue = null;
         if (loan.getRepayments() != null) {
             nextDue = loan.getRepayments().stream()
@@ -67,34 +73,39 @@ public class LoanDTO {
                     .orElse(null);
         }
 
+        String productName = (loan.getProduct() != null) ? loan.getProduct().getName() : "Unknown Product";
+        BigDecimal procFee = (loan.getProduct() != null) ? loan.getProduct().getProcessingFee() : BigDecimal.ZERO;
+
         return LoanDTO.builder()
                 .id(loan.getId())
                 .loanNumber(loan.getLoanNumber())
-                .memberId(member.getId())
-                .memberName(member.getFirstName() + " " + member.getLastName())
-                .productName(loan.getProduct().getName())
-                .principalAmount(loan.getPrincipalAmount())
-                .loanBalance(loan.getLoanBalance())
+                .memberId(member != null ? member.getId() : null)
+                .memberName(member != null ? member.getFirstName() + " " + member.getLastName() : "Unknown Member")
+                .productName(productName)
 
-                // ✅ Map Financials for Dashboard
-                .weeklyRepaymentAmount(loan.getWeeklyRepaymentAmount())
+                .principalAmount(loan.getPrincipalAmount() != null ? loan.getPrincipalAmount() : BigDecimal.ZERO)
+                .loanBalance(loan.getLoanBalance() != null ? loan.getLoanBalance() : BigDecimal.ZERO)
+                .weeklyRepaymentAmount(loan.getWeeklyRepaymentAmount() != null ? loan.getWeeklyRepaymentAmount() : BigDecimal.ZERO)
                 .totalArrears(loan.getTotalArrears() != null ? loan.getTotalArrears() : BigDecimal.ZERO)
                 .totalPrepaid(loan.getTotalPrepaid() != null ? loan.getTotalPrepaid() : BigDecimal.ZERO)
-                .nextPaymentDate(nextDue) // Send to frontend
+                .nextPaymentDate(nextDue)
+
+                // ✅ NOTE: savings is set to 0 here, but we will populate it in the Service!
+                .memberSavings(BigDecimal.ZERO)
+                .memberNetIncome(netIncome)
 
                 .duration(loan.getDuration())
                 .durationUnit(loan.getDurationUnit() != null ? loan.getDurationUnit().toString() : "MONTHS")
-                .status(loan.getStatus().toString())
+                .status(loan.getStatus() != null ? loan.getStatus().toString() : "DRAFT")
                 .applicationDate(loan.getApplicationDate())
                 .disbursementDate(loan.getDisbursementDate())
                 .approvalDate(loan.getApprovalDate())
                 .applicationFeePaid(loan.isApplicationFeePaid())
-                .processingFee(loan.getProduct().getProcessingFee())
+                .processingFee(procFee)
                 .votesYes(loan.getVotesYes() != null ? loan.getVotesYes() : 0)
                 .votesNo(loan.getVotesNo() != null ? loan.getVotesNo() : 0)
                 .expectedRepaymentDate(loan.getExpectedRepaymentDate() != null ? loan.getExpectedRepaymentDate().toString() : null)
                 .meetingDate(loan.getMeetingDate() != null ? loan.getMeetingDate().toString() : null)
-                .memberNetIncome(netIncome)
                 .build();
     }
 }
