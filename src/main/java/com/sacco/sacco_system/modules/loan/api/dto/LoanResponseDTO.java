@@ -12,6 +12,10 @@ public class LoanResponseDTO {
     private String loanNumber;
     private String productName;
     private BigDecimal principalAmount;
+
+    // ✅ ADDED: Current Balance
+    private BigDecimal balance;
+
     private String status;
     private LocalDate applicationDate;
 }
