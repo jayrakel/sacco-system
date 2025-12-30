@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional; // ✅ Added Import
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,12 +26,10 @@ public class UserService {
 
     @Transactional
     public User createUser(String firstName, String lastName, String email, String phoneNumber, User.Role role) {
-        // Check if email already exists
         if (userRepository.findByEmail(email).isPresent()) {
             throw new RuntimeException("A user with this email address already exists.");
         }
 
-        // Generate temporary password
         String tempPassword = UUID.randomUUID().toString().substring(0, 8);
 
         User newUser = User.builder()
@@ -52,12 +51,11 @@ public class UserService {
     }
 
     /**
-     * Create bootstrap user (for system initialization) with specific password and pre-verified email
+     * Create bootstrap user (for system initialization)
      */
     @Transactional
     public User createBootstrapUser(String firstName, String lastName, String email, String officialEmail,
-                                     String phoneNumber, String rawPassword, User.Role role) {
-        // Check if email already exists
+                                    String phoneNumber, String rawPassword, User.Role role) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new RuntimeException("A user with this email address already exists.");
         }
@@ -71,7 +69,7 @@ public class UserService {
                 .role(role)
                 .password(passwordEncoder.encode(rawPassword))
                 .mustChangePassword(true)
-                .emailVerified(true)  // Bootstrap users are pre-verified
+                .emailVerified(true)
                 .enabled(true)
                 .build();
 
@@ -108,26 +106,24 @@ public class UserService {
         return convertToDTO(savedUser);
     }
 
-    // ✅ NEW: Admin Force Verify
     @Transactional
     public void adminVerifyUser(UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         user.setEmailVerified(true);
         user.setEnabled(true);
         userRepository.save(user);
         log.info("Admin manually verified user: {}", user.getEmail());
     }
 
-    // ✅ NEW: Admin Reset Password
     @Transactional
     public void adminResetPassword(UUID userId, String newPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         user.setPassword(passwordEncoder.encode(newPassword));
-        user.setMustChangePassword(true); // Force them to change it on next login
+        user.setMustChangePassword(true);
         userRepository.save(user);
         log.info("Admin reset password for user: {}", user.getEmail());
     }
@@ -150,10 +146,17 @@ public class UserService {
         return convertToDTO(user);
     }
 
+    // Existing method returning DTO (Keep this for API)
     public UserDTO getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return convertToDTO(user);
+    }
+
+    // ✅ NEW METHOD ADDED FOR LOAN MODULE INTEGRATION
+    // This allows internal services (like LoanController) to get the raw User Entity
+    public Optional<User> findByEmail(String email) {
+        return userRepository.findByEmail(email);
     }
 
     @Transactional
@@ -210,7 +213,6 @@ public class UserService {
                 .updatedAt(user.getUpdatedAt())
                 .build();
     }
-    
 
     public String generateTemporaryPassword() {
         return UUID.randomUUID().toString().substring(0, 8);

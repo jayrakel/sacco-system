@@ -3,9 +3,9 @@ package com.sacco.sacco_system.modules.finance.domain.service;
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.finance.domain.entity.Fine;
 import com.sacco.sacco_system.modules.finance.domain.repository.FineRepository;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
+// ✅ REMOVED: Old LoanRepayment imports to fix compilation error
+// import com.sacco.sacco_system.modules.loan.domain.entity.LoanRepayment;
+// import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepaymentRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +32,7 @@ public class FineService {
 
     private final FineRepository fineRepository;
     private final MemberRepository memberRepository;
-    private final LoanRepaymentRepository loanRepaymentRepository;
+    // private final LoanRepaymentRepository loanRepaymentRepository; // ✅ Commented out for Skeleton Phase
     private final SystemSettingService systemSettingService;
     private final AccountingService accountingService;
 
@@ -41,7 +40,7 @@ public class FineService {
      * Impose a fine on a member
      */
     public Fine imposeFine(UUID memberId, UUID loanId, Fine.FineType type,
-                          BigDecimal amount, String description, Integer daysOverdue) {
+                           BigDecimal amount, String description, Integer daysOverdue) {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
@@ -55,13 +54,8 @@ public class FineService {
                 .daysOverdue(daysOverdue)
                 .build();
 
-        if (loanId != null) {
-            // Link to loan if provided
-            fine.setLoan(member.getLoans().stream()
-                    .filter(l -> l.getId().equals(loanId))
-                    .findFirst()
-                    .orElse(null));
-        }
+        // Note: Linking to Loan entity is temporarily disabled until Member-Loan relationship is verified
+        // if (loanId != null) { ... }
 
         Fine saved = fineRepository.save(fine);
 
@@ -71,55 +65,13 @@ public class FineService {
         return saved;
     }
 
-    /**
-     * Calculate and impose late payment fine for overdue loan repayment
-     */
+    /* * ✅ DISABLED FOR SKELETON PHASE
+     * We will re-enable "Late Fine Calculation" when we build the Repayment Schedule module.
+     *
     public Fine calculateLateFine(UUID loanRepaymentId) {
-        LoanRepayment repayment = loanRepaymentRepository.findById(loanRepaymentId)
-                .orElseThrow(() -> new RuntimeException("Repayment not found"));
-
-        if (repayment.getStatus() == LoanRepayment.RepaymentStatus.PAID) {
-            throw new RuntimeException("Repayment already paid. No fine needed.");
-        }
-
-        LocalDate today = LocalDate.now();
-        LocalDate dueDate = repayment.getDueDate();
-
-        if (today.isBefore(dueDate) || today.isEqual(dueDate)) {
-            throw new RuntimeException("Payment not yet overdue. No fine applicable.");
-        }
-
-        long daysOverdue = ChronoUnit.DAYS.between(dueDate, today);
-
-        // Get fine rate from settings (e.g., 1% per day or fixed amount)
-        BigDecimal fineRate = BigDecimal.valueOf(
-                systemSettingService.getDouble("LATE_PAYMENT_FINE_RATE", 0.01)); // 1% per day default
-
-        // Calculate fine amount
-        BigDecimal fineAmount = repayment.getAmount()
-                .multiply(fineRate)
-                .multiply(BigDecimal.valueOf(daysOverdue));
-
-        // Check for maximum fine cap
-        BigDecimal maxFine = BigDecimal.valueOf(
-                systemSettingService.getDouble("MAX_LATE_PAYMENT_FINE", 5000.0));
-
-        if (fineAmount.compareTo(maxFine) > 0) {
-            fineAmount = maxFine;
-        }
-
-        String description = String.format("Late payment fine for %d days overdue on installment #%d",
-                daysOverdue, repayment.getRepaymentNumber());
-
-        return imposeFine(
-                repayment.getLoan().getMember().getId(),
-                repayment.getLoan().getId(),
-                Fine.FineType.LATE_LOAN_PAYMENT,
-                fineAmount,
-                description,
-                (int) daysOverdue
-        );
+       // ... logic removed to allow compilation ...
     }
+    */
 
     /**
      * Pay a fine
@@ -144,7 +96,6 @@ public class FineService {
 
         // ✅ POST TO ACCOUNTING
         accountingService.postFinePayment(fine.getMember(), fine.getAmount());
-        // Creates: DEBIT Cash (1020), CREDIT Other Income (4040)
 
         log.info("Fine paid by member {}: KES {}",
                 fine.getMember().getMemberNumber(), fine.getAmount());
@@ -225,40 +176,11 @@ public class FineService {
         );
     }
 
-    /**
-     * Automated: Check for overdue payments and impose fines
-     * This can be scheduled to run daily
-     */
+    /* * ✅ DISABLED FOR SKELETON PHASE
+     *
     public List<Fine> processOverduePayments() {
-        List<LoanRepayment> overduePayments = loanRepaymentRepository
-                .findByStatusAndDueDateBefore(
-                        LoanRepayment.RepaymentStatus.PENDING,
-                        LocalDate.now()
-                );
-
-        List<Fine> finesImposed = new java.util.ArrayList<>();
-
-        for (LoanRepayment repayment : overduePayments) {
-            try {
-                // Check if fine already exists for this repayment
-                List<Fine> existingFines = fineRepository.findByLoanId(repayment.getLoan().getId());
-                boolean fineExists = existingFines.stream()
-                        .anyMatch(f -> f.getDescription().contains("installment #" + repayment.getRepaymentNumber()));
-
-                if (!fineExists) {
-                    Fine fine = calculateLateFine(repayment.getId());
-                    finesImposed.add(fine);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to impose fine for repayment {}: {}",
-                        repayment.getId(), e.getMessage());
-            }
-        }
-
-        log.info("Processed {} overdue payments, imposed {} fines",
-                overduePayments.size(), finesImposed.size());
-
-        return finesImposed;
+       // ... logic removed to allow compilation ...
+       return new java.util.ArrayList<>();
     }
+    */
 }
-

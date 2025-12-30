@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,11 +38,15 @@ public class FineController {
     public ResponseEntity<Map<String, Object>> imposeFine(@RequestBody Map<String, Object> request) {
         try {
             UUID memberId = UUID.fromString((String) request.get("memberId"));
-            UUID loanId = request.get("loanId") != null ?
-                    UUID.fromString((String) request.get("loanId")) : null;
+
+            // Handle optional loanId safely
+            String loanIdStr = (String) request.get("loanId");
+            UUID loanId = (loanIdStr != null && !loanIdStr.isEmpty()) ? UUID.fromString(loanIdStr) : null;
+
             Fine.FineType type = Fine.FineType.valueOf((String) request.get("type"));
             BigDecimal amount = new BigDecimal(request.get("amount").toString());
             String description = (String) request.get("description");
+
             Integer daysOverdue = request.get("daysOverdue") != null ?
                     Integer.parseInt(request.get("daysOverdue").toString()) : null;
 
@@ -205,11 +210,13 @@ public class FineController {
     @PostMapping("/process-overdue")
     public ResponseEntity<Map<String, Object>> processOverduePayments() {
         try {
-            List<Fine> fines = fineService.processOverduePayments();
+            // ✅ FIX: Disabled temporarily for Skeleton Phase
+            // List<Fine> fines = fineService.processOverduePayments();
+            List<Fine> fines = Collections.emptyList();
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "message", "Processed overdue payments. Imposed " + fines.size() + " fines.",
+                    "message", "Automatic fine processing is disabled in Skeleton Mode.",
                     "data", fines
             ));
         } catch (Exception e) {
@@ -220,4 +227,3 @@ public class FineController {
         }
     }
 }
-

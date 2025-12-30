@@ -16,7 +16,6 @@ import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeServic
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanRepaymentService;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
@@ -57,7 +56,6 @@ public class DepositService {
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
     private final SavingsService savingsService;
-    private final LoanService loanService;
     private final LoanRepaymentService loanRepaymentService;
     private final SystemSettingService systemSettingService;
 
@@ -192,14 +190,14 @@ public class DepositService {
 
         // Make loan repayment using the determined Source Account
         loanRepaymentService.processPayment(
-            loan, 
-            allocation.getAmount(), 
+            loan,
+            allocation.getAmount(),
             sourceAccount
         );
 
         allocation.setLoan(loan);
         allocation.setStatus(AllocationStatus.COMPLETED);
-        
+
         log.info("Routed {} to loan repayment for loan {} via {}", allocation.getAmount(), loan.getLoanNumber(), sourceAccount);
     }
 

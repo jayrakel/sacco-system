@@ -97,7 +97,7 @@ export default function AddMember() {
             });
             if (res.data.success) {
                 alert("Member Registered Successfully!");
-                navigate('/dashboard/members');
+                navigate('/admin-dashboard?tab=members');
             }
         } catch (error) {
             console.error(error);

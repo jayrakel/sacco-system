@@ -1,44 +1,32 @@
 package com.sacco.sacco_system.modules.loan.domain.entity;
 
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
-@Table(name = "guarantors")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@Table(name = "loan_guarantors")
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Guarantor {
-
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "loan_id", nullable = false)
     private Loan loan;
 
-    @ManyToOne
-    @JoinColumn(name = "member_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "member_id", nullable = false)
     private Member member;
 
+    @Column(nullable = false)
     private BigDecimal guaranteeAmount;
 
     @Enumerated(EnumType.STRING)
     private GuarantorStatus status;
 
-    private LocalDate dateRequestSent;
-    private LocalDate dateResponded;
-
-    public enum GuarantorStatus {
-        PENDING, ACCEPTED, DECLINED
-    }
+    public enum GuarantorStatus { PENDING, ACCEPTED, DECLINED }
 }
-
-
-

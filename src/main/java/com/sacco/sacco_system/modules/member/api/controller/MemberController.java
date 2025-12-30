@@ -5,6 +5,7 @@ import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.member.domain.service.MemberService;
+import com.sacco.sacco_system.modules.registration.domain.service.RegistrationService; // ✅ Added Import
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -25,6 +26,7 @@ public class MemberController {
 
     private final MemberService memberService;
     private final MemberRepository memberRepository;
+    private final RegistrationService registrationService; // ✅ Inject RegistrationService
 
     // Get Logged-in Member Profile
     @GetMapping("/me")
@@ -49,17 +51,18 @@ public class MemberController {
             // Convert JSON string to DTO
             ObjectMapper mapper = new ObjectMapper();
             mapper.findAndRegisterModules(); // Handle Dates
-            
+
             // This now deserializes nested Beneficiaries and EmploymentDetails
             MemberDTO memberDTO = mapper.readValue(memberDtoString, MemberDTO.class);
-            
-            // Call the updated Service method
-            MemberDTO created = memberService.createMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode, null);
+
+            // ✅ CRITICAL FIX: Call RegistrationService instead of MemberService
+            // This ensures User account is created and Welcome Email is sent
+            MemberDTO created = registrationService.registerMember(memberDTO, file, paymentMethod, referenceCode, bankAccountCode);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", created);
-            response.put("message", "Member created successfully");
+            response.put("message", "Member registered successfully. Login credentials sent to email.");
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
             e.printStackTrace();

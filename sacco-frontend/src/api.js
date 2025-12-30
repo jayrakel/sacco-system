@@ -26,55 +26,31 @@ api.interceptors.response.use(
     // Network Error (no response from server)
     if (!error.response) {
       console.error("❌ Network error - no response from server");
-      // DEBUGGING: Disabled redirect - show error in console
-      // if (window.location.pathname !== '/network-error') {
-      //   window.location.href = '/network-error';
-      // }
       return Promise.reject(error);
     }
 
     const status = error.response.status;
-    const currentPath = window.location.pathname;
 
     // DEBUGGING MODE: All error redirects disabled - showing errors in console
     console.error(`❌ HTTP ${status} Error:`, error.response.data);
     console.error("Full error details:", error);
     console.error("Request URL:", error.config?.url);
-    
+
     // Handle different HTTP status codes
     switch (status) {
       case 400:
-        // Bad Request - Invalid data sent to server
         console.warn("Bad request - validation error:", error.response.data);
-        // DEBUGGING: Redirect disabled
-        // if (error.response.data?.critical) {
-        //   window.location.href = '/bad-request';
-        // }
         break;
 
       case 401:
-        // Unauthorized - Session expired or not logged in
         console.warn("Session expired or unauthorized:", error.response.data);
-        // DEBUGGING: Redirect disabled
-        // if (currentPath !== '/' && currentPath !== '/login' && currentPath !== '/session-expired') {
-        //   localStorage.removeItem('sacco_user');
-        //   localStorage.removeItem('sacco_token');
-        //   window.location.href = '/session-expired';
-        // }
         break;
 
       case 403:
-        // Forbidden - User doesn't have permission
         console.warn("Access forbidden:", error.response.data);
-        // DEBUGGING: Redirect disabled
-        // const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
-        // if (!isAuthEndpoint && currentPath !== '/unauthorized') {
-        //   window.location.href = '/unauthorized';
-        // }
         break;
 
       case 404:
-        // Not Found - API endpoint doesn't exist
         console.warn("Resource not found:", error.config.url);
         break;
 
@@ -82,16 +58,10 @@ api.interceptors.response.use(
       case 502:
       case 503:
       case 504:
-        // Server Error
         console.error("Server error:", error.response.data);
-        // DEBUGGING: Redirect disabled
-        // if (currentPath !== '/server-error') {
-        //   window.location.href = '/server-error';
-        // }
         break;
 
       default:
-        // Other errors
         console.error(`HTTP Error ${status}:`, error.response.data);
     }
 
@@ -100,3 +70,55 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// =========================================================================
+// ✅ NEW: Loan Module Services
+// These functions use the 'api' instance above, so Auth Tokens are auto-included.
+// =========================================================================
+
+export const loanService = {
+  /**
+   * Fetches the dashboard data (Eligibility status + Active Loans list)
+   * GET /api/loans/dashboard
+   */
+  getDashboard: async () => {
+    const response = await api.get('/api/loans/dashboard');
+    return response.data; // Returns { success: true, data: { ... } }
+  },
+
+  /**
+   * Fetches available loan products for the application form
+   * GET /api/loans/products
+   */
+  getProducts: async () => {
+    const response = await api.get('/api/loans/products');
+    return response.data;
+  },
+
+  /**
+   * Submits a new loan application
+   * POST /api/loans/apply
+   */
+  applyForLoan: async (loanData) => {
+    const response = await api.post('/api/loans/apply', loanData);
+    return response.data;
+  },
+
+  /**
+   * Adds a guarantor to a draft loan
+   * POST /api/loans/{loanId}/guarantors
+   */
+  addGuarantor: async (loanId, guarantorData) => {
+    const response = await api.post(`/api/loans/${loanId}/guarantors`, guarantorData);
+    return response.data;
+  },
+
+  /**
+   * Finalizes the application
+   * POST /api/loans/{loanId}/submit
+   */
+  submitApplication: async (loanId) => {
+    const response = await api.post(`/api/loans/${loanId}/submit`);
+    return response.data;
+  }
+};
