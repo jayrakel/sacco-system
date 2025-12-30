@@ -5,8 +5,6 @@ import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount; // ✅ Added
-import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository; // ✅ Added
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -14,7 +12,6 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -22,7 +19,6 @@ public class LoanLimitService {
 
     private final LoanRepository loanRepository;
     private final SystemSettingService systemSettingService;
-    private final SavingsAccountRepository savingsAccountRepository; // ✅ Injected
 
     /**
      * Calculate available loan limit for a member
@@ -45,12 +41,10 @@ public class LoanLimitService {
         double multiplier = systemSettingService.getDouble("LOAN_LIMIT_MULTIPLIER");
         if (multiplier <= 0) multiplier = 3.0;
 
-        // ✅ FIX: Calculate Total Savings from actual Accounts, not the cached Member field
-        BigDecimal savings = savingsAccountRepository.findByMember_Id(member.getId())
-                .stream()
-                .map(SavingsAccount::getBalance)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // ✅ FIX: Use Member's totalSavings field directly.
+        // This is more reliable than summing accounts if the repository query returns empty.
+        BigDecimal savings = member.getTotalSavings();
+        if (savings == null) savings = BigDecimal.ZERO;
 
         BigDecimal savingsBasedLimit = savings.multiply(BigDecimal.valueOf(multiplier));
 
