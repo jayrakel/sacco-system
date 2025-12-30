@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { useSettings } from '../../../context/SettingsContext';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, CreditCard, Loader2, Plus } from 'lucide-react';
 
-// ✅ IMPORT THE NEW WIDGETS
+// ✅ CORRECTED IMPORTS: Widgets are in the loans dashboard
 import ActiveLoanCard from '../../loans/components/dashboard/ActiveLoanCard';
 import LoanVotingWidget from '../../loans/components/dashboard/LoanVotingWidget';
 import LoanEligibilityWidget from '../../loans/components/dashboard/LoanEligibilityWidget';
 import LoanHistoryList from '../../loans/components/dashboard/LoanHistoryList';
 
-// Import Modals
-import LoanApplicationModal from './LoanApplicationModal';
-import LoanFeePaymentModal from './LoanFeePaymentModal';
+// ✅ CORRECTED IMPORTS: Modals are also in the loans dashboard
+import LoanApplicationModal from '../../loans/components/dashboard/LoanApplicationModal';
+// We use the dashboard Fee Modal as it contains the logic we built earlier
+import LoanFeePaymentModal from '../../loans/components/dashboard/LoanFeePaymentModal';
 
 export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     const { settings } = useSettings();
@@ -71,24 +72,31 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         setIsApplyModalOpen(true);
     };
 
-    // ✅ STEP 2: Draft Created -> Close Form & Open Fee Payment
+    // ✅ STEP 2: Draft Created -> Close Form & Check Fee
     const handleDraftCreated = (draftLoan) => {
         setIsApplyModalOpen(false);
-        setSelectedLoan(draftLoan);
-        setIsPayFeeModalOpen(true); // Proceed to payment immediately
-        loadDashboardData(); // Refresh list to show new DRAFT
+
+        // Only open fee modal if the fee wasn't paid in the wizard
+        if (draftLoan.status === 'DRAFT' && !draftLoan.feePaid) {
+            setSelectedLoan(draftLoan);
+            setIsPayFeeModalOpen(true);
+        } else {
+            alert(`Application Created Successfully! Ref: ${draftLoan.loanNumber}`);
+        }
+
+        loadDashboardData(); // Refresh list
     };
 
     // ✅ STEP 3: Fee Paid -> Close Everything & Refresh
     const handleFeeSuccess = () => {
         setIsPayFeeModalOpen(false);
-        alert("Application Fee Paid Successfully! Your loan is now under review.");
+        alert("Application Fee Paid Successfully! You can now add guarantors.");
         loadDashboardData();
     };
 
     const activeLoan = loans.find(l => l.status === 'ACTIVE' || l.status === 'IN_ARREARS');
 
-    if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse">Loading Dashboard...</div>;
+    if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse"><Loader2 className="animate-spin mx-auto mb-2"/> Loading Dashboard...</div>;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -101,7 +109,13 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
             )}
 
             {/* 1. Show Active Loan (Top Priority) */}
-            <ActiveLoanCard loan={activeLoan} />
+            <ActiveLoanCard
+                loan={activeLoan}
+                onPayFee={(loan) => {
+                    setSelectedLoan(loan);
+                    setIsPayFeeModalOpen(true);
+                }}
+            />
 
             {/* 2. Show Voting Actions */}
             <LoanVotingWidget activeVotes={activeVotes} onVote={handleCastVote} />
@@ -126,7 +140,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
             <LoanApplicationModal
                 isOpen={isApplyModalOpen}
                 onClose={() => setIsApplyModalOpen(false)}
-                onSuccess={handleDraftCreated} // Links to Fee Step
+                onSuccess={handleDraftCreated} // Links to Fee Step check
                 resumeLoan={selectedLoan}
             />
 

@@ -55,6 +55,10 @@ public class Loan {
     // ✅ Required by LoanRepaymentService
     private LocalDate disbursementDate;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean feePaid = false;
+
     // --- Relationships ---
     @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

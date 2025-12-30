@@ -13,9 +13,12 @@ public class LoanResponseDTO {
     private String productName;
     private BigDecimal principalAmount;
 
-    // ✅ ADDED: Current Balance
+    // Current Balance
     private BigDecimal balance;
 
     private String status;
     private LocalDate applicationDate;
+
+    // ✅ ADDED: Fixes "cannot find symbol" error
+    private boolean feePaid;
 }

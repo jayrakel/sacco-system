@@ -85,10 +85,10 @@ public class AccountingService {
                 .orElseThrow(() -> new RuntimeException("GL Mapping not found for event: " + eventName));
 
         // Use overrides if provided, otherwise fallback to defaults
-        String debitCode = (overrideDebitAccount != null && !overrideDebitAccount.isEmpty()) 
+        String debitCode = (overrideDebitAccount != null && !overrideDebitAccount.isEmpty())
                 ? overrideDebitAccount : mapping.getDebitAccountCode();
-                
-        String creditCode = (overrideCreditAccount != null && !overrideCreditAccount.isEmpty()) 
+
+        String creditCode = (overrideCreditAccount != null && !overrideCreditAccount.isEmpty())
                 ? overrideCreditAccount : mapping.getCreditAccountCode();
 
         postDoubleEntry(description, referenceNo, debitCode, creditCode, amount);
@@ -289,7 +289,7 @@ public class AccountingService {
                 if (row[0].equals(account.getCode())) {
                     BigDecimal debit = (row[1] != null) ? (BigDecimal) row[1] : BigDecimal.ZERO;
                     BigDecimal credit = (row[2] != null) ? (BigDecimal) row[2] : BigDecimal.ZERO;
-                    
+
                     if (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE) {
                         openingBal = debit.subtract(credit);
                     } else {
@@ -309,9 +309,9 @@ public class AccountingService {
             }
 
             // Only add active accounts or accounts with non-zero activity/balance
-            if (account.isActive() || openingBal.compareTo(BigDecimal.ZERO) != 0 || 
-                periodDebit.compareTo(BigDecimal.ZERO) != 0 || periodCredit.compareTo(BigDecimal.ZERO) != 0) {
-                
+            if (account.isActive() || openingBal.compareTo(BigDecimal.ZERO) != 0 ||
+                    periodDebit.compareTo(BigDecimal.ZERO) != 0 || periodCredit.compareTo(BigDecimal.ZERO) != 0) {
+
                 BigDecimal netChange = (account.getType() == AccountType.ASSET || account.getType() == AccountType.EXPENSE)
                         ? periodDebit.subtract(periodCredit)
                         : periodCredit.subtract(periodDebit);
@@ -337,8 +337,8 @@ public class AccountingService {
      */
     public List<JournalEntry> getJournalEntries(LocalDate startDate, LocalDate endDate) {
         return journalEntryRepository.findByTransactionDateBetween(
-            startDate.atStartOfDay(),
-            endDate.atTime(LocalTime.MAX)
+                startDate.atStartOfDay(),
+                endDate.atTime(LocalTime.MAX)
         );
     }
 
@@ -356,15 +356,15 @@ public class AccountingService {
      */
     public void postLoanDisbursement(Loan loan, String sourceAccountCode) {
         log.info("Posting loan disbursement for loan {} from {}", loan.getLoanNumber(), sourceAccountCode);
-        
+
         // Pass sourceAccountCode as the CREDIT override (2nd override param)
         postEvent(
-            "LOAN_DISBURSEMENT", 
-            "Loan Disbursement - " + loan.getLoanNumber(),
-            loan.getLoanNumber(), 
-            loan.getPrincipalAmount(), 
-            null,              // Default Debit (1200 Loan Receivable)
-            sourceAccountCode  // Override Credit (Source of Funds)
+                "LOAN_DISBURSEMENT",
+                "Loan Disbursement - " + loan.getLoanNumber(),
+                loan.getLoanNumber(),
+                loan.getPrincipalAmount(),
+                null,              // Default Debit (1200 Loan Receivable)
+                sourceAccountCode  // Override Credit (Source of Funds)
         );
     }
 
@@ -459,13 +459,13 @@ public class AccountingService {
             InputStream inputStream = resource.getInputStream();
 
             List<Map<String, String>> accountsData = objectMapper.readValue(
-                inputStream,
-                new TypeReference<List<Map<String, String>>>() {}
+                    inputStream,
+                    new TypeReference<List<Map<String, String>>>() {}
             );
 
             for (Map<String, String> accountData : accountsData) {
                 String code = accountData.get("code");
-                
+
                 // ✅ Check if THIS account exists before adding it
                 // This ensures accounts.json is the source of truth for missing accounts
                 if (!glAccountRepository.existsById(code)) {
@@ -490,7 +490,7 @@ public class AccountingService {
 
     /**
      * Initialize default GL mappings for common transaction types
-     * ✅ UPDATED: Now includes ASSET_PURCHASE and runs on every startup.
+     * ✅ UPDATED: Now includes ASSET_PURCHASE and LOAN_APPLICATION_FEE.
      */
     public void initDefaultMappings() {
         log.info("🔗 Creating default GL Mappings...");
@@ -525,8 +525,13 @@ public class AccountingService {
         // Fine/Penalty Payment Mapping
         createMapping("FINE_PAYMENT", "1002", "4004", "Fine/Penalty Payment");
 
-        // ✅ ADDED: Asset Purchase Mapping (Debit Fixed Assets, Credit Cash/Bank)
+        // Asset Purchase Mapping
         createMapping("ASSET_PURCHASE", "1300", "1001", "Asset Purchase");
+
+        // ✅ ADDED: Default mapping for Loan Application Fees (Step 1)
+        // Debit: 1002 (M-Pesa/Cash Collection)
+        // Credit: 4200 (Fee Income - Default)
+        createMapping("LOAN_APPLICATION_FEE", "1002", "4200", "Loan Application Fee");
 
         log.info("✅ Created default GL Mappings");
     }
@@ -534,9 +539,9 @@ public class AccountingService {
     private void createMapping(String eventType, String debitAccount, String creditAccount, String description) {
         // Prevent duplicates
         if (glMappingRepository.findByEventName(eventType).isPresent()) {
-            return; 
+            return;
         }
-        
+
         GlMapping mapping = GlMapping.builder()
                 .eventName(eventType)
                 .debitAccountCode(debitAccount)

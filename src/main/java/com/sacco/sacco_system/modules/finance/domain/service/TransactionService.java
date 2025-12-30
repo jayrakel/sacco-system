@@ -13,6 +13,7 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -26,7 +27,6 @@ public class TransactionService {
     private final SavingsAccountRepository savingsAccountRepository;
     private final AccountingService accountingService;
 
-    // ✅ UPDATED: Now accepts optional date range for system-wide reporting
     public List<Transaction> getAllTransactions(LocalDate startDate, LocalDate endDate) {
         if (startDate != null && endDate != null) {
             // Fetch transactions within the range
@@ -180,5 +180,39 @@ public class TransactionService {
             }
         }
         throw new RuntimeException("Unable to identify current member");
+    }
+
+    /**
+     * ✅ UPDATED: Dynamic Fee Recording
+     * @param incomeGlCode Optional override. If provided (from LoanProduct), it replaces the default Credit account.
+     */
+    @Transactional
+    public void recordProcessingFee(Member member, BigDecimal amount, String referenceCode, String incomeGlCode) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        // 1. Create Transaction Record (Audit Trail)
+        Transaction transaction = Transaction.builder()
+                .member(member)
+                .amount(amount)
+                .type(Transaction.TransactionType.PROCESSING_FEE)
+                .paymentMethod(Transaction.PaymentMethod.MPESA) // Assuming mobile money for "There and Then"
+                .referenceCode(referenceCode)
+                .description("Loan Application Fee Payment")
+                .transactionDate(LocalDateTime.now())
+                .build();
+
+        transactionRepository.save(transaction);
+
+        // 2. Post to Accounting (Dynamic)
+        // We use "LOAN_APPLICATION_FEE" to look up defaults (Dr: 1002, Cr: 4200).
+        // If 'incomeGlCode' is passed, it overrides the Credit side (Income).
+        accountingService.postEvent(
+                "LOAN_APPLICATION_FEE",
+                "Loan App Fee: " + referenceCode,
+                referenceCode,
+                amount,
+                null,          // Default Debit (Use mapping's 1002)
+                incomeGlCode   // Override Credit (Use Product's Income Code if available)
+        );
     }
 }

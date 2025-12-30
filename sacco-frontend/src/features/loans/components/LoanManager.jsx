@@ -1,128 +1,194 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, Clock, Calendar, Gavel } from 'lucide-react';
+import api from '../../../api';
 
-// Simple Badge Component for Status
+export default function LoanManager({ currentUser }) {
+    const [loans, setLoans] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchLoans();
+    }, []);
+
+    const fetchLoans = async () => {
+        try {
+            // This endpoint must exist in LoanController (GET /api/loans)
+            const res = await api.get('/api/loans');
+            if (res.data.success) {
+                setLoans(res.data.data);
+            }
+        } catch (e) {
+            console.error("Failed to load loans", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // --- ACTIONS ---
+
+    const handleOfficerReview = async (id) => {
+        if(!window.confirm("Start Review Process?")) return;
+        try { await api.post(`/api/loans/${id}/review`); fetchLoans(); } catch(e) { alert(e.message); }
+    };
+
+    const handleOfficerApprove = async (id) => {
+        if(!window.confirm("Approve and Table for Secretary?")) return;
+        try { await api.post(`/api/loans/${id}/approve`); fetchLoans(); } catch(e) { alert(e.message); }
+    };
+
+    const handleTableLoan = async (id) => {
+        const date = prompt("Enter Meeting Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if(!date) return;
+        try {
+            await api.post(`/api/loans/${id}/table`, null, { params: { meetingDate: date } });
+            alert("Loan Tabled!");
+            fetchLoans();
+        } catch(e) { alert("Failed to table loan"); }
+    };
+
+    const handleOpenVoting = async (id) => {
+        if(!window.confirm("Open Voting for this loan?")) return;
+        try { await api.post(`/api/loans/${id}/vote/open`); fetchLoans(); } catch(e) { alert(e.response?.data?.message || "Voting Error"); }
+    };
+
+    const handleFinalizeVote = async (id) => {
+        const approved = window.confirm("Did the vote pass?");
+        const comments = prompt("Enter meeting minutes/comments:");
+        try {
+            await api.post(`/api/loans/${id}/vote/close`, null, { params: { manualApproved: approved, comments } });
+            alert("Vote Finalized!");
+            fetchLoans();
+        } catch(e) { alert("Error finalizing"); }
+    };
+
+    const handleSecretaryFinalApprove = async (id) => {
+        if(!window.confirm("Give Final Approval for Disbursement?")) return;
+        try { await api.post(`/api/loans/${id}/final-approve`); fetchLoans(); } catch(e) { alert("Error approving"); }
+    };
+
+    const handleDisburse = async (id) => {
+        const ref = prompt("Enter Cheque/Ref Number:");
+        if(!ref) return;
+        try { await api.post(`/api/loans/${id}/disburse`, null, { params: { checkNumber: ref } }); fetchLoans(); } catch(e) { alert("Error disbursing"); }
+    };
+
+    // --- HELPER: RENDER ACTION BUTTONS BASED ON STATUS & ROLE ---
+    const renderActions = (loan) => {
+        const role = currentUser?.role || 'ADMIN'; // Default to admin for testing
+        const status = loan.status;
+
+        // 1. OFFICER ACTIONS
+        if (status === 'SUBMITTED' && (role === 'LOAN_OFFICER' || role === 'ADMIN')) {
+            return <button onClick={() => handleOfficerReview(loan.id)} className="btn-action bg-blue-100 text-blue-700">Start Review</button>;
+        }
+        if (status === 'LOAN_OFFICER_REVIEW' && (role === 'LOAN_OFFICER' || role === 'ADMIN')) {
+            return <button onClick={() => handleOfficerApprove(loan.id)} className="btn-action bg-green-100 text-green-700">Approve & Table</button>;
+        }
+
+        // 2. SECRETARY ACTIONS (Tabling)
+        if (status === 'SECRETARY_TABLED' && (role === 'SECRETARY' || role === 'ADMIN')) {
+            return <button onClick={() => handleTableLoan(loan.id)} className="btn-action bg-amber-100 text-amber-700"><Calendar size={14}/> Table Loan</button>;
+        }
+
+        // 3. CHAIRPERSON ACTIONS (Voting)
+        if (status === 'ON_AGENDA' && (role === 'CHAIRPERSON' || role === 'ADMIN')) {
+            return <button onClick={() => handleOpenVoting(loan.id)} className="btn-action bg-purple-100 text-purple-700"><Gavel size={14}/> Open Voting</button>;
+        }
+        if (status === 'VOTING_OPEN' && (role === 'CHAIRPERSON' || role === 'ADMIN')) {
+            return <button onClick={() => handleFinalizeVote(loan.id)} className="btn-action bg-rose-100 text-rose-700">Close & Finalize</button>;
+        }
+
+        // 4. SECRETARY FINAL APPROVAL
+        if (status === 'SECRETARY_DECISION' && (role === 'SECRETARY' || role === 'ADMIN')) {
+            return <button onClick={() => handleSecretaryFinalApprove(loan.id)} className="btn-action bg-emerald-100 text-emerald-700"><CheckCircle size={14}/> Final Approval</button>;
+        }
+
+        // 5. TREASURER ACTIONS (Disburse)
+        if (status === 'TREASURER_DISBURSEMENT' && (role === 'TREASURER' || role === 'ADMIN')) {
+            return <button onClick={() => handleDisburse(loan.id)} className="btn-action bg-slate-800 text-white">Disburse Funds</button>;
+        }
+
+        return <span className="text-xs text-slate-400 italic">No actions</span>;
+    };
+
+    if (loading) return <div className="p-10 text-center text-slate-400">Loading Loans...</div>;
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-slate-800">Loan Applications (Staff Portal)</h2>
+                <div className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">
+                    Acting as: {currentUser?.role || 'Admin'}
+                </div>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs">
+                        <tr>
+                            <th className="p-4">Loan #</th>
+                            <th className="p-4">Member</th>
+                            <th className="p-4 text-right">Amount</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4">Next Step</th>
+                            <th className="p-4 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {loans.length > 0 ? loans.map(loan => (
+                            <tr key={loan.id} className="hover:bg-slate-50 transition">
+                                <td className="p-4 font-mono text-xs">{loan.loanNumber}</td>
+                                <td className="p-4 font-bold text-slate-700">{loan.memberName || loan.applicantName}</td>
+                                <td className="p-4 text-right font-bold">KES {loan.principalAmount?.toLocaleString()}</td>
+                                <td className="p-4">
+                                    <StatusBadge status={loan.status} />
+                                </td>
+                                <td className="p-4 text-xs text-slate-500 italic">
+                                    {getNextStepText(loan.status)}
+                                </td>
+                                <td className="p-4 text-center">
+                                    {renderActions(loan)}
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">No loans found.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <style jsx>{`
+                .btn-action {
+                    @apply px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 mx-auto hover:brightness-95;
+                }
+            `}</style>
+        </div>
+    );
+}
+
 const StatusBadge = ({ status }) => {
-  const styles = {
-    ACTIVE: "bg-green-100 text-green-800",
-    PENDING: "bg-yellow-100 text-yellow-800",
-    REJECTED: "bg-red-100 text-red-800",
-    COMPLETED: "bg-blue-100 text-blue-800",
-    DRAFT: "bg-gray-100 text-gray-800"
-  };
-  return (
-    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${styles[status] || "bg-gray-100"}`}>
-      {status}
-    </span>
-  );
+    const colors = {
+        SUBMITTED: 'bg-blue-50 text-blue-700',
+        LOAN_OFFICER_REVIEW: 'bg-indigo-50 text-indigo-700',
+        SECRETARY_TABLED: 'bg-amber-50 text-amber-700',
+        ON_AGENDA: 'bg-purple-50 text-purple-700',
+        VOTING_OPEN: 'bg-rose-50 text-rose-700 animate-pulse',
+        SECRETARY_DECISION: 'bg-teal-50 text-teal-700',
+        TREASURER_DISBURSEMENT: 'bg-cyan-50 text-cyan-700',
+        DISBURSED: 'bg-emerald-50 text-emerald-700',
+        REJECTED: 'bg-red-50 text-red-700'
+    };
+    return <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${colors[status] || 'bg-gray-100'}`}>{status?.replace(/_/g, ' ')}</span>;
 };
 
-const LoanManager = ({ canApply, eligibilityMessage, activeLoans, totalBalance, onRefresh }) => {
-  const navigate = useNavigate();
-
-  const handleApplyClick = () => {
-    if (canApply) {
-      // Navigate to the Application Form (We will build this view next)
-      navigate('/loans/apply');
+const getNextStepText = (status) => {
+    switch(status) {
+        case 'SUBMITTED': return 'Waiting for Officer Review';
+        case 'LOAN_OFFICER_REVIEW': return 'Officer decision pending';
+        case 'SECRETARY_TABLED': return 'Secretary to set meeting date';
+        case 'ON_AGENDA': return 'Chairperson to open voting';
+        case 'VOTING_OPEN': return 'Members voting in progress';
+        case 'SECRETARY_DECISION': return 'Secretary final ratification';
+        case 'TREASURER_DISBURSEMENT': return 'Treasurer to release funds';
+        default: return '-';
     }
-  };
-
-  return (
-    <div className="space-y-6">
-
-      {/* 1. Summary & Action Card */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h2 className="text-sm font-medium text-gray-500">Total Outstanding Balance</h2>
-          <p className="text-3xl font-bold text-gray-900">
-            KES {totalBalance?.toLocaleString() || '0.00'}
-          </p>
-        </div>
-
-        {/* THE SMART BUTTON */}
-        <div className="flex flex-col items-end">
-          <button
-            onClick={handleApplyClick}
-            disabled={!canApply}
-            className={`px-6 py-2.5 rounded-lg font-medium transition-colors ${
-              canApply
-                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-            }`}
-          >
-            + Apply for New Loan
-          </button>
-
-          {/* Eligibility Feedback */}
-          {!canApply && (
-            <span className="text-xs text-red-500 mt-2 font-medium bg-red-50 px-2 py-1 rounded">
-              🚫 {eligibilityMessage}
-            </span>
-          )}
-          {canApply && (
-             <span className="text-xs text-green-600 mt-2 font-medium">
-             ✅ You are eligible to apply
-           </span>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Active Loans List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-800">Your Active Loans</h3>
-        </div>
-
-        {activeLoans.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            You have no active loans.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-gray-600">
-                <tr>
-                  <th className="px-6 py-3">Loan #</th>
-                  <th className="px-6 py-3">Product</th>
-                  <th className="px-6 py-3">Date Applied</th>
-                  <th className="px-6 py-3 text-right">Principal</th>
-                  <th className="px-6 py-3 text-right">Balance</th>
-                  <th className="px-6 py-3 text-center">Status</th>
-                  <th className="px-6 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {activeLoans.map((loan) => (
-                  <tr key={loan.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-medium">{loan.loanNumber}</td>
-                    <td className="px-6 py-4">{loan.productName}</td>
-                    <td className="px-6 py-4">{loan.dateApplied}</td>
-                    <td className="px-6 py-4 text-right">
-                      {loan.principalAmount?.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-right font-medium text-gray-900">
-                      {loan.balance?.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <StatusBadge status={loan.status} />
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                        onClick={() => navigate(`/loans/${loan.id}`)}
-                      >
-                        View Details →
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 };
-
-export default LoanManager;

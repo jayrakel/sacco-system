@@ -3,7 +3,9 @@ package com.sacco.sacco_system.modules.loan.domain.service;
 import com.sacco.sacco_system.modules.core.exception.ApiException;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanDashboardDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanResponseDTO;
+import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
@@ -24,21 +26,20 @@ public class LoanReadService {
 
     private final LoanRepository loanRepository;
     private final MemberRepository memberRepository;
+    private final GuarantorRepository guarantorRepository;
     private final LoanEligibilityService eligibilityService;
 
     @Transactional(readOnly = true)
-    // ✅ CHANGED: Accept Email
     public LoanDashboardDTO getMemberDashboard(String email) {
-        // ✅ Safe Lookup by Email
         log.info("🔍 DASHBOARD LOOKUP: Searching for Member with email: ['{}']", email);
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member profile not found. Please complete your registration.", 400));
 
-        // 1. Check Eligibility (Pass Email)
+        // 1. Check Eligibility
         Map<String, Object> eligibility = eligibilityService.checkEligibility(email);
         boolean isEligible = (boolean) eligibility.get("eligible");
 
-        // 2. Fetch Loans (Using Member ID resolved above)
+        // 2. Fetch Loans
         List<Loan> loans = loanRepository.findByMemberId(member.getId());
 
         // 3. Convert to DTOs
@@ -62,12 +63,53 @@ public class LoanReadService {
                 .build();
     }
 
-    // ✅ CHANGED: Accept Email
     public List<LoanResponseDTO> getMemberLoans(String email) {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member not found", 400));
         return loanRepository.findByMemberId(member.getId()).stream()
                 .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns requests where other members have asked the current user to be a guarantor.
+     */
+    public List<Map<String, Object>> getGuarantorRequests(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new ApiException("Member not found", 400));
+
+        List<Guarantor> requests = guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING);
+
+        // ✅ FIXED: Explicitly typed Map.<String, Object>of() to prevent type inference errors
+        return requests.stream().map(g -> Map.<String, Object>of(
+                "requestId", g.getId(),
+                "borrowerName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName(),
+                "amount", g.getGuaranteeAmount() != null ? g.getGuaranteeAmount() : BigDecimal.ZERO,
+                "loanType", g.getLoan().getProduct().getName(),
+                "dateRequested", g.getLoan().getApplicationDate()
+        )).collect(Collectors.toList());
+    }
+
+    /**
+     * Returns loans awaiting approval (SUBMITTED status).
+     */
+    public List<Map<String, Object>> getPendingVotes(String email) {
+        // In real apps, verify user role here (e.g., Committee Member)
+        List<Loan> loans = loanRepository.findByStatus(Loan.LoanStatus.SUBMITTED);
+
+        // ✅ FIXED: Explicitly typed Map.<String, Object>of()
+        return loans.stream().map(l -> Map.<String, Object>of(
+                "id", l.getId(),
+                "applicantName", l.getMember().getFirstName() + " " + l.getMember().getLastName(),
+                "amount", l.getPrincipalAmount(),
+                "productName", l.getProduct().getName(),
+                "dateSubmitted", l.getApplicationDate()
+        )).collect(Collectors.toList());
+    }
+
+    public List<LoanResponseDTO> getAllLoans() {
+        return loanRepository.findAll().stream()
+                .map(this::mapToDTO) // Reuses your existing mapToDTO
                 .collect(Collectors.toList());
     }
 
@@ -80,6 +122,7 @@ public class LoanReadService {
                 .balance(loan.getLoanBalance())
                 .status(loan.getStatus().name())
                 .applicationDate(loan.getApplicationDate())
+                .feePaid(loan.isFeePaid())
                 .build();
     }
 }

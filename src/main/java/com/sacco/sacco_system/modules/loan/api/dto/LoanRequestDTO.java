@@ -9,4 +9,5 @@ public class LoanRequestDTO {
     private UUID productId;
     private BigDecimal amount;
     private Integer durationWeeks;
+    private String paymentReference;
 }
