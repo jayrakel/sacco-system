@@ -1,9 +1,11 @@
 package com.sacco.sacco_system.modules.finance.domain.entity.accounting;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.GLAccount;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "gl_accounts")
@@ -13,33 +15,61 @@ import java.math.BigDecimal;
 @Builder
 public class GLAccount {
 
+    // Global Definition: Primary Key (UUID)
     @Id
-    @Column(length = 20)
-    private String code;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    // Domain Dictionary: Business Identifier
+    @Column(nullable = false, unique = true, length = 20)
+    private String glCode;
 
     @Column(nullable = false)
-    private String name;
+    private String accountName;
 
     @Enumerated(EnumType.STRING)
-    private AccountType type;
+    @Column(nullable = false)
+    private AccountType accountType;
 
+    private String description;
+
+    // Hierarchy Support (Self-Reference via UUID)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_account_id")
+    @JsonIgnore
+    @ToString.Exclude
+    private GLAccount parentAccount;
+
+    // Performance Cache
     @Builder.Default
     private BigDecimal balance = BigDecimal.ZERO;
 
-    // âœ… FIX 1: Use 'Boolean' (Wrapper) instead of 'boolean'
-    // This allows Jackson to handle missing/null values without crashing
-    @Builder.Default
-    private Boolean active = true;
+    // Global Definition: Audit & Identity
+    @Column(nullable = false)
+    private boolean active = true;
 
-    // âœ… FIX 2: Add this helper method
-    // Since we changed to 'Boolean', Lombok generates 'getActive()'.
-    // This manual method ensures your Service code calling '.isActive()' still works.
-    public boolean isActive() {
-        return Boolean.TRUE.equals(this.active);
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    // Domain Dictionary: Standard Accounting Types
+    public enum AccountType {
+        ASSET,
+        LIABILITY,
+        EQUITY,
+        REVENUE,
+        EXPENSE
     }
 }
-
-
-
-
-

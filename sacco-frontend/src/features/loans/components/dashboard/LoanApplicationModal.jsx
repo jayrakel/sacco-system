@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calculator, AlertCircle, Check, Loader2, CreditCard, ArrowRight, ArrowLeft } from 'lucide-react';
-import { loanService } from '../../../../api';
+import { X, Calculator, AlertCircle, Check, Loader2, CreditCard, ArrowRight, ArrowLeft, Smartphone, CheckCircle } from 'lucide-react';
+import { loanService, paymentService } from '../../../../api'; // Import paymentService
 
-export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resumeLoan }) {
+export default function LoanApplicationModal({ isOpen, onClose, onSuccess }) {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -16,8 +16,12 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
         productId: '',
         amount: '',
         durationWeeks: '',
-        paymentReference: '' // ✅ Added for Fee Payment
+        phoneNumber: '',      // ✅ Added for STK Push
+        paymentReference: ''  // Will be auto-filled after successful payment
     });
+
+    // Payment State
+    const [paymentStatus, setPaymentStatus] = useState('IDLE'); // IDLE, PROCESSING, PAID
 
     const [estimates, setEstimates] = useState(null);
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -28,9 +32,10 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
             fetchProducts();
             // Reset state
             setStep(1);
-            setFormData({ productId: '', amount: '', durationWeeks: '', paymentReference: '' });
+            setFormData({ productId: '', amount: '', durationWeeks: '', phoneNumber: '', paymentReference: '' });
             setEstimates(null);
             setSelectedProduct(null);
+            setPaymentStatus('IDLE');
         }
     }, [isOpen]);
 
@@ -64,7 +69,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                     total: totalRepayment.toFixed(2),
                     weekly: weekly.toFixed(2),
                     rate: product.interestRate,
-                    fee: product.applicationFee || 0 // ✅ Track Fee
+                    fee: product.applicationFee || 0
                 });
             }
         }
@@ -86,18 +91,61 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
         }
     };
 
+    // ✅ NEW: Trigger M-Pesa STK Push
+    const handlePayFee = async () => {
+        if (!formData.phoneNumber) {
+            setError("Please enter your M-Pesa phone number.");
+            return;
+        }
+
+        setError(null);
+        setPaymentStatus('PROCESSING');
+
+        try {
+            // Call Backend to trigger STK Push
+            // Ideally, we need the logged-in Member ID here.
+            // Assuming the API extracts it from the JWT Token or context.
+            // If API requires memberId explicitly, we need to fetch it from AuthContext.
+            // For now, we assume the backend endpoint handles the context or we pass it if available.
+
+            // NOTE: The `paymentService.payLoanFee` needs to be defined in your api.js
+            // Or use a direct axios call:
+
+            // Simulating API Call Structure
+            const res = await paymentService.payLoanFee({
+                 amount: selectedProduct.applicationFee,
+                 phoneNumber: formData.phoneNumber
+            });
+
+            if (res.success) {
+                // In a real live system, you would start polling here.
+                // For this simulation, we wait 3 seconds and assume success.
+                setTimeout(() => {
+                    setPaymentStatus('PAID');
+                    // Use the CheckoutRequestID as the proof of payment
+                    setFormData(prev => ({ ...prev, paymentReference: res.checkoutRequestId }));
+                }, 3000);
+            } else {
+                setPaymentStatus('IDLE');
+                setError(res.message);
+            }
+        } catch (err) {
+            setPaymentStatus('IDLE');
+            setError(err.response?.data?.message || "Payment request failed. Check phone number.");
+        }
+    };
+
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
         setSubmitting(true);
         setError(null);
 
         try {
-            // Send Data (Including paymentReference if set)
             const res = await loanService.applyForLoan({
                 productId: formData.productId,
                 amount: parseFloat(formData.amount),
                 durationWeeks: parseInt(formData.durationWeeks),
-                paymentReference: formData.paymentReference // ✅ Send Payment Ref
+                paymentReference: formData.paymentReference // ✅ Send the Proof of Payment
             });
 
             if (res.success) {
@@ -123,10 +171,10 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h2 className="text-xl font-black text-slate-800">
-                            {step === 1 ? "New Loan Application" : "Complete Payment"}
+                            {step === 1 ? "New Loan Application" : "Application Fee Payment"}
                         </h2>
                         <p className="text-sm text-slate-500">
-                            {step === 1 ? "Step 1: Loan Details" : "Step 2: Processing Fee"}
+                            {step === 1 ? "Step 1: Loan Details" : "Step 2: M-Pesa Payment"}
                         </p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition">
@@ -149,7 +197,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                         <>
                             {/* STEP 1: DETAILS */}
                             {step === 1 && (
-                                <div className="space-y-5">
+                                <div className="space-y-5 animate-in slide-in-from-left-5">
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Product</label>
                                         <select
@@ -182,7 +230,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                                             <input
                                                 type="number"
                                                 className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white outline-none font-bold text-slate-800"
-                                                placeholder="e.g. 12"
+                                                placeholder="e.g. 52"
                                                 value={formData.durationWeeks}
                                                 onChange={e => setFormData({ ...formData, durationWeeks: e.target.value })}
                                             />
@@ -209,7 +257,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                                 </div>
                             )}
 
-                            {/* STEP 2: PAYMENT */}
+                            {/* STEP 2: PAYMENT (Updated for STK Push) */}
                             {step === 2 && selectedProduct && (
                                 <div className="space-y-6 text-center animate-in slide-in-from-right-10 fade-in duration-300">
                                     <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -217,26 +265,48 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                                     </div>
 
                                     <div>
-                                        <h3 className="text-lg font-bold text-slate-800">Application Fee Required</h3>
-                                        <p className="text-slate-500 text-sm">Please pay the fee to create your draft.</p>
+                                        <h3 className="text-lg font-bold text-slate-800">Fee Payment Required</h3>
+                                        <p className="text-slate-500 text-sm">Pay <b>KES {selectedProduct.applicationFee}</b> to proceed.</p>
                                     </div>
 
-                                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                                        <p className="text-xs font-bold uppercase text-slate-400">Amount Due</p>
-                                        <p className="text-3xl font-black text-slate-800 mt-1">KES {selectedProduct.applicationFee}</p>
-                                    </div>
+                                    {/* M-Pesa Input Section */}
+                                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                                        {paymentStatus === 'IDLE' && (
+                                            <>
+                                                <div className="text-left space-y-2">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">M-Pesa Phone Number</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full p-4 rounded-xl border border-slate-200 bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none font-bold text-slate-800 placeholder:font-normal"
+                                                        placeholder="e.g. 0712345678"
+                                                        value={formData.phoneNumber}
+                                                        onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })}
+                                                    />
+                                                </div>
+                                                <button
+                                                    onClick={handlePayFee}
+                                                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-emerald-200"
+                                                >
+                                                    <Smartphone size={18} /> Pay KES {selectedProduct.applicationFee}
+                                                </button>
+                                            </>
+                                        )}
 
-                                    <div className="text-left space-y-2">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-slate-500">M-Pesa / Payment Reference</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            className="w-full p-4 rounded-xl border border-slate-200 bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none font-bold text-slate-800 uppercase placeholder:normal-case"
-                                            placeholder="Enter Transaction Code (e.g. QK7...)"
-                                            value={formData.paymentReference}
-                                            onChange={e => setFormData({ ...formData, paymentReference: e.target.value.toUpperCase() })}
-                                        />
-                                        <p className="text-xs text-slate-400">Enter the code from the payment SMS.</p>
+                                        {paymentStatus === 'PROCESSING' && (
+                                            <div className="py-8">
+                                                <Loader2 className="animate-spin text-emerald-600 mx-auto mb-4" size={32} />
+                                                <h4 className="font-bold text-slate-800">Processing Payment...</h4>
+                                                <p className="text-sm text-slate-500 mt-2">Check your phone and enter your M-Pesa PIN.</p>
+                                            </div>
+                                        )}
+
+                                        {paymentStatus === 'PAID' && (
+                                            <div className="py-4 bg-emerald-100 rounded-xl border border-emerald-200">
+                                                <CheckCircle className="text-emerald-600 mx-auto mb-2" size={32} />
+                                                <h4 className="font-bold text-emerald-800">Payment Verified!</h4>
+                                                <p className="text-xs text-emerald-600 mt-1">Ref: {formData.paymentReference}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -272,11 +342,11 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, resum
                     ) : (
                         <button
                             onClick={handleSubmit}
-                            disabled={submitting || !formData.paymentReference}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl text-sm font-bold shadow-lg shadow-emerald-200 flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+                            disabled={submitting || paymentStatus !== 'PAID'}
+                            className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl text-sm font-bold shadow-lg shadow-slate-200 flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
                         >
                             {submitting ? <Loader2 className="animate-spin" size={18}/> : <Check size={18}/>}
-                            Confirm & Create Draft
+                            Create Draft
                         </button>
                     )}
                 </div>

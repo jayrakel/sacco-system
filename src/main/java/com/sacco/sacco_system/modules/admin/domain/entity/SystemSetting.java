@@ -1,10 +1,9 @@
 package com.sacco.sacco_system.modules.admin.domain.entity;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "system_settings")
@@ -15,16 +14,59 @@ import lombok.NoArgsConstructor;
 public class SystemSetting {
 
     @Id
-    @Column(name = "setting_key", unique = true, nullable = false)
-    private String key; // e.g., "REGISTRATION_FEE"
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
-    @Column(name = "setting_value", nullable = false)
-    private String value; // e.g., "1000"
+    // Unique Identifier (e.g., "LOAN_INTEREST_RATE_DEFAULT")
+    @Column(nullable = false, unique = true)
+    private String configKey; // Renamed from key
 
-    private String description; // e.g., "Fee charged for new member registration"
+    @Column(nullable = false)
+    private String configValue; // Renamed from value
 
-    private String dataType; // "STRING", "NUMBER", "BOOLEAN"
+    @Column(nullable = false)
+    private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SettingCategory category;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DataType dataType; // UI Hint (STRING, BOOLEAN, etc.)
+
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    public enum SettingCategory {
+        GENERAL,
+        FINANCE,
+        LOAN,
+        NOTIFICATION,
+        SECURITY
+    }
+
+    public enum DataType {
+        STRING,
+        INTEGER,
+        DECIMAL,
+        BOOLEAN
+    }
 }
-
-
-

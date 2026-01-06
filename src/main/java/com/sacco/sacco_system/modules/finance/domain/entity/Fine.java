@@ -1,22 +1,11 @@
 package com.sacco.sacco_system.modules.finance.domain.entity;
 
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Fine Entity
- * Represents penalties for late payments, missed meetings, or other infractions
- */
 @Entity
 @Table(name = "fines")
 @Data
@@ -29,40 +18,62 @@ public class Fine {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // Mandatory: Who is fined
+    @Column(name = "member_id", nullable = false)
+    private UUID memberId;
 
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
-    private Loan loan;  // Optional - if fine is related to a loan
+    // Optional: Context (e.g., Late Loan Repayment)
+    @Column(name = "loan_id")
+    private UUID loanId;
+
+    // Optional: Link to the clearing transaction (if fully paid in one go)
+    @Column(name = "transaction_id")
+    private UUID transactionId;
+
+    // --- Financials ---
+
+    @Column(nullable = false, updatable = false)
+    private BigDecimal amount; // Original Levied Amount
+
+    @Column(nullable = false)
+    @Setter(AccessLevel.PROTECTED)
+    @Builder.Default
+    private BigDecimal outstandingAmount = BigDecimal.ZERO; // Track balance
+
+    @Column(nullable = false, length = 3)
+    private String currencyCode;
+
+    // --- Metadata ---
+
+    @Column(nullable = false)
+    private LocalDateTime fineDate;
+
+    @Column(nullable = false)
+    private String description; // Reason
 
     @Enumerated(EnumType.STRING)
-    private FineType type;
+    @Builder.Default
+    private FineStatus fineStatus = FineStatus.PENDING;
 
-    private BigDecimal amount;
-
-    private String description;
-
-    private LocalDate fineDate;
-
-    @Enumerated(EnumType.STRING)
-    private FineStatus status = FineStatus.PENDING;
-
-    private LocalDate paymentDate;
-
-    private String paymentReference;
-
-    private Integer daysOverdue;  // For late payment fines
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (fineDate == null) fineDate = LocalDateTime.now();
+        if (fineStatus == null) fineStatus = FineStatus.PENDING;
+        // Default outstanding to total amount if not set
+        if (outstandingAmount.compareTo(BigDecimal.ZERO) == 0 && amount != null) {
+            outstandingAmount = amount;
+        }
     }
 
     @PreUpdate
@@ -70,18 +81,10 @@ public class Fine {
         updatedAt = LocalDateTime.now();
     }
 
-    public enum FineType {
-        LATE_LOAN_PAYMENT,      // Late loan repayment
-        MISSED_MEETING,         // Member missed mandatory meeting
-        LOAN_DEFAULT,           // Loan default penalty
-        ADMINISTRATIVE,         // General administrative fine
-        OTHER                   // Other penalties
-    }
-
     public enum FineStatus {
-        PENDING,    // Fine imposed but not paid
-        PAID,       // Fine paid
-        WAIVED      // Fine waived/forgiven
+        PENDING,
+        PAID,
+        WAIVED,
+        WRITTEN_OFF
     }
 }
-

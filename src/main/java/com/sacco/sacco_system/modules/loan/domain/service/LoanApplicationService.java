@@ -11,7 +11,6 @@ import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductReposito
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
-import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,16 +30,13 @@ public class LoanApplicationService {
     private final LoanProductRepository productRepository;
     private final MemberRepository memberRepository;
     private final GuarantorRepository guarantorRepository;
-    private final SavingsAccountRepository savingsRepository;
     private final LoanEligibilityService eligibilityService;
     private final TransactionService transactionService;
-
 
     @Transactional(rollbackFor = Exception.class)
     public Loan createDraft(String email, LoanRequestDTO request) {
         log.info("Creating loan draft for {}", email);
 
-        // 1. Resolve Member
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member profile not found", 400));
 
@@ -48,39 +44,31 @@ public class LoanApplicationService {
             throw new ApiException("Only active members can apply for loans", 400);
         }
 
-        // 2. Resolve Loan Product
         LoanProduct product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new ApiException("Product not found", 404));
 
-        // 3. Enforce Eligibility
         Map<String, Object> eligibility = eligibilityService.checkEligibility(email);
         if (!(boolean) eligibility.get("eligible")) {
             throw new ApiException("Application Rejected: " + eligibility.get("reasons"), 400);
         }
 
-        // 4. Validate Amount Limits
         if (request.getAmount().compareTo(product.getMaxAmount()) > 0) {
             throw new ApiException("Amount exceeds product limit of " + product.getMaxAmount(), 400);
         }
 
-        // 5. PROCESS FEE PAYMENT
         if (product.getApplicationFee() != null && product.getApplicationFee().compareTo(BigDecimal.ZERO) > 0) {
-
             if (request.getPaymentReference() == null || request.getPaymentReference().isEmpty()) {
                 throw new ApiException("Payment Required: Please pay the application fee.", 400);
             }
 
-            // ✅ CHANGED: Pass the Product's Income Account Code
-            // This ensures fees for this specific product go to the right GL Account (if configured).
             transactionService.recordProcessingFee(
                     member,
                     product.getApplicationFee(),
                     request.getPaymentReference(),
-                    product.getIncomeAccountCode() // Pass the GL code from the product entity
+                    product.getIncomeAccountCode()
             );
         }
 
-        // 6. Save Draft
         String loanNumber = "LN-" + (int)(Math.random() * 1000000);
 
         Loan loan = Loan.builder()
@@ -98,16 +86,37 @@ public class LoanApplicationService {
         return loanRepository.save(loan);
     }
 
-    // ... (Add Guarantor and Submit methods remain using Loan ID, which is fine) ...
     @Transactional
     public void addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new ApiException("Loan not found", 404));
+
+        Member guarantorMember = memberRepository.findById(guarantorMemberId)
+                .orElseThrow(() -> new ApiException("Guarantor not found", 404));
+
+        if (loan.getMember().getId().equals(guarantorMember.getId())) {
+            throw new ApiException("You cannot guarantee your own loan", 400);
+        }
+
+        Guarantor guarantor = Guarantor.builder()
+                .loan(loan)
+                .member(guarantorMember)
+                .guaranteeAmount(amount) // ✅ FIXED: Matches entity field name
+                .dateAdded(LocalDate.now())
+                .status(Guarantor.GuarantorStatus.PENDING)
+                .build();
+
+        guarantorRepository.save(guarantor);
+        log.info("Added guarantor {} to loan {}", guarantorMember.getEmail(), loan.getLoanNumber());
     }
 
     @Transactional
     public void submitApplication(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow();
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new ApiException("Loan not found", 404));
+
         loan.setStatus(Loan.LoanStatus.SUBMITTED);
         loanRepository.save(loan);
+        log.info("Loan {} submitted for review", loan.getLoanNumber());
     }
 }

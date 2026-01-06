@@ -1,15 +1,10 @@
 package com.sacco.sacco_system.modules.finance.domain.entity;
-import com.sacco.sacco_system.modules.finance.domain.entity.Charge;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
 @Table(name = "charges")
@@ -23,44 +18,76 @@ public class Charge {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // Mandatory: Who is charged
+    @Column(name = "member_id", nullable = false)
+    private UUID memberId;
 
-    @ManyToOne
-    @JoinColumn(name = "loan_id")
-    private Loan loan; // Optional: If linked to a loan
+    // Optional: Payment Transaction Link
+    @Column(name = "transaction_id")
+    private UUID transactionId;
 
-    @Enumerated(EnumType.STRING)
-    private ChargeType type;
+    // Optional: Ad-hoc Loan Context
+    @Column(name = "loan_id")
+    private UUID loanId;
 
+    // --- Financials ---
+
+    @Column(nullable = false, updatable = false)
     private BigDecimal amount;
+
+    @Column(nullable = false, length = 3)
+    private String currencyCode;
+
+    // --- Metadata ---
+
+    @Column(nullable = false)
+    private LocalDateTime chargeDate;
+
+    @Column(nullable = false)
     private String description;
 
     @Enumerated(EnumType.STRING)
-    private ChargeStatus status = ChargeStatus.PENDING;
+    @Column(nullable = false)
+    private ChargeType chargeType;
 
-    @CreationTimestamp
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private ChargeStatus chargeStatus = ChargeStatus.PENDING;
+
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
+
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
 
-    // Tracks if this charge was waived/overridden
-    private boolean isWaived = false;
-    private String waiverReason;
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (chargeDate == null) chargeDate = LocalDateTime.now();
+        if (chargeStatus == null) chargeStatus = ChargeStatus.PENDING;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
     public enum ChargeType {
-        LATE_PAYMENT_PENALTY,
-        PROCESSING_FEE,
-        REGISTRATION_FEE,
-        INSURANCE_FEE,
-        WITHDRAWAL_FEE
+        SMS,
+        STATEMENT,
+        REGISTRATION,
+        WITHDRAWAL_FEE,
+        LEGAL_FEE,
+        OTHER
     }
 
     public enum ChargeStatus {
-        PENDING, PAID, WAIVED
+        PENDING,
+        PAID,
+        WAIVED
     }
 }
-
-
-
-
-

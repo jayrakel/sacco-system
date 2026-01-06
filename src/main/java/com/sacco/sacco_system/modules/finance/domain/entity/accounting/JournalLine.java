@@ -1,7 +1,4 @@
 package com.sacco.sacco_system.modules.finance.domain.entity.accounting;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.GLAccount;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.JournalEntry;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.JournalLine;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
@@ -22,20 +19,26 @@ public class JournalLine {
     private UUID id;
 
     @ManyToOne
-    @JoinColumn(name = "journal_entry_id")
-    @JsonIgnore // âœ… FIX: Stops infinite loop during JSON conversion
-    @ToString.Exclude // âœ… FIX: Stops infinite loop in Logs
+    @JoinColumn(name = "journal_entry_id", nullable = false)
+    @JsonIgnore
+    @ToString.Exclude
     private JournalEntry journalEntry;
 
+    // Renamed from account -> glAccount
     @ManyToOne
-    @JoinColumn(name = "account_code")
-    private GLAccount account;
+    @JoinColumn(name = "gl_account_id", nullable = false)
+    private GLAccount glAccount;
 
-    private BigDecimal debit = BigDecimal.ZERO;
-    private BigDecimal credit = BigDecimal.ZERO;
+    @Column(nullable = false)
+    private String description; // Line-level description
+
+    // Renamed from debit -> debitAmount
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal debitAmount = BigDecimal.ZERO;
+
+    // Renamed from credit -> creditAmount
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal creditAmount = BigDecimal.ZERO;
 }
-
-
-
-
-

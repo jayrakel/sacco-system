@@ -14,50 +14,65 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class Asset {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    private String name;
+    // Business Identifier (e.g., "AST-2025-001")
+    @Column(nullable = false, unique = true)
+    private String assetCode; // Renamed from tag
 
-    private String category;  // e.g., "Furniture", "Electronics", "Vehicle"
+    @Column(nullable = false)
+    private String assetName; // Renamed from name
 
-    private String serialNumber;
+    private String description;
 
-    private BigDecimal purchaseCost;
+    // --- Financials ---
 
+    @Column(nullable = false)
     private LocalDate purchaseDate;
 
-    private Integer usefulLifeYears;  // For depreciation calculation
+    // Historical Cost (Basis) - Immutable
+    @Column(nullable = false, updatable = false)
+    private BigDecimal purchaseCost;
 
-    private BigDecimal salvageValue;  // Expected value at end of useful life
+    // Book Value (Updated via Depreciation Service)
+    @Column(nullable = false)
+    private BigDecimal currentValue;
 
-    private BigDecimal accumulatedDepreciation;
-
-    private BigDecimal currentValue;  // purchaseCost - accumulatedDepreciation
+    // Annual Depreciation % (e.g., 0.10)
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal depreciationRate = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
-    private AssetStatus status = AssetStatus.ACTIVE;
+    @Builder.Default
+    private AssetStatus assetStatus = AssetStatus.ACTIVE;
 
-    private LocalDate disposalDate;
-
-    private BigDecimal disposalValue;
-
-    private String disposalNotes;
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (currentValue == null) {
+        if (assetStatus == null) assetStatus = AssetStatus.ACTIVE;
+
+        // Initial Book Value = Purchase Cost (if not provided)
+        if (currentValue == null && purchaseCost != null) {
             currentValue = purchaseCost;
         }
-        if (accumulatedDepreciation == null) {
-            accumulatedDepreciation = BigDecimal.ZERO;
+
+        // Fallback Generator
+        if (assetCode == null) {
+            assetCode = "AST-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         }
     }
 
@@ -67,11 +82,9 @@ public class Asset {
     }
 
     public enum AssetStatus {
-        ACTIVE,      // In use
-        DISPOSED,    // Sold or discarded
-        LOST         // Lost or stolen
+        ACTIVE,
+        DISPOSED,
+        WRITTEN_OFF,
+        IN_REPAIR
     }
 }
-
-
-

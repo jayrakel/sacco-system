@@ -1,9 +1,9 @@
 package com.sacco.sacco_system.modules.member.domain.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -14,25 +14,51 @@ import java.util.UUID;
 @Builder
 public class Beneficiary {
 
+    // Global Definition: Primary Key
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    @JsonIgnore
-    private Member member;
+    // Domain Dictionary: Member Linkage (Loose Coupling)
+    // OPTION A FIX: Mapped as read-only field to allow Member (Parent) to control the @JoinColumn
+    // This provides access to the ID without creating a JPA writing conflict.
+    @Column(name = "member_id", insertable = false, updatable = false)
+    private UUID memberId;
+
+    // Domain Dictionary: Personal Details (Split from fullName)
+    @Column(nullable = false)
+    private String firstName;
 
     @Column(nullable = false)
-    private String fullName;
+    private String lastName;
 
     @Column(nullable = false)
-    private String relationship; // e.g., SPOUSE, CHILD, PARENT
+    private String relationship;
 
-    private String idNumber;
-    
-    private String phoneNumber;
+    // Renamed: idNumber -> identityNumber
+    private String identityNumber;
 
+    // Renamed: allocation -> allocationPercentage
     @Column(name = "allocation_percentage")
-    private Double allocation; // e.g., 50.0 for 50%
+    private Double allocationPercentage;
+
+    // Global Definition: Audit & Identity
+    @Column(nullable = false)
+    private boolean active = true;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

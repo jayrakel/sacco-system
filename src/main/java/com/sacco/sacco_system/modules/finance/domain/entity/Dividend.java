@@ -1,21 +1,11 @@
 package com.sacco.sacco_system.modules.finance.domain.entity;
 
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Dividend Entity
- * Represents dividend declaration and allocation to members
- */
 @Entity
 @Table(name = "dividends")
 @Data
@@ -28,37 +18,61 @@ public class Dividend {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
+    // Structural: Decoupled Member
+    @Column(name = "member_id", nullable = false)
+    private UUID memberId;
 
-    private Integer fiscalYear;
+    // Accounting Period
+    @Column(nullable = false)
+    private Integer fiscalYear; // e.g., 2025
 
-    private LocalDate declarationDate;
+    // Financial Link (Nullable until Payout)
+    @Column(name = "transaction_id")
+    private UUID transactionId;
 
-    private BigDecimal totalDividendPool;
+    // --- Financials ---
 
-    private BigDecimal memberSharePercentage;
+    @Column(nullable = false)
+    private BigDecimal dividendRate; // The declared %
 
-    private BigDecimal dividendAmount;
+    @Column(nullable = false)
+    private BigDecimal grossAmount;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal withholdingTax = BigDecimal.ZERO;
+
+    @Column(nullable = false)
+    private BigDecimal netAmount; // Persisted for query speed
+
+    @Column(nullable = false, length = 3)
+    private String currencyCode;
 
     @Enumerated(EnumType.STRING)
-    private DividendStatus status = DividendStatus.DECLARED;
+    @Builder.Default
+    private DividendStatus dividendStatus = DividendStatus.CALCULATED;
 
-    private LocalDate paymentDate;
-
-    private String paymentReference;
-
-    private String notes;
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
+
+    // Integrity Check (Transient Helper)
+    @Transient
+    public boolean isValid() {
+        if (grossAmount == null || withholdingTax == null || netAmount == null) return false;
+        return netAmount.compareTo(grossAmount.subtract(withholdingTax)) == 0;
+    }
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (dividendStatus == null) dividendStatus = DividendStatus.CALCULATED;
     }
 
     @PreUpdate
@@ -67,9 +81,8 @@ public class Dividend {
     }
 
     public enum DividendStatus {
-        DECLARED,   // Dividends declared but not paid
-        PAID,       // Dividends paid to member
-        CANCELLED   // Dividend declaration cancelled
+        CALCULATED,
+        POSTED, // Journal Entry Created
+        PAID    // Disbursed to Member
     }
 }
-

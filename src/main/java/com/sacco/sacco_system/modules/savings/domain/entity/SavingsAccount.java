@@ -1,20 +1,13 @@
 package com.sacco.sacco_system.modules.savings.domain.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
 
 @Entity
 @Table(name = "savings_accounts")
@@ -31,19 +24,29 @@ public class SavingsAccount {
     @Column(unique = true, nullable = false)
     private String accountNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    @JsonIgnoreProperties("savingsAccounts")
-    private Member member;
+    // Structural Change: Decoupled Member Entity -> UUID
+    @Column(name = "member_id", nullable = false)
+    private UUID memberId;
 
-    // âœ… NEW: Link to Product (Defines the rules)
-    @ManyToOne
-    @JoinColumn(name = "product_id")
-    private SavingsProduct product;
+    // Structural Change: Decoupled Product Entity -> UUID
+    @Column(name = "product_id", nullable = false)
+    private UUID productId;
 
+    // Renamed: balance -> balanceAmount
+    // Critical: Setter restricted to prevent accidental service-layer mutation.
+    // Mutation must occur via atomic SavingsTransaction logic.
+    @Column(nullable = false)
+    @Setter(AccessLevel.PROTECTED)
     @Builder.Default
-    private BigDecimal balance = BigDecimal.ZERO;
+    private BigDecimal balanceAmount = BigDecimal.ZERO;
 
+    // Renamed/Added: currency -> currencyCode
+    @Column(nullable = false, length = 3)
+    private String currencyCode;
+
+    // -----------------------------------------------------------------
+    // Legacy / Derived Fields (Preserved with Warning per Phase F)
+    // -----------------------------------------------------------------
     @Builder.Default
     private BigDecimal totalDeposits = BigDecimal.ZERO;
 
@@ -53,26 +56,41 @@ public class SavingsAccount {
     @Builder.Default
     private BigDecimal accruedInterest = BigDecimal.ZERO;
 
-    // âœ… NEW: For Fixed/Restricted Accounts
     private LocalDate maturityDate;
 
+    private LocalDateTime accountOpenDate;
+    // -----------------------------------------------------------------
+
+    // Renamed: status -> accountStatus
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    private AccountStatus status = AccountStatus.ACTIVE;
+    private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
-    private LocalDateTime accountOpenDate;
+    // Global Definition: Audit & Identity
+    @Column(nullable = false)
+    private boolean active = true;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
 
+    private String createdBy;
+    private String updatedBy;
+
     @PrePersist
     protected void onCreate() {
-        accountOpenDate = LocalDateTime.now();
+        if (accountOpenDate == null) {
+            accountOpenDate = LocalDateTime.now();
+        }
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (balance == null) balance = BigDecimal.ZERO;
+        if (balanceAmount == null) {
+            balanceAmount = BigDecimal.ZERO;
+        }
+        if (accountStatus == null) {
+            accountStatus = AccountStatus.ACTIVE;
+        }
     }
 
     @PreUpdate
@@ -80,10 +98,11 @@ public class SavingsAccount {
         updatedAt = LocalDateTime.now();
     }
 
+    // Standardized Dictionary Enum
     public enum AccountStatus {
-        ACTIVE, DORMANT, CLOSED, FROZEN, MATURED
+        ACTIVE,
+        DORMANT,
+        FROZEN,
+        CLOSED
     }
 }
-
-
-

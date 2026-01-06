@@ -1,6 +1,4 @@
 package com.sacco.sacco_system.modules.finance.domain.entity.accounting;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.JournalEntry;
-import com.sacco.sacco_system.modules.finance.domain.entity.accounting.JournalLine;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -21,22 +19,58 @@ public class JournalEntry {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    private LocalDateTime transactionDate;
-    private LocalDateTime postedDate;
+    // Domain Dictionary: Accounting Date
+    @Column(nullable = false)
+    private LocalDateTime entryDate; // Renamed from transactionDate
 
-    private String description;
-    private String referenceNo; // Links to your existing "TRX-..." ID
+    @Column(nullable = false)
+    private String description; // Header-level narration
 
-    @OneToMany(mappedBy = "journalEntry", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    // Linkage: Matches Transaction.transactionReference
+    @Column(nullable = false, unique = true)
+    private String transactionReference; // Renamed from referenceNo
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private JournalEntryStatus status = JournalEntryStatus.POSTED;
+
+    private LocalDateTime postedAt; // Renamed from postedDate
+
+    // Parent-Child Relationship
+    @OneToMany(mappedBy = "journalEntry", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    @Builder.Default
     private List<JournalLine> lines = new ArrayList<>();
+
+    // Global Audit
+    @Column(nullable = false)
+    private boolean active = true;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy;
+    private String updatedBy;
+
+    // Helper to enforce Bidirectional consistency
+    public void addLine(JournalLine line) {
+        lines.add(line);
+        line.setJournalEntry(this);
+    }
 
     @PrePersist
     protected void onCreate() {
-        if(postedDate == null) postedDate = LocalDateTime.now();
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (entryDate == null) entryDate = LocalDateTime.now();
+        if (postedAt == null) postedAt = LocalDateTime.now();
+        if (status == null) status = JournalEntryStatus.POSTED;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    public enum JournalEntryStatus {
+        DRAFT, POSTED, REVERSED
     }
 }
-
-
-
-
-

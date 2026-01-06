@@ -1,12 +1,7 @@
 package com.sacco.sacco_system.modules.notification.domain.entity;
 
-import com.sacco.sacco_system.modules.users.domain.entity.User;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -22,35 +17,75 @@ public class Notification {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id")
-    private User user;
+    // Target Recipient (Loose Coupling)
+    @Column(name = "user_id", nullable = false)
+    private UUID userId;
 
-    private String title;
+    // Polymorphic Source (What triggered this?)
+    @Column(name = "reference_id")
+    private UUID referenceId; // e.g., Loan ID or Transaction ID
+
+    @Column(name = "reference_type")
+    private String referenceType; // e.g., "LOAN", "TRANSACTION"
+
+    // --- Message Details ---
+
+    @Column(nullable = false)
+    private String recipient; // stored snapshot (email address or phone)
+
+    private String subject; // Optional for SMS
+
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
-    private String recipientEmail;
-    private String recipientPhone;
-    private String subject;
 
     @Enumerated(EnumType.STRING)
-    private NotificationType type;
+    @Column(nullable = false)
+    private NotificationType notificationType;
 
-    private String status;
-    private boolean isRead;
-    private LocalDateTime createdAt;
-    private LocalDateTime sentAt;
-    private String failureReason;
+    // --- Delivery Status ---
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private NotificationStatus notificationStatus = NotificationStatus.PENDING;
+
+    @Column(nullable = false)
+    @Builder.Default
     private Integer retryCount = 0;
 
-    // Inner enum for notification type
+    private String failureReason; // Debugging info
+
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private String createdBy; // e.g., "SYSTEM"
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (notificationStatus == null) notificationStatus = NotificationStatus.PENDING;
+        if (retryCount == null) retryCount = 0;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
     public enum NotificationType {
         EMAIL,
         SMS,
-        IN_APP,
-        PUSH,
-        INFO,
-        ACTION_REQUIRED,
-        WARNING,
-        ERROR
+        IN_APP
+    }
+
+    public enum NotificationStatus {
+        PENDING,
+        SENT,
+        FAILED,
+        RETRYING
     }
 }
