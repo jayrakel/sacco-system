@@ -1,9 +1,7 @@
 package com.sacco.sacco_system.modules.member.domain.entity;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -17,50 +15,39 @@ import java.util.UUID;
 @Builder
 public class EmploymentDetails {
 
-    // Global Definition: Primary Key
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // JPA Alignment: Parent Linkage (Required by Member.mappedBy)
-    // Kept @JsonIgnore to prevent recursion
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false, unique = true)
-    @JsonIgnore
-    private Member member;
-
-    // JPA Alignment: Read-Only Foreign Key Access (Safe Mode)
-    // Allows accessing the UUID without breaking the @OneToOne contract
-    @Column(name = "member_id", insertable = false, updatable = false)
+    // Structural: Decoupled Member (One-to-One context)
+    @Column(name = "member_id", nullable = false, unique = true)
     private UUID memberId;
 
-    // -----------------------------------------------------------------
-    // Business Fields (Flagged for Phase G - Preserved as Legacy)
-    // -----------------------------------------------------------------
+    @Column(nullable = false)
+    private String employerName;
 
     @Enumerated(EnumType.STRING)
-    private EmploymentTerms terms; // PERMANENT, CONTRACT, CASUAL, SELF_EMPLOYED
+    @Column(nullable = false)
+    private EmploymentType employmentType; // Renamed from terms
 
-    private String employerName;
-    private String staffNumber;
-    private String stationOrDepartment; // e.g., "Headquarters" or "HR Dept"
+    private String staffNumber; // Critical for Check-off
+
+    private String department; // Renamed from stationOrDepartment
 
     private LocalDate dateEmployed;
-    private LocalDate contractExpiryDate; // Nullable if Permanent
 
-    // 🧠 BRAIN CONNECTION: Used for "1/3rd Rule" Calculation
-    private BigDecimal grossMonthlyIncome;
-    private BigDecimal netMonthlyIncome;
+    private LocalDate contractExpiryDate; // Nullable (for CONTRACT type)
 
-    // Bank Details for Salary Processing
-    private String bankName;
-    private String bankBranch;
-    private String bankAccountNumber;
+    // Financials for Loan Eligibility (Debt Ratio)
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal grossMonthlyIncome = BigDecimal.ZERO;
 
-    // -----------------------------------------------------------------
-    // Global Definition: Audit & Identity (Compliance Added)
-    // -----------------------------------------------------------------
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal netMonthlyIncome = BigDecimal.ZERO;
 
+    // --- Global Audit ---
     @Column(nullable = false)
     private boolean active = true;
 
@@ -73,6 +60,7 @@ public class EmploymentDetails {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (employmentType == null) employmentType = EmploymentType.PERMANENT;
     }
 
     @PreUpdate
@@ -80,7 +68,11 @@ public class EmploymentDetails {
         updatedAt = LocalDateTime.now();
     }
 
-    public enum EmploymentTerms {
-        PERMANENT, CONTRACT, CASUAL, SELF_EMPLOYED, RETIRED, UNEMPLOYED
+    public enum EmploymentType {
+        PERMANENT,
+        CONTRACT,
+        SELF_EMPLOYED,
+        UNEMPLOYED,
+        RETIRED
     }
 }

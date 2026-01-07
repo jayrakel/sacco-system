@@ -1,21 +1,11 @@
 package com.sacco.sacco_system.modules.deposit.domain.entity;
 
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * DepositProduct Entity
- * Represents custom contribution products created by admins
- * Examples: Meat contribution, Harambee, Group projects, etc.
- */
 @Entity
 @Table(name = "deposit_products")
 @Data
@@ -24,37 +14,55 @@ import java.util.UUID;
 @Builder
 public class DepositProduct {
 
+    // Global Definition: Primary Key
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // Domain Dictionary: Key Fields
     @Column(nullable = false, unique = true)
-    private String name;
+    private String productCode; // e.g., "DEP-MBR-01"
+
+    @Column(nullable = false, unique = true)
+    private String productName; // Renamed from name
 
     @Column(length = 500)
     private String description;
 
-    private BigDecimal targetAmount;  // Optional target for the contribution
+    @Column(nullable = false, length = 3)
+    private String currencyCode;
 
-    private BigDecimal currentAmount = BigDecimal.ZERO;  // Total collected so far
+    // --- Configuration (Product Rules) ---
 
-    @Enumerated(EnumType.STRING)
-    private DepositProductStatus status = DepositProductStatus.ACTIVE;
+    // Minimum amount accepted per transaction
+    @Builder.Default
+    private BigDecimal minAmount = BigDecimal.ZERO;
 
-    @ManyToOne
-    @JoinColumn(name = "created_by", nullable = true)
-    private Member createdBy;  // Chairperson or Treasurer (null for system/admin users)
+    // Maximum amount accepted (Optional limit)
+    private BigDecimal maxAmount;
+
+    // Flag: Is this a mandatory contribution? (e.g. Monthly Shares)
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean isMandatory = false;
+
+    // --- Global Audit ---
+    @Column(nullable = false)
+    private boolean active = true; // Replaces status Enum
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
+    private String createdBy; // Decoupled from Member entity
+    private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (currentAmount == null) {
-            currentAmount = BigDecimal.ZERO;
+
+        // Fallback Generator
+        if (productCode == null) {
+            productCode = "DEP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         }
     }
 

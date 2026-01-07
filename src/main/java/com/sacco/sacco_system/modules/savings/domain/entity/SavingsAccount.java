@@ -2,8 +2,6 @@ package com.sacco.sacco_system.modules.savings.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -21,75 +19,71 @@ public class SavingsAccount {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // Business Identifier (Unique)
     @Column(unique = true, nullable = false)
     private String accountNumber;
 
-    // Structural Change: Decoupled Member Entity -> UUID
+    // Structural: Decoupled Member
     @Column(name = "member_id", nullable = false)
     private UUID memberId;
 
-    // Structural Change: Decoupled Product Entity -> UUID
+    // Structural: Decoupled Product
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
-    // Renamed: balance -> balanceAmount
-    // Critical: Setter restricted to prevent accidental service-layer mutation.
-    // Mutation must occur via atomic SavingsTransaction logic.
+    // Financial Snapshot (Source of Truth is Ledger)
+    // Protected Setter enforces atomic updates via Transaction Service
     @Column(nullable = false)
     @Setter(AccessLevel.PROTECTED)
     @Builder.Default
-    private BigDecimal balanceAmount = BigDecimal.ZERO;
+    private BigDecimal balance = BigDecimal.ZERO;
 
-    // Renamed/Added: currency -> currencyCode
     @Column(nullable = false, length = 3)
     private String currencyCode;
 
-    // -----------------------------------------------------------------
-    // Legacy / Derived Fields (Preserved with Warning per Phase F)
-    // -----------------------------------------------------------------
+    // --- Performance Snapshots (Derived from Ledger) ---
+    // Useful for quick interest calculation without re-summing history
+
     @Builder.Default
+    @Setter(AccessLevel.PROTECTED)
     private BigDecimal totalDeposits = BigDecimal.ZERO;
 
     @Builder.Default
+    @Setter(AccessLevel.PROTECTED)
     private BigDecimal totalWithdrawals = BigDecimal.ZERO;
 
     @Builder.Default
+    @Setter(AccessLevel.PROTECTED)
     private BigDecimal accruedInterest = BigDecimal.ZERO;
 
     private LocalDate maturityDate;
-
     private LocalDateTime accountOpenDate;
-    // -----------------------------------------------------------------
 
-    // Renamed: status -> accountStatus
+    // --- Status & Audit ---
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
-    // Global Definition: Audit & Identity
     @Column(nullable = false)
     private boolean active = true;
 
-    @CreationTimestamp
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
     private String createdBy;
     private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
-        if (accountOpenDate == null) {
-            accountOpenDate = LocalDateTime.now();
-        }
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (balanceAmount == null) {
-            balanceAmount = BigDecimal.ZERO;
-        }
-        if (accountStatus == null) {
-            accountStatus = AccountStatus.ACTIVE;
+        if (accountOpenDate == null) accountOpenDate = LocalDateTime.now();
+        if (balance == null) balance = BigDecimal.ZERO;
+        if (accountStatus == null) accountStatus = AccountStatus.ACTIVE;
+
+        // Fallback Generator
+        if (accountNumber == null) {
+            accountNumber = "SA-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         }
     }
 
@@ -98,7 +92,6 @@ public class SavingsAccount {
         updatedAt = LocalDateTime.now();
     }
 
-    // Standardized Dictionary Enum
     public enum AccountStatus {
         ACTIVE,
         DORMANT,

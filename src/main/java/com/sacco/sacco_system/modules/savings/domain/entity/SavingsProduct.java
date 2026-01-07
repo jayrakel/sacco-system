@@ -19,35 +19,35 @@ public class SavingsProduct {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // Domain Dictionary: Key Fields (Section 2 & 15)
+    // Domain Dictionary: Key Fields
     @Column(nullable = false, unique = true)
     private String productCode;
 
     @Column(nullable = false, unique = true)
-    private String productName; // Renamed from name
+    private String productName;
 
     private String description;
 
     @Column(nullable = false, length = 3)
     private String currencyCode;
 
-    // -----------------------------------------------------------------
-    // Configuration Fields (Product Factory Pattern - Authorized)
-    // -----------------------------------------------------------------
+    // --- Configuration (Product Rules) ---
 
     @Enumerated(EnumType.STRING)
     private ProductType type; // SAVINGS, FIXED_DEPOSIT, RECURRING_DEPOSIT
 
-    private BigDecimal interestRate;
+    private BigDecimal interestRate; // Annual %
 
-    private BigDecimal minBalance;
+    private BigDecimal minBalance; // Required to keep open
+
+    // Added: Max amount withdrawable per transaction/day (Risk Control)
+    private BigDecimal withdrawalLimit;
 
     private Integer minDurationMonths;
 
     private boolean allowWithdrawal;
-    // -----------------------------------------------------------------
 
-    // Global Definition: Audit & Identity
+    // --- Global Audit ---
     @Column(nullable = false)
     private boolean active = true;
 
@@ -60,7 +60,6 @@ public class SavingsProduct {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        // Fallback generation if missing
         if (productCode == null) {
             productCode = "SAV-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         }

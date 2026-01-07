@@ -2,7 +2,7 @@ package com.sacco.sacco_system.modules.member.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -14,35 +14,31 @@ import java.util.UUID;
 @Builder
 public class Beneficiary {
 
-    // Global Definition: Primary Key
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // Domain Dictionary: Member Linkage (Loose Coupling)
-    // OPTION A FIX: Mapped as read-only field to allow Member (Parent) to control the @JoinColumn
-    // This provides access to the ID without creating a JPA writing conflict.
-    @Column(name = "member_id", insertable = false, updatable = false)
+    // Structural: Decoupled Member
+    @Column(name = "member_id", nullable = false)
     private UUID memberId;
 
-    // Domain Dictionary: Personal Details (Split from fullName)
     @Column(nullable = false)
-    private String firstName;
-
-    @Column(nullable = false)
-    private String lastName;
+    private String fullName; // Renamed from name
 
     @Column(nullable = false)
     private String relationship;
 
-    // Renamed: idNumber -> identityNumber
-    private String identityNumber;
+    @Column(nullable = false)
+    private String idNumber; // National ID / Passport
 
-    // Renamed: allocation -> allocationPercentage
-    @Column(name = "allocation_percentage")
-    private Double allocationPercentage;
+    private String phoneNumber;
 
-    // Global Definition: Audit & Identity
+    // Benefit Allocation Percentage (e.g., 50.00 for 50%)
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal allocation = BigDecimal.ZERO;
+
+    // --- Global Audit ---
     @Column(nullable = false)
     private boolean active = true;
 

@@ -12,22 +12,37 @@ import java.util.UUID;
 @Repository
 public interface MemberRepository extends JpaRepository<Member, UUID> {
 
+    // --- Core Lookups ---
+
     /**
-     * Finds the Member record linked to a specific User UUID.
-     * Essential for the Member Dashboard and Eligibility checks.
+     * Linkage: Finds the Member profile linked to an Auth User.
      */
     Optional<Member> findByUserId(UUID userId);
 
+    /**
+     * Business Key Lookup (Human-readable)
+     */
     Optional<Member> findByMemberNumber(String memberNumber);
+
+    /**
+     * Business Key Lookup (System-generated)
+     * Added per Dictionary Section 3
+     */
+    Optional<Member> findByMemberId(String memberId);
 
     Optional<Member> findByEmail(String email);
 
     Optional<Member> findByPhoneNumber(String phoneNumber);
 
-    Optional<Member> findByIdNumber(String idNumber);
+    // Renamed from findByIdNumber -> findByNationalId to match Dictionary Section 3
+    Optional<Member> findByNationalId(String nationalId);
 
-    List<Member> findByStatus(Member.MemberStatus status);
+    // --- Status Lookups ---
 
-    @Query("SELECT COUNT(m) FROM Member m WHERE m.status = 'ACTIVE'")
+    // Renamed from findByStatus -> findByMemberStatus to match Entity field 'memberStatus'
+    List<Member> findByMemberStatus(Member.MemberStatus memberStatus);
+
+    // JPQL updated to use 'memberStatus' instead of 'status'
+    @Query("SELECT COUNT(m) FROM Member m WHERE m.memberStatus = 'ACTIVE'")
     long countActiveMembers();
 }
