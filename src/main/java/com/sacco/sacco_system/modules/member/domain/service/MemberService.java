@@ -34,7 +34,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -46,7 +45,7 @@ public class MemberService {
     private final TransactionRepository transactionRepository;
     private final SystemSettingService systemSettingService;
     private final SavingsAccountRepository savingsAccountRepository;
-    private final SavingsProductRepository savingsProductRepository; // ✅ Added
+    private final SavingsProductRepository savingsProductRepository;
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
 
@@ -107,7 +106,10 @@ public class MemberService {
             EmploymentDetails.EmploymentTerms employmentTerms = EmploymentDetails.EmploymentTerms.PERMANENT;
             try {
                 if(eDto.getEmploymentTerms() != null) employmentTerms = EmploymentDetails.EmploymentTerms.valueOf(eDto.getEmploymentTerms());
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                // ✅ FIX: Logged the exception instead of silent failure
+                log.warn("Invalid employment term provided: {}. Defaulting to PERMANENT.", eDto.getEmploymentTerms());
+            }
 
             EmploymentDetails details = EmploymentDetails.builder()
                     .employmentTerms(employmentTerms)
@@ -129,29 +131,35 @@ public class MemberService {
 
         processRegistrationFee(savedMember, paymentMethod, userExternalRef, bankAccountCode);
 
-        // ✅ CALL UPDATED METHOD
+        // ✅ Updated to Lazy Load default product
         createDefaultSavingsAccount(savedMember);
 
         return convertToDTO(savedMember);
     }
 
     private void createDefaultSavingsAccount(Member member) {
-        // ✅ FETCH DEFAULT PRODUCT ("SAV001")
-        // If "SAV001" doesn't exist, we fallback to the first available product
-        // If NO products exist (shouldn't happen with updated DataInitializer), we proceed without one (risky but handles crash)
-
+        // 1. Try to find the standard default product
         SavingsProduct defaultProduct = savingsProductRepository.findByProductCode("SAV001").orElse(null);
 
+        // 2. If it doesn't exist, and NO products exist, create it now using SYSTEM SETTINGS
+        if (defaultProduct == null && savingsProductRepository.count() == 0) {
+            defaultProduct = createSystemDefaultProduct();
+        }
+        // 3. Fallback: If "SAV001" missing but others exist, use the first available one
+        else if (defaultProduct == null) {
+            List<SavingsProduct> all = savingsProductRepository.findAll();
+            // ✅ FIX: Used getFirst()
+            if (!all.isEmpty()) defaultProduct = all.getFirst();
+        }
+
         if (defaultProduct == null) {
-            List<SavingsProduct> allProducts = savingsProductRepository.findAll();
-            if (!allProducts.isEmpty()) {
-                defaultProduct = allProducts.get(0);
-            }
+            log.warn("❌ CRITICAL: No savings product found. Cannot create savings account for member {}", member.getMemberNumber());
+            return;
         }
 
         SavingsAccount savingsAccount = SavingsAccount.builder()
                 .member(member)
-                .product(defaultProduct) // ✅ LINKED HERE
+                .product(defaultProduct)
                 .accountNumber(generateSavingsAccountNumber())
                 .balanceAmount(BigDecimal.ZERO)
                 .totalDeposits(BigDecimal.ZERO)
@@ -161,13 +169,42 @@ public class MemberService {
 
         savingsAccountRepository.save(savingsAccount);
         log.info("✅ Created default savings account {} for member {} under product {}",
-                savingsAccount.getAccountNumber(), member.getMemberNumber(),
-                defaultProduct != null ? defaultProduct.getProductName() : "NONE");
+                savingsAccount.getAccountNumber(), member.getMemberNumber(), defaultProduct.getProductName());
     }
 
-    // ... [Rest of the file remains unchanged: updateProfile, processRegistrationFee, getMemberById, etc.]
+    private SavingsProduct createSystemDefaultProduct() {
+        log.info("⚙️ First Member Detected: Initializing Default Savings Product from System Settings...");
 
-    // (Ensure you include the unchanged methods below so the file is complete)
+        // ✅ Get value from System Settings (seeded in DataInitializer)
+        String minDepositStr = systemSettingService.getString("min_weekly_deposit");
+        BigDecimal minBalance = (minDepositStr != null) ? new BigDecimal(minDepositStr) : new BigDecimal("500.00");
+
+        SavingsProduct newProduct = SavingsProduct.builder()
+                .productCode("SAV001")
+                .productName("Recurring Savings")
+                .description("Default savings account (Auto-generated from System Config)")
+                .currencyCode("KES")
+                .type(SavingsProduct.ProductType.SAVINGS)
+                .interestRate(new BigDecimal("5.00"))
+                .minBalance(minBalance) // ✅ Used System Configuration
+                .minDurationMonths(0)
+                .allowWithdrawal(true)
+                .active(true)
+                .build();
+
+        return savingsProductRepository.save(newProduct);
+    }
+
+    // ... (Existing methods kept)
+
+    // ✅ FIX: Suppressed warning if this is used by Controller via Spring Reflection
+    @SuppressWarnings("unused")
+    public MemberDTO getMemberByMemberNumber(String memberNumber) {
+        return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found"));
+    }
+
+    // ... (Rest of file including convertToDTO, updateProfile etc.)
+
     public MemberDTO updateProfile(UUID memberId, MemberDTO updateDTO, MultipartFile file) throws IOException {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member profile not found"));
@@ -278,16 +315,12 @@ public class MemberService {
         return memberRepository.findById(id).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found"));
     }
 
-    public MemberDTO getMemberByMemberNumber(String memberNumber) {
-        return memberRepository.findByMemberNumber(memberNumber).map(this::convertToDTO).orElseThrow(() -> new RuntimeException("Member not found"));
-    }
-
     public List<MemberDTO> getAllMembers() {
-        return memberRepository.findAll().stream().map(this::convertToDTO).collect(Collectors.toList());
+        return memberRepository.findAll().stream().map(this::convertToDTO).toList(); // ✅ FIX: toList()
     }
 
     public List<MemberDTO> getActiveMembers() {
-        return memberRepository.findByMemberStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList());
+        return memberRepository.findByMemberStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).toList(); // ✅ FIX: toList()
     }
 
     public long getActiveMembersCount() { return memberRepository.countActiveMembers(); }
@@ -348,7 +381,7 @@ public class MemberService {
                     .identityNumber(b.getIdentityNumber())
                     .phoneNumber(b.getPhoneNumber())
                     .allocationPercentage(b.getAllocationPercentage())
-                    .build()).collect(Collectors.toList()));
+                    .build()).toList()); // ✅ FIX: toList()
         }
 
         if (member.getEmploymentDetails() != null) {

@@ -27,34 +27,43 @@ public class SystemSettingService {
     private final SystemSettingRepository repository;
     private final String UPLOAD_DIR = "uploads/settings/";
 
-    // ✅ UPDATED DEFAULTS: Includes MAX_ACTIVE_LOANS & MAX_DEBT_RATIO
+    // ✅ MERGED DEFAULTS: Consolidated all settings here
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
+            // Fees & Contributions
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
-            entry("LOAN_INTEREST_RATE", "10"),
+            entry("MIN_WEEKLY_DEPOSIT", "500"), // Added from DataInitializer
+            entry("PENALTY_MISSED_SAVINGS", "50"), // Added from DataInitializer
+            entry("MIN_SHARE_CAPITAL", "2000"), // Updated to 2000 to match DataInitializer
+
+            // Savings
+            entry("MINIMUM_SAVINGS_BALANCE", "50000.00"), // Added (Used for Product creation)
+
+            // Loans
+            entry("LOAN_INTEREST_RATE", "12"), // Updated to 12%
             entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             entry("LOAN_LIMIT_MULTIPLIER", "3"),
-            entry("LOAN_APPLICATION_FEE", "500"),
-
-            // Loan Eligibility Thresholds
+            entry("LOAN_APPLICATION_FEE", "500"), // Standardized name (was loan_processing_fee)
+            entry("LOAN_PROCESSING_FEE", "500"), // Kept for backward compatibility if needed
             entry("MIN_SAVINGS_FOR_LOAN", "5000"),
             entry("MIN_MONTHS_MEMBERSHIP", "3"),
-            entry("MIN_SHARE_CAPITAL", "1000"),
+            entry("MIN_GUARANTORS", "2"), // Added
 
-            // ✅ ADDED: Missing Governance Keys
+            // Governance
             entry("MAX_ACTIVE_LOANS", "1"),
             entry("MAX_DEBT_RATIO", "0.66"),
+            entry("LOAN_VOTING_METHOD", "MANUAL"),
 
-            // Guarantor Eligibility Thresholds
+            // Guarantor Eligibility
             entry("MIN_SAVINGS_TO_GUARANTEE", "10000"),
             entry("MIN_MONTHS_TO_GUARANTEE", "6"),
             entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
 
-            // Share Capital
+            // Shares
             entry("SHARE_VALUE", "100"),
 
-            // Branding & Contact Details
-            entry("SACCO_NAME", "Secure Sacco"),
+            // Branding & Contact
+            entry("SACCO_NAME", "Seccure Sacco"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
             entry("SACCO_ADDRESS", "P.O. Box 12345-00100, Nairobi, Kenya"),
             entry("SACCO_PHONE", "+254 700 000 000"),
@@ -65,21 +74,21 @@ public class SystemSettingService {
             entry("BRAND_COLOR_PRIMARY", "#059669"),
             entry("BRAND_COLOR_SECONDARY", "#0f172a"),
 
-            // Bank Details
+            // Banking & GL
             entry("BANK_NAME", "Co-operative Bank"),
             entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
             entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
             entry("PAYBILL_NUMBER", "400200"),
-            entry("LOAN_VOTING_METHOD", "MANUAL")
+            entry("DEFAULT_BANK_GL_CODE", "1012") // Added
     );
 
     @PostConstruct
     public void initDefaults() {
         DEFAULTS.forEach((key, value) -> {
+            // Only create if key doesn't exist (prevents overwriting custom changes)
             if (repository.findByKey(key).isEmpty()) {
-                // Determine data type for the frontend
                 String type = "NUMBER";
-                if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") || key.contains("ADDRESS") || key.contains("EMAIL") || key.contains("WEBSITE")) {
+                if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") || key.contains("ADDRESS") || key.contains("EMAIL") || key.contains("WEBSITE") || key.contains("CODE") || key.contains("METHOD")) {
                     type = "STRING";
                 }
 
@@ -92,6 +101,8 @@ public class SystemSettingService {
             }
         });
     }
+
+    // ... [Keep your existing getter/setter methods below] ...
 
     public List<SystemSetting> getAllSettings() {
         return repository.findAll();
@@ -107,6 +118,13 @@ public class SystemSettingService {
                 .orElse(defaultValue);
     }
 
+    // Overload for single argument
+    public String getString(String key) {
+        return repository.findByKey(key)
+                .map(SystemSetting::getValue)
+                .orElse(null);
+    }
+
     @Transactional
     public SystemSetting createOrUpdate(String key, String value, String description) {
         return repository.findByKey(key)
@@ -118,7 +136,6 @@ public class SystemSettingService {
                     return repository.save(existing);
                 })
                 .orElseGet(() -> {
-                    // Determine type automatically
                     String type = "STRING";
                     try {
                         Double.parseDouble(value);
@@ -160,9 +177,7 @@ public class SystemSettingService {
         if (setting.getValue() != null && !setting.getValue().isEmpty()) {
             try {
                 Files.deleteIfExists(uploadPath.resolve(setting.getValue()));
-            } catch (Exception e) {
-                // Ignore delete errors
-            }
+            } catch (Exception e) { }
         }
 
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
