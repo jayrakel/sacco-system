@@ -78,10 +78,23 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Draft Created", applicationService.createDraft(user.getEmail(), req)));
     }
 
+    // ✅ FIXED: Updated to match Frontend payload (memberId instead of guarantorMemberId)
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<ApiResponse<Object>> addGuarantor(@PathVariable UUID loanId, @RequestBody Map<String, Object> body) {
-        UUID guarantorId = UUID.fromString((String) body.get("guarantorMemberId"));
+        String memberIdStr = (String) body.get("memberId");
+
+        // Fallback support if frontend sends 'guarantorMemberId'
+        if (memberIdStr == null) {
+            memberIdStr = (String) body.get("guarantorMemberId");
+        }
+
+        if (memberIdStr == null) {
+            throw new IllegalArgumentException("Member ID is required");
+        }
+
+        UUID guarantorId = UUID.fromString(memberIdStr);
         BigDecimal amount = new BigDecimal(body.get("amount").toString());
+
         applicationService.addGuarantor(loanId, guarantorId, amount);
         return ResponseEntity.ok(new ApiResponse<>(true, "Guarantor Added"));
     }
@@ -93,29 +106,24 @@ public class LoanController {
     }
 
     // --- 4. Workflow Actions (Officer/Admin) ---
-    // These support the LoanManager.jsx buttons
 
     @PostMapping("/{loanId}/review")
     public ResponseEntity<ApiResponse<Object>> startReview(@PathVariable UUID loanId) {
-        // In future: applicationService.transitionStatus(loanId, LoanStatus.LOAN_OFFICER_REVIEW);
         return ResponseEntity.ok(new ApiResponse<>(true, "Review Process Started"));
     }
 
     @PostMapping("/{loanId}/approve")
     public ResponseEntity<ApiResponse<Object>> officerApprove(@PathVariable UUID loanId) {
-        // In future: applicationService.transitionStatus(loanId, LoanStatus.SECRETARY_TABLED);
         return ResponseEntity.ok(new ApiResponse<>(true, "Approved and Tabled for Secretary"));
     }
 
     @PostMapping("/{loanId}/table")
     public ResponseEntity<ApiResponse<Object>> tableLoan(@PathVariable UUID loanId, @RequestParam(required = false) String meetingDate) {
-        // In future: applicationService.setMeetingDate(loanId, meetingDate);
         return ResponseEntity.ok(new ApiResponse<>(true, "Loan Tabled for Meeting"));
     }
 
     @PostMapping("/{loanId}/vote/open")
     public ResponseEntity<ApiResponse<Object>> openVoting(@PathVariable UUID loanId) {
-        // In future: applicationService.transitionStatus(loanId, LoanStatus.VOTING_OPEN);
         return ResponseEntity.ok(new ApiResponse<>(true, "Voting Session Opened"));
     }
 
@@ -123,19 +131,16 @@ public class LoanController {
     public ResponseEntity<ApiResponse<Object>> closeVoting(@PathVariable UUID loanId,
                                                            @RequestParam(required = false) Boolean manualApproved,
                                                            @RequestParam(required = false) String comments) {
-        // In future: applicationService.closeVoting(loanId, manualApproved, comments);
         return ResponseEntity.ok(new ApiResponse<>(true, "Voting Closed & Recorded"));
     }
 
     @PostMapping("/{loanId}/final-approve")
     public ResponseEntity<ApiResponse<Object>> finalApprove(@PathVariable UUID loanId) {
-        // In future: applicationService.transitionStatus(loanId, LoanStatus.TREASURER_DISBURSEMENT);
         return ResponseEntity.ok(new ApiResponse<>(true, "Final Approval Granted"));
     }
 
     @PostMapping("/{loanId}/disburse")
     public ResponseEntity<ApiResponse<Object>> disburse(@PathVariable UUID loanId, @RequestParam(required = false) String checkNumber) {
-        // In future: applicationService.disburseLoan(loanId, checkNumber);
         return ResponseEntity.ok(new ApiResponse<>(true, "Funds Disbursed"));
     }
 

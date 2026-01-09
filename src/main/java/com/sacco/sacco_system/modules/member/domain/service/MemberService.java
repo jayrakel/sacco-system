@@ -266,7 +266,7 @@ public class MemberService {
     }
 
     public List<MemberDTO> getActiveMembers() {
-        return memberRepository.findByStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList());
+        return memberRepository.findByMemberStatus(Member.MemberStatus.ACTIVE).stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
     public long getActiveMembersCount() { return memberRepository.countActiveMembers(); }
@@ -313,7 +313,8 @@ public class MemberService {
                 .address(member.getAddress())
                 .dateOfBirth(member.getDateOfBirth())
                 .profileImageUrl(member.getProfileImageUrl())
-                .memberStatus(member.getMemberStatus().toString())  // ✅ Changed to memberStatus
+                // ✅ Add null check to prevent NullPointerException
+                .memberStatus(member.getMemberStatus() != null ? member.getMemberStatus().toString() : "ACTIVE")
                 .totalShares(member.getTotalShares())
                 .totalSavings(member.getTotalSavings())
                 .membershipDate(member.getMembershipDate())

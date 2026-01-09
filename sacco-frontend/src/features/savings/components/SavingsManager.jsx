@@ -66,9 +66,20 @@ export default function SavingsManager() {
                                 <td className="p-4 font-mono text-slate-500">{acc.accountNumber}</td>
                                 <td className="p-4 font-bold text-slate-700">{acc.memberName}</td>
                                 <td className="p-4"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{acc.productName}</span></td>
-                                <td className="p-4 text-right font-mono font-bold">KES {Number(acc.balance).toLocaleString()}</td>
+
+                                {/* ✅ FIXED: Used 'balanceAmount' instead of 'balance' */}
+                                <td className="p-4 text-right font-mono font-bold">
+                                    KES {Number(acc.balanceAmount).toLocaleString()}
+                                </td>
+
                                 <td className="p-4 text-xs text-slate-500">{acc.maturityDate ? new Date(acc.maturityDate).toLocaleDateString() : '-'}</td>
-                                <td className="p-4"><span className="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold">{acc.status}</span></td>
+
+                                {/* ✅ FIXED: Used 'accountStatus' instead of 'status' */}
+                                <td className="p-4">
+                                    <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold">
+                                        {acc.accountStatus}
+                                    </span>
+                                </td>
                             </tr>
                         ))}
                     </tbody>

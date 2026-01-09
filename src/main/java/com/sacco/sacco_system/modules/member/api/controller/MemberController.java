@@ -32,10 +32,15 @@ public class MemberController {
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getMyProfile() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Member profile not linked to this account"));
 
-        return ResponseEntity.ok(Map.of("success", true, "data", memberService.convertToDTO(member)));
+        // ✅ FIX: Allow users without member accounts (admin, staff, etc.)
+        return memberRepository.findByEmail(email)
+                .map(member -> ResponseEntity.ok(Map.of("success", true, "data", memberService.convertToDTO(member))))
+                .orElse(ResponseEntity.ok(Map.of(
+                        "success", false,
+                        "hasMemberAccount", false,
+                        "message", "This account is not linked to a member profile. Only member accounts can access this section."
+                )));
     }
 
     // Accepts Multipart File + JSON String + Payment Params

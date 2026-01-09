@@ -8,6 +8,10 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 import java.util.Map;
@@ -28,6 +33,62 @@ public class ReportingService {
     private final TransactionRepository transactionRepository;
     private final MemberRepository memberRepository;
     private final SystemSettingRepository systemSettingRepository;
+    private final SavingsAccountRepository savingsAccountRepository;
+    private final LoanRepository loanRepository;
+
+    // ✅ NEW: Calculate Dashboard Stats with REAL Net Income
+    @Transactional(readOnly = true)
+    public Map<String, Object> getDashboardStats() {
+        // 1. Total Members
+        long totalMembers = memberRepository.count();
+
+        // 2. Total Savings (Sum of all account balances)
+        BigDecimal totalSavings = savingsAccountRepository.findAll().stream()
+                .map(SavingsAccount::getBalanceAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 3. Total Loans Issued (Sum of principal for all loans)
+        BigDecimal totalLoansIssued = loanRepository.findAll().stream()
+                .map(Loan::getPrincipalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 4. Net Income Calculation
+        // Income = Fees (Processing, Registration, Fines, Penalties)
+        // Expenses = Interest Earned (Money paid OUT to members)
+
+        List<Transaction> allTransactions = transactionRepository.findAll();
+
+        BigDecimal income = allTransactions.stream()
+                .filter(t -> isIncomeType(t.getType()))
+                .map(Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Check if INTEREST_EARNED exists (Generic check to avoid compilation error if enum missing)
+        BigDecimal expenses = allTransactions.stream()
+                .filter(t -> t.getType().toString().equals("INTEREST_EARNED"))
+                .map(Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal netIncome = income.subtract(expenses);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalMembers", totalMembers);
+        stats.put("totalSavings", totalSavings);
+        stats.put("totalLoansIssued", totalLoansIssued);
+        stats.put("netIncome", netIncome);
+
+        return stats;
+    }
+
+    /**
+     * Helper to identify Income-generating transactions for the Sacco
+     */
+    private boolean isIncomeType(Transaction.TransactionType type) {
+        return type == Transaction.TransactionType.PROCESSING_FEE ||
+                type == Transaction.TransactionType.REGISTRATION_FEE ||
+                type == Transaction.TransactionType.LATE_PAYMENT_PENALTY ||
+                type == Transaction.TransactionType.FINE_PAYMENT;
+    }
 
     @Transactional(readOnly = true)
     public MemberStatementDTO getMemberStatement(UUID memberId, LocalDate startDate, LocalDate endDate) {
@@ -77,23 +138,21 @@ public class ReportingService {
         for (Transaction tx : periodTransactions) {
             BigDecimal amount = tx.getAmount();
 
-            // Visual Totals
             if (isDebit(tx)) {
                 totalDebits = totalDebits.add(amount.abs());
             } else {
                 totalCredits = totalCredits.add(amount);
             }
 
-            // Running Balance
             currentBalance = applyTransactionToBalance(currentBalance, tx);
 
             dtos.add(MemberStatementDTO.StatementTransaction.builder()
                     .date(tx.getTransactionDate().toLocalDate())
-                    .reference(tx.getReferenceCode()) // System Ref
-                    .externalReference(tx.getExternalReference()) // User Ref
+                    .reference(tx.getReferenceCode())
+                    .externalReference(tx.getExternalReference())
                     .description(tx.getDescription())
                     .type(tx.getType().toString())
-                    .amount(isDebit(tx) ? amount.negate() : amount) // Sign correctly
+                    .amount(isDebit(tx) ? amount.negate() : amount)
                     .runningBalance(currentBalance)
                     .build());
         }
@@ -116,15 +175,11 @@ public class ReportingService {
                 .build();
     }
 
-    /**
-     * Calculates impact on Savings Balance.
-     * External payments (M-Pesa/Bank) do NOT affect the Savings Balance.
-     */
     private BigDecimal applyTransactionToBalance(BigDecimal currentBalance, Transaction tx) {
         BigDecimal amount = tx.getAmount();
 
         if (isExternalPayment(tx)) {
-            return currentBalance; // Balance unchanged
+            return currentBalance;
         }
 
         if (isDebit(tx)) {
@@ -134,9 +189,6 @@ public class ReportingService {
         }
     }
 
-    /**
-     * Determines if transaction is Money Out (Debit) for the MEMBER.
-     */
     private boolean isDebit(Transaction tx) {
         switch (tx.getType()) {
             case WITHDRAWAL:
@@ -145,27 +197,21 @@ public class ReportingService {
             case REGISTRATION_FEE:
             case LATE_PAYMENT_PENALTY:
             case FINE_PAYMENT:
-            case LOAN_REPAYMENT: // ✅ ADDED: Repayment is money leaving the member
+            case LOAN_REPAYMENT:
                 return true;
             default:
-                return false; // Deposits, Loan Disbursements, Interest Earned = Credit
+                return false;
         }
     }
 
-    /**
-     * Checks if money moved via external channel (M-Pesa/Bank/Cash)
-     * instead of the internal Savings Account.
-     */
     private boolean isExternalPayment(Transaction tx) {
-        // These types can be paid externally
         boolean canBeExternal =
                 tx.getType() == Transaction.TransactionType.PROCESSING_FEE ||
                         tx.getType() == Transaction.TransactionType.REGISTRATION_FEE ||
                         tx.getType() == Transaction.TransactionType.FINE_PAYMENT ||
-                        tx.getType() == Transaction.TransactionType.LOAN_REPAYMENT || // ✅ ADDED
-                        tx.getType() == Transaction.TransactionType.LOAN_DISBURSEMENT; // ✅ ADDED
+                        tx.getType() == Transaction.TransactionType.LOAN_REPAYMENT ||
+                        tx.getType() == Transaction.TransactionType.LOAN_DISBURSEMENT;
 
-        // If payment method is NOT System/Null, it's external
         boolean isExternalMethod = tx.getPaymentMethod() != Transaction.PaymentMethod.SYSTEM &&
                 tx.getPaymentMethod() != null;
 

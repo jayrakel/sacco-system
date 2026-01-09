@@ -128,17 +128,18 @@ function OverviewTab() {
     const [stats, setStats] = useState({ totalMembers: 0, totalSavings: 0, totalLoansIssued: 0, netIncome: 0 });
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(true);
-    const navigate = useNavigate(); 
+    const navigate = useNavigate();
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
     });
 
-    useEffect(() => { loadDashboard(); }, []); 
+    useEffect(() => { loadDashboard(); }, []);
 
     const loadDashboard = async () => {
         try {
-            const todayRes = await api.get('/api/reports/today');
+            // ✅ FIXED: Updated endpoint to match ReportingController change
+            const todayRes = await api.get('/api/reports/dashboard-stats');
             if (todayRes.data.success) setStats(todayRes.data.data);
             fetchChartData();
             setLoading(false);
@@ -187,7 +188,7 @@ function OverviewTab() {
                 <StatCard label="Loans Issued" value={stats.totalLoansIssued} icon={CreditCard} color="bg-purple-600" subtext="Total Disbursed" />
                 <ShareCapitalCard />
             </div>
-            
+
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
                     <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-4">
@@ -390,12 +391,48 @@ function FinanceTab() {
 // ==================================================================================
 function MembersTab() {
     const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        api.get('/api/members').then(res => {
-            if(res.data.success) setMembers(res.data.data);
-        });
+        api.get('/api/members')
+            .then(res => {
+                console.log('Members API Response:', res.data);
+                if(res.data.success) {
+                    setMembers(res.data.data);
+                }
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error('Error fetching members:', err);
+                setError(err.response?.data?.message || 'Failed to load members');
+                setLoading(false);
+            });
     }, []);
+
+    if (loading) {
+        return (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center">
+                <div className="text-slate-400">Loading members...</div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center">
+                <div className="text-red-600">Error: {error}</div>
+            </div>
+        );
+    }
+
+    if (members.length === 0) {
+        return (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center">
+                <div className="text-slate-400">No members found. Register your first member to get started.</div>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">

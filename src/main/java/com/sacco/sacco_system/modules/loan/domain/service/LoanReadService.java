@@ -15,8 +15,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,8 +34,22 @@ public class LoanReadService {
     @Transactional(readOnly = true)
     public LoanDashboardDTO getMemberDashboard(String email) {
         log.info("🔍 DASHBOARD LOOKUP: Searching for Member with email: ['{}']", email);
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new ApiException("Member profile not found. Please complete your registration.", 400));
+
+        Optional<Member> memberOpt = memberRepository.findByEmail(email);
+
+        // ✅ FIXED: Handle non-member Users gracefully instead of throwing 400
+        if (memberOpt.isEmpty()) {
+            return LoanDashboardDTO.builder()
+                    .canApply(false)
+                    .eligibilityMessage("Please complete your Member Profile to access loan services.")
+                    .eligibilityDetails(Map.of("eligible", false, "reason", "No Member Profile"))
+                    .activeLoans(Collections.emptyList())
+                    .activeLoansCount(0)
+                    .totalOutstandingBalance(0.0)
+                    .build();
+        }
+
+        Member member = memberOpt.get();
 
         // 1. Check Eligibility
         Map<String, Object> eligibility = eligibilityService.checkEligibility(email);
@@ -64,9 +80,14 @@ public class LoanReadService {
     }
 
     public List<LoanResponseDTO> getMemberLoans(String email) {
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new ApiException("Member not found", 400));
-        return loanRepository.findByMemberId(member.getId()).stream()
+        Optional<Member> memberOpt = memberRepository.findByEmail(email);
+
+        // ✅ FIXED: Return empty list if User is not a Member
+        if (memberOpt.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return loanRepository.findByMemberId(memberOpt.get().getId()).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -75,12 +96,15 @@ public class LoanReadService {
      * Returns requests where other members have asked the current user to be a guarantor.
      */
     public List<Map<String, Object>> getGuarantorRequests(String email) {
-        Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new ApiException("Member not found", 400));
+        Optional<Member> memberOpt = memberRepository.findByEmail(email);
 
-        List<Guarantor> requests = guarantorRepository.findByMemberAndStatus(member, Guarantor.GuarantorStatus.PENDING);
+        // ✅ FIXED: Return empty list if User is not a Member (cannot be a guarantor yet)
+        if (memberOpt.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        // ✅ FIXED: Explicitly typed Map.<String, Object>of() to prevent type inference errors
+        List<Guarantor> requests = guarantorRepository.findByMemberAndStatus(memberOpt.get(), Guarantor.GuarantorStatus.PENDING);
+
         return requests.stream().map(g -> Map.<String, Object>of(
                 "requestId", g.getId(),
                 "borrowerName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName(),
@@ -97,7 +121,6 @@ public class LoanReadService {
         // In real apps, verify user role here (e.g., Committee Member)
         List<Loan> loans = loanRepository.findByLoanStatus(Loan.LoanStatus.SUBMITTED);
 
-        // ✅ FIXED: Explicitly typed Map.<String, Object>of()
         return loans.stream().map(l -> Map.<String, Object>of(
                 "id", l.getId(),
                 "applicantName", l.getMember().getFirstName() + " " + l.getMember().getLastName(),
@@ -109,7 +132,7 @@ public class LoanReadService {
 
     public List<LoanResponseDTO> getAllLoans() {
         return loanRepository.findAll().stream()
-                .map(this::mapToDTO) // Reuses your existing mapToDTO
+                .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
 
@@ -119,8 +142,8 @@ public class LoanReadService {
                 .loanNumber(loan.getLoanNumber())
                 .productName(loan.getProduct().getProductName())
                 .principalAmount(loan.getPrincipalAmount())
-                .totalOutstandingAmount(loan.getTotalOutstandingAmount())  // ✅ Changed from balance
-                .loanStatus(loan.getLoanStatus().name())  // ✅ Changed from status
+                .totalOutstandingAmount(loan.getTotalOutstandingAmount())
+                .loanStatus(loan.getLoanStatus().name())
                 .applicationDate(loan.getApplicationDate())
                 .feePaid(loan.isFeePaid())
                 .build();

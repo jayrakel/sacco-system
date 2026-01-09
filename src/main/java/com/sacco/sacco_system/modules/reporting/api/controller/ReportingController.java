@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.modules.reporting.api.controller;
 
+import com.sacco.sacco_system.modules.core.dto.ApiResponse;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.reporting.api.dto.LoanAgingDTO;
@@ -21,9 +22,14 @@ import java.util.UUID;
 public class ReportingController {
 
     private final ReportingService reportingService;
-    private final MemberRepository memberRepository; // ✅ Inject MemberRepository
+    private final MemberRepository memberRepository;
 
-    // ✅ EXISTING: Admin/Staff access to any member's statement
+    // ✅ FIXED: Changed path to '/dashboard-stats' to avoid conflict with FinancialReportController
+    @GetMapping("/dashboard-stats")
+    public ResponseEntity<ApiResponse<Object>> getDashboardStats() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Dashboard stats fetched", reportingService.getDashboardStats()));
+    }
+
     @GetMapping("/member-statement/{memberId}")
     public ResponseEntity<Map<String, Object>> getMemberStatement(
             @PathVariable UUID memberId,
@@ -37,26 +43,20 @@ public class ReportingController {
         return ResponseEntity.ok(Map.of("success", true, "data", statement));
     }
 
-    // ✅ NEW: Member Self-Service Statement
     @GetMapping("/my-statement")
     public ResponseEntity<Map<String, Object>> getMyStatement(
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate
     ) {
-        // 1. Get Logged-in User's Email
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
-
-        // 2. Find Member Entity
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Member profile not found for this account"));
 
-        // 3. Default Dates
         if (startDate == null) startDate = LocalDate.now().minusDays(30);
         if (endDate == null) endDate = LocalDate.now();
 
-        // 4. Generate Statement
         MemberStatementDTO statement = reportingService.getMemberStatement(member.getId(), startDate, endDate);
-        
+
         return ResponseEntity.ok(Map.of("success", true, "data", statement));
     }
 

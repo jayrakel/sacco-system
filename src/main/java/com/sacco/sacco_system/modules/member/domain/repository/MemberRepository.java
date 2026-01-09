@@ -26,8 +26,9 @@ public interface MemberRepository extends JpaRepository<Member, UUID> {
 
     Optional<Member> findByNationalId(String nationalId);
 
-    List<Member> findByStatus(Member.MemberStatus status);
+    // ✅ Changed from findByStatus to findByMemberStatus to match Member.memberStatus field
+    List<Member> findByMemberStatus(Member.MemberStatus memberStatus);
 
-    @Query("SELECT COUNT(m) FROM Member m WHERE m.status = 'ACTIVE'")
+    @Query("SELECT COUNT(m) FROM Member m WHERE m.memberStatus = 'ACTIVE'")
     long countActiveMembers();
 }

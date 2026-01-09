@@ -33,6 +33,9 @@ export default function MemberProfile() {
                     beneficiaries: data.beneficiaries || [],
                     employmentDetails: data.employmentDetails || {} 
                 });
+            } else if (res.data.hasMemberAccount === false) {
+                // ✅ User is not a member (admin/staff account)
+                setProfile(null);
             }
         } catch (e) {
             console.error(e);
@@ -67,7 +70,15 @@ export default function MemberProfile() {
     const addBeneficiary = () => {
         setFormData({
             ...formData,
-            beneficiaries: [...formData.beneficiaries, { fullName: '', relationship: '', allocation: 0 }]
+            // ✅ FIX: Use firstName, lastName, and allocationPercentage to match backend DTO
+            beneficiaries: [...formData.beneficiaries, {
+                firstName: '',
+                lastName: '',
+                relationship: '',
+                identityNumber: '',
+                phoneNumber: '',
+                allocationPercentage: 0
+            }]
         });
     };
 
@@ -107,6 +118,26 @@ export default function MemberProfile() {
     };
 
     if (loading) return <div className="p-10 text-center text-slate-400">Loading profile...</div>;
+
+    // ✅ Handle non-member users (admin/staff accounts)
+    if (!profile) {
+        return (
+            <div className="max-w-4xl mx-auto p-10 animate-in fade-in">
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-indigo-200 rounded-2xl p-8 text-center">
+                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <User size={32} className="text-indigo-600" />
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-2">Staff/Admin Account</h2>
+                    <p className="text-slate-600 mb-4">
+                        This account is not linked to a member profile. This section is only available for registered SACCO members.
+                    </p>
+                    <p className="text-sm text-slate-500">
+                        If you need to manage your staff profile, please contact the system administrator.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
@@ -214,11 +245,45 @@ export default function MemberProfile() {
 
                         {formData.beneficiaries.map((b, idx) => (
                             <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 relative">
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <EditableField label="Name" value={b.fullName} onChange={v => handleBeneficiaryChange(idx, 'fullName', v)} isEditing={isEditing} />
-                                    <EditableField label="Relation" value={b.relationship} onChange={v => handleBeneficiaryChange(idx, 'relationship', v)} isEditing={isEditing} />
-                                    <EditableField label="Phone" value={b.phoneNumber} onChange={v => handleBeneficiaryChange(idx, 'phoneNumber', v)} isEditing={isEditing} />
-                                    <EditableField label="Allocation %" value={b.allocation} onChange={v => handleBeneficiaryChange(idx, 'allocation', v)} isEditing={isEditing} />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* ✅ Split Name into First and Last */}
+                                    <EditableField
+                                        label="First Name"
+                                        value={b.firstName}
+                                        onChange={v => handleBeneficiaryChange(idx, 'firstName', v)}
+                                        isEditing={isEditing}
+                                    />
+                                    <EditableField
+                                        label="Last Name"
+                                        value={b.lastName}
+                                        onChange={v => handleBeneficiaryChange(idx, 'lastName', v)}
+                                        isEditing={isEditing}
+                                    />
+                                    <EditableField
+                                        label="Relationship"
+                                        value={b.relationship}
+                                        onChange={v => handleBeneficiaryChange(idx, 'relationship', v)}
+                                        isEditing={isEditing}
+                                    />
+                                    <EditableField
+                                        label="ID Number"
+                                        value={b.identityNumber}
+                                        onChange={v => handleBeneficiaryChange(idx, 'identityNumber', v)}
+                                        isEditing={isEditing}
+                                    />
+                                    <EditableField
+                                        label="Phone Number"
+                                        value={b.phoneNumber}
+                                        onChange={v => handleBeneficiaryChange(idx, 'phoneNumber', v)}
+                                        isEditing={isEditing}
+                                    />
+                                    {/* ✅ Changed from allocation to allocationPercentage */}
+                                    <EditableField
+                                        label="Allocation %"
+                                        value={b.allocationPercentage}
+                                        onChange={v => handleBeneficiaryChange(idx, 'allocationPercentage', v)}
+                                        isEditing={isEditing}
+                                    />
                                 </div>
                                 {isEditing && (
                                     <button onClick={() => removeBeneficiary(idx)} className="absolute -top-2 -right-2 bg-white border border-rose-200 text-rose-500 p-1 rounded-full hover:bg-rose-50"><Trash2 size={12}/></button>
