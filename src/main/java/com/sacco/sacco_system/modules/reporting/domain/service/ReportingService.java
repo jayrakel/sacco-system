@@ -36,25 +36,25 @@ public class ReportingService {
     private final SavingsAccountRepository savingsAccountRepository;
     private final LoanRepository loanRepository;
 
-    // ✅ NEW: Calculate Dashboard Stats with REAL Net Income
+    // ✅ Section 31 Compliance: Read-Only Transaction (No Mutation)
     @Transactional(readOnly = true)
     public Map<String, Object> getDashboardStats() {
         // 1. Total Members
         long totalMembers = memberRepository.count();
 
-        // 2. Total Savings (Sum of all account balances)
+        // 2. Total Savings (Aggregated from Accounts per Section 33)
         BigDecimal totalSavings = savingsAccountRepository.findAll().stream()
                 .map(SavingsAccount::getBalanceAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 3. Total Loans Issued (Sum of principal for all loans)
+        // 3. Total Loans Issued (Aggregated from Loan Principal per Section 17)
         BigDecimal totalLoansIssued = loanRepository.findAll().stream()
                 .map(Loan::getPrincipalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 4. Net Income Calculation
-        // Income = Fees (Processing, Registration, Fines, Penalties)
-        // Expenses = Interest Earned (Money paid OUT to members)
+        // 4. Net Income Calculation (Derived per Section 36 P&L)
+        // Income = Fees (Processing, Registration, Fines)
+        // Expenses = Interest Paid to Members
 
         List<Transaction> allTransactions = transactionRepository.findAll();
 
@@ -63,7 +63,7 @@ public class ReportingService {
                 .map(Transaction::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Check if INTEREST_EARNED exists (Generic check to avoid compilation error if enum missing)
+        // Interest Earned by members is an EXPENSE for the Sacco
         BigDecimal expenses = allTransactions.stream()
                 .filter(t -> t.getType().toString().equals("INTEREST_EARNED"))
                 .map(Transaction::getAmount)
@@ -81,7 +81,7 @@ public class ReportingService {
     }
 
     /**
-     * Helper to identify Income-generating transactions for the Sacco
+     * Helper to classify Income types (Aligned with Phase C/D Accounting logic)
      */
     private boolean isIncomeType(Transaction.TransactionType type) {
         return type == Transaction.TransactionType.PROCESSING_FEE ||
@@ -95,7 +95,6 @@ public class ReportingService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        // 1. Organization Config
         List<SystemSetting> settings = systemSettingRepository.findAll();
         Map<String, String> config = settings.stream()
                 .collect(Collectors.toMap(SystemSetting::getKey, SystemSetting::getValue, (a, b) -> b));
@@ -105,10 +104,9 @@ public class ReportingService {
         String orgEmail = config.getOrDefault("ORGANIZATION_EMAIL", "info@sacco.com");
         String orgLogo = config.getOrDefault("ORGANIZATION_LOGO", "");
 
-        // 2. Fetch All Transactions
+        // Section 32 Compliance: Reproducible from Transactions
         List<Transaction> allTransactions = transactionRepository.findByMemberIdOrderByTransactionDateDesc(memberId);
 
-        // 3. Calculate Opening Balance (Replay history)
         BigDecimal openingBalance = BigDecimal.ZERO;
         List<Transaction> chronological = allTransactions.stream()
                 .sorted(Comparator.comparing(Transaction::getTransactionDate))
@@ -120,7 +118,6 @@ public class ReportingService {
             }
         }
 
-        // 4. Filter for Period
         List<Transaction> periodTransactions = chronological.stream()
                 .filter(tx -> {
                     LocalDate txDate = tx.getTransactionDate().toLocalDate();
@@ -128,7 +125,6 @@ public class ReportingService {
                 })
                 .collect(Collectors.toList());
 
-        // 5. Generate Statement Lines
         BigDecimal currentBalance = openingBalance;
         BigDecimal totalDebits = BigDecimal.ZERO;
         BigDecimal totalCredits = BigDecimal.ZERO;

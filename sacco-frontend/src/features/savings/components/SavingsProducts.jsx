@@ -5,9 +5,16 @@ import { Package, Plus, Save, Trash2, Percent, Clock, Lock } from 'lucide-react'
 export default function SavingsProducts() {
     const [products, setProducts] = useState([]);
     const [showModal, setShowModal] = useState(false);
+
+    // ✅ FIXED: Changed 'name' to 'productName' to match Backend Entity & Domain Dictionary
     const [newProduct, setNewProduct] = useState({
-        name: '', description: '', type: 'SAVINGS',
-        interestRate: 5.0, minBalance: 0, minDurationMonths: 0, allowWithdrawal: true
+        productName: '',
+        description: '',
+        type: 'SAVINGS',
+        interestRate: 5.0,
+        minBalance: 0,
+        minDurationMonths: 0,
+        allowWithdrawal: true
     });
 
     useEffect(() => { fetchProducts(); }, []);
@@ -22,11 +29,15 @@ export default function SavingsProducts() {
     const handleCreate = async (e) => {
         e.preventDefault();
         try {
+            // ✅ Backend expects 'productName' (Domain Dictionary Section 15)
             await api.post('/api/savings/products', newProduct);
             alert("Product Created!");
             setShowModal(false);
             fetchProducts();
-        } catch (e) { alert("Error creating product"); }
+        } catch (e) {
+            console.error(e);
+            alert("Error creating product: " + (e.response?.data?.message || e.message));
+        }
     };
 
     return (
@@ -44,7 +55,8 @@ export default function SavingsProducts() {
                 {products.map(p => (
                     <div key={p.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition">
                         <div className="flex justify-between items-start mb-2">
-                            <h3 className="font-bold text-lg text-slate-800">{p.name}</h3>
+                            {/* ✅ Read from 'productName' */}
+                            <h3 className="font-bold text-lg text-slate-800">{p.productName}</h3>
                             <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold uppercase text-slate-500">{p.type}</span>
                         </div>
                         <p className="text-xs text-slate-500 mb-4 h-8">{p.description}</p>
@@ -65,7 +77,11 @@ export default function SavingsProducts() {
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
                         <h3 className="font-bold text-lg mb-4 text-slate-800">Create Savings Product</h3>
                         <form onSubmit={handleCreate} className="space-y-3">
-                            <div><label className="text-xs font-bold text-slate-500">Name</label><input type="text" required className="w-full p-2 border rounded" onChange={e => setNewProduct({...newProduct, name: e.target.value})} /></div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500">Product Name</label>
+                                {/* ✅ Update 'productName' state */}
+                                <input type="text" required className="w-full p-2 border rounded" onChange={e => setNewProduct({...newProduct, productName: e.target.value})} />
+                            </div>
                             <div><label className="text-xs font-bold text-slate-500">Description</label><input type="text" className="w-full p-2 border rounded" onChange={e => setNewProduct({...newProduct, description: e.target.value})} /></div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div><label className="text-xs font-bold text-slate-500">Type</label>

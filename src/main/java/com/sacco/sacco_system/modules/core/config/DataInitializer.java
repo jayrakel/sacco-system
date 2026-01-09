@@ -5,6 +5,8 @@ import com.sacco.sacco_system.modules.users.domain.service.UserService;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +28,7 @@ public class DataInitializer {
     private final UserService userService;
     private final AccountingService accountingService;
     private final SystemSettingRepository systemSettingRepository;
+    private final SavingsProductRepository savingsProductRepository; // ✅ Added Repository
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.default-admin.email}")
@@ -47,7 +50,7 @@ public class DataInitializer {
             log.info("🚀 Starting system initialization...");
 
             try {
-                // 1. Initialize System Settings (The "Betterlink" Rules)
+                // 1. Initialize System Settings
                 initializeSystemSettings();
 
                 // 2. Initialize Default Admin User
@@ -57,7 +60,8 @@ public class DataInitializer {
                 accountingService.initChartOfAccounts();
                 accountingService.initDefaultMappings();
 
-                // 4. Loan Products Initialization REMOVED as requested ✅
+                // 4. ✅ Initialize Default Savings Product
+                initializeDefaultSavingsProduct();
 
                 log.info("✅ System initialization completed successfully!");
             } catch (Exception e) {
@@ -65,6 +69,36 @@ public class DataInitializer {
                 throw new RuntimeException("Failed to initialize system", e);
             }
         };
+    }
+
+    private void initializeDefaultSavingsProduct() {
+        // Check if ANY savings product exists
+        if (savingsProductRepository.count() > 0) {
+            log.info("ℹ️ Savings products already exist, skipping default creation...");
+            return;
+        }
+
+        log.info("💰 Creating default 'Ordinary Savings' product...");
+
+        String MINIMUM_SAVINGS_BALANCE = systemSettingRepository.findByKey("MINIMUM_SAVINGS_BALANCE")
+                .map(setting -> setting.getValue())
+                .orElse("50000");
+
+        SavingsProduct defaultSavings = SavingsProduct.builder()
+                .productCode("SAV001") // Standard Code
+                .productName("Ordinary Savings")
+                .description("Default savings account for all members")
+                .currencyCode("KES")
+                .type(SavingsProduct.ProductType.SAVINGS)
+                .interestRate(new BigDecimal("5.00")) // 5% Interest
+                .minBalance(new BigDecimal(MINIMUM_SAVINGS_BALANCE))
+                .minDurationMonths(0)
+                .allowWithdrawal(true)
+                .active(true)
+                .build();
+
+        savingsProductRepository.save(defaultSavings);
+        log.info("✅ Default Savings Product 'SAV001' created.");
     }
 
     private void initializeSystemSettings() {
@@ -85,7 +119,9 @@ public class DataInitializer {
                 createSetting("loan_interest_rate", "12", "Default Annual interest rate (%)", "DECIMAL"),
                 createSetting("loan_multiplier", "3", "Loan limit multiplier (x Savings)", "INTEGER"),
                 createSetting("loan_processing_fee", "500", "Standard processing fee (KES)", "DECIMAL"),
-                createSetting("min_guarantors", "2", "Minimum guarantors required", "INTEGER")
+                createSetting("min_guarantors", "2", "Minimum guarantors required", "INTEGER"),
+                createSetting("DEFAULT_BANK_GL_CODE", "1010", "Default Bank GL Account", "STRING"), // Added for safety
+                createSetting("MINIMUM_SAVINGS_BALANCE", "50000", "Minimum balance required in savings accounts", "DECIMAL")
         );
 
         systemSettingRepository.saveAll(settings);
@@ -94,32 +130,15 @@ public class DataInitializer {
 
     private void initializeAdminUser() {
         try {
-            // Check if admin already exists
             userService.getUserByEmail(adminEmail);
             log.info("ℹ️ Admin user already exists: {}", adminEmail);
         } catch (Exception e) {
-            // Admin doesn't exist, create it
             log.info("👤 Creating default admin user...");
-            log.info("📧 Admin Email: {}", adminEmail);
-            log.info("🔑 Admin Password (raw): {}", adminPassword);
-            log.info("📞 Admin Phone: {}", adminPhone);
-
-            String encodedPassword = passwordEncoder.encode(adminPassword);
-            log.info("🔐 Encoded Password: {}", encodedPassword);
-            log.info("✅ Password matches test: {}", passwordEncoder.matches(adminPassword, encodedPassword));
-
-            // Create bootstrap admin using UserService
-            User admin = userService.createBootstrapUser(
-                    "System",
-                    "Administrator",
-                    adminEmail,
-                    generateOfficialEmail(User.Role.ADMIN),
-                    adminPhone,
-                    adminPassword,  // Use password from config
-                    User.Role.ADMIN
+            userService.createBootstrapUser(
+                    "System", "Administrator", adminEmail,
+                    generateOfficialEmail(User.Role.ADMIN), adminPhone, adminPassword, User.Role.ADMIN
             );
-            
-            log.info("✅ Default admin user created: {} with official email: {}", adminEmail, admin.getOfficialEmail());
+            log.info("✅ Default admin user created.");
         }
     }
 
@@ -128,11 +147,6 @@ public class DataInitializer {
     }
 
     private SystemSetting createSetting(String key, String value, String desc, String type) {
-        return SystemSetting.builder()
-                .key(key)
-                .value(value)
-                .description(desc)
-                .dataType(type)
-                .build();
+        return SystemSetting.builder().key(key).value(value).description(desc).dataType(type).build();
     }
 }

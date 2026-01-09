@@ -18,45 +18,54 @@ public class SavingsProduct {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // ✅ Rule Section 2: productCode must be Globally Unique
     @Column(nullable = false, unique = true)
-    private String productCode; // Unique business identifier (e.g., "SAV001")
+    private String productCode;
 
     @Column(nullable = false)
-    private String productName; // e.g., "Ordinary Savings", "Welfare Fund", "Holiday Account"
+    private String productName;
 
     private String description;
 
+    // ✅ Rule Section 15: currencyCode required.
+    // Removed @Builder.Default to enforce 'KES' on JSON deserialization (No-Args constructor)
     @Column(nullable = false)
-    @Builder.Default
-    private String currencyCode = "KES"; // ISO 4217 currency code
+    private String currencyCode = "KES";
 
     @Enumerated(EnumType.STRING)
-    private ProductType type; // SAVINGS, FIXED_DEPOSIT, RECURRING_DEPOSIT
+    private ProductType type;
 
-    private BigDecimal interestRate; // Annual % (e.g., 5.0 for 5%)
+    private BigDecimal interestRate;
 
-    private BigDecimal minBalance; // e.g., 500
+    private BigDecimal minBalance;
 
-    private Integer minDurationMonths; // Lock-in period (e.g., 12 months for Holiday)
+    private Integer minDurationMonths;
 
-    private boolean allowWithdrawal; // False for Welfare/Locked accounts
+    private boolean allowWithdrawal;
 
-    // Global Audit & Identity fields (Phase A requirement)
+    // ✅ Rule Section 1: Global Audit Fields
     @Builder.Default
     private Boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
     private String createdBy;
-
     private String updatedBy;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+
+        // ✅ Fix: Auto-generate robust Unique ID if missing (Complies with Section 2)
+        if (this.productCode == null || this.productCode.isEmpty()) {
+            this.productCode = "SAV-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        }
+
+        // ✅ Fix: Enforce Default Currency (Complies with Section 15)
+        if (this.currencyCode == null) {
+            this.currencyCode = "KES";
+        }
     }
 
     @PreUpdate
@@ -68,6 +77,3 @@ public class SavingsProduct {
         SAVINGS, FIXED_DEPOSIT, RECURRING_DEPOSIT
     }
 }
-
-
-

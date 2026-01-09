@@ -1,7 +1,6 @@
 package com.sacco.sacco_system.modules.member.domain.service;
 
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
-
 import com.sacco.sacco_system.modules.member.api.dto.BeneficiaryDTO;
 import com.sacco.sacco_system.modules.member.api.dto.EmploymentDetailsDTO;
 import com.sacco.sacco_system.modules.member.api.dto.MemberDTO;
@@ -15,7 +14,9 @@ import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepos
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsProductRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class MemberService {
     private final TransactionRepository transactionRepository;
     private final SystemSettingService systemSettingService;
     private final SavingsAccountRepository savingsAccountRepository;
+    private final SavingsProductRepository savingsProductRepository; // ✅ Added
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
 
@@ -80,8 +82,7 @@ public class MemberService {
                 .address(memberDTO.getAddress())
                 .dateOfBirth(memberDTO.getDateOfBirth())
                 .profileImageUrl(imagePath)
-                // ✅ FIX: memberStatus is ACTIVE by default (per dictionary)
-                .memberStatus(Member.MemberStatus.ACTIVE)  // ✅ Changed from status to memberStatus
+                .memberStatus(Member.MemberStatus.ACTIVE)
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
                 .beneficiaries(new ArrayList<>())
@@ -128,11 +129,45 @@ public class MemberService {
 
         processRegistrationFee(savedMember, paymentMethod, userExternalRef, bankAccountCode);
 
+        // ✅ CALL UPDATED METHOD
         createDefaultSavingsAccount(savedMember);
 
         return convertToDTO(savedMember);
     }
 
+    private void createDefaultSavingsAccount(Member member) {
+        // ✅ FETCH DEFAULT PRODUCT ("SAV001")
+        // If "SAV001" doesn't exist, we fallback to the first available product
+        // If NO products exist (shouldn't happen with updated DataInitializer), we proceed without one (risky but handles crash)
+
+        SavingsProduct defaultProduct = savingsProductRepository.findByProductCode("SAV001").orElse(null);
+
+        if (defaultProduct == null) {
+            List<SavingsProduct> allProducts = savingsProductRepository.findAll();
+            if (!allProducts.isEmpty()) {
+                defaultProduct = allProducts.get(0);
+            }
+        }
+
+        SavingsAccount savingsAccount = SavingsAccount.builder()
+                .member(member)
+                .product(defaultProduct) // ✅ LINKED HERE
+                .accountNumber(generateSavingsAccountNumber())
+                .balanceAmount(BigDecimal.ZERO)
+                .totalDeposits(BigDecimal.ZERO)
+                .totalWithdrawals(BigDecimal.ZERO)
+                .accountStatus(SavingsAccount.AccountStatus.ACTIVE)
+                .build();
+
+        savingsAccountRepository.save(savingsAccount);
+        log.info("✅ Created default savings account {} for member {} under product {}",
+                savingsAccount.getAccountNumber(), member.getMemberNumber(),
+                defaultProduct != null ? defaultProduct.getProductName() : "NONE");
+    }
+
+    // ... [Rest of the file remains unchanged: updateProfile, processRegistrationFee, getMemberById, etc.]
+
+    // (Ensure you include the unchanged methods below so the file is complete)
     public MemberDTO updateProfile(UUID memberId, MemberDTO updateDTO, MultipartFile file) throws IOException {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new RuntimeException("Member profile not found"));
@@ -205,18 +240,14 @@ public class MemberService {
 
             if ("BANK".equalsIgnoreCase(paymentMethodStr) || "BANK_TRANSFER".equalsIgnoreCase(paymentMethodStr)) {
                 payMethod = Transaction.PaymentMethod.BANK;
-
-                // ✅ FIX: Dynamic Bank Account Selection
                 if (bankAccountCode != null && !bankAccountCode.isEmpty()) {
-                    sourceAccount = bankAccountCode; // Use specific bank selected in frontend
+                    sourceAccount = bankAccountCode;
                 } else {
-                    // Fallback to configured default, else 1010
                     sourceAccount = systemSettingService.getString("DEFAULT_BANK_GL_CODE", "1010");
                 }
-
             } else if ("CASH".equalsIgnoreCase(paymentMethodStr)) {
                 payMethod = Transaction.PaymentMethod.CASH;
-                sourceAccount = "1001"; // Cash on Hand
+                sourceAccount = "1001";
             }
 
             accountingService.postEvent(
@@ -241,16 +272,6 @@ public class MemberService {
 
             transactionRepository.save(registrationTx);
         }
-    }
-
-    private void createDefaultSavingsAccount(Member member) {
-        SavingsAccount savingsAccount = SavingsAccount.builder()
-                .member(member)
-                .accountNumber(generateSavingsAccountNumber())
-                .balanceAmount(BigDecimal.ZERO)
-                .accountStatus(SavingsAccount.AccountStatus.ACTIVE)
-                .build();
-        savingsAccountRepository.save(savingsAccount);
     }
 
     public MemberDTO getMemberById(UUID id) {
@@ -286,7 +307,7 @@ public class MemberService {
 
     public void deleteMember(UUID id) {
         Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
-        member.setMemberStatus(Member.MemberStatus.EXITED);  // ✅ Changed from setStatus to setMemberStatus
+        member.setMemberStatus(Member.MemberStatus.EXITED);
         memberRepository.save(member);
     }
 
@@ -313,7 +334,6 @@ public class MemberService {
                 .address(member.getAddress())
                 .dateOfBirth(member.getDateOfBirth())
                 .profileImageUrl(member.getProfileImageUrl())
-                // ✅ Add null check to prevent NullPointerException
                 .memberStatus(member.getMemberStatus() != null ? member.getMemberStatus().toString() : "ACTIVE")
                 .totalShares(member.getTotalShares())
                 .totalSavings(member.getTotalSavings())
