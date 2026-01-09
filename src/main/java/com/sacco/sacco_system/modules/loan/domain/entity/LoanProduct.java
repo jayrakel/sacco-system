@@ -16,7 +16,7 @@ public class LoanProduct {
     private UUID id;
 
     @Column(nullable = false, unique = true)
-    private String productCode; // Unique business identifier (e.g., "LOAN001")
+    private String productCode;
 
     @Column(nullable = false)
     private String productName;
@@ -25,22 +25,26 @@ public class LoanProduct {
 
     @Column(nullable = false)
     @Builder.Default
-    private String currencyCode = "KES"; // ISO 4217 currency code
+    private String currencyCode = "KES";
 
     // --- Terms ---
     @Column(nullable = false)
-    private BigDecimal interestRate; // Annual %
+    private BigDecimal interestRate;
 
-    // ✅ FEATURE: Interest Calculation Logic
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private InterestType interestType = InterestType.FLAT;
 
     @Column(nullable = false)
-    private Integer maxDurationWeeks; // Standardized duration unit
+    private Integer maxDurationWeeks;
+
+    // ✅ ADDED: Minimum Loan Amount (Fixes the error)
+    @Column(nullable = false)
+    @Builder.Default
+    private BigDecimal minAmount = BigDecimal.ZERO;
 
     @Column(nullable = false)
-    private BigDecimal maxAmount;     // Maximum loan limit
+    private BigDecimal maxAmount;
 
     // --- Fee Configurations ---
     @Column(name = "application_fee", nullable = false)
@@ -51,23 +55,20 @@ public class LoanProduct {
     @Builder.Default
     private BigDecimal penaltyRate = BigDecimal.ZERO;
 
-    // --- Accounting Integration (The Admin's Job to Map These) ---
+    // --- Accounting ---
     @Column(name = "receivable_account_code")
-    private String receivableAccountCode; // e.g. "1201" (Loan Portfolio Asset)
+    private String receivableAccountCode;
 
     @Column(name = "income_account_code")
-    private String incomeAccountCode;     // e.g. "4001" (Interest Income)
+    private String incomeAccountCode;
 
-    // Global Audit & Identity fields (Phase A requirement)
+    // Audit
     @Builder.Default
     private Boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
     private String createdBy;
-
     private String updatedBy;
 
     @PrePersist
@@ -81,7 +82,6 @@ public class LoanProduct {
         updatedAt = LocalDateTime.now();
     }
 
-    // ✅ ENUM DEFINITION - Aligned with Dictionary Phase B
     public enum InterestType {
         FLAT,
         REDUCING_BALANCE

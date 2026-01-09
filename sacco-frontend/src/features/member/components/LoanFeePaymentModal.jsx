@@ -1,190 +1,159 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { X, CreditCard, Smartphone, CheckCircle, Loader, ArrowRight, AlertCircle } from 'lucide-react';
+import { useSettings } from '../../../context/SettingsContext'; // ✅ Import Context
+import { X, CheckCircle, Loader, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 import BrandedSpinner from '../../../components/BrandedSpinner';
 
-export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan, isNewApplication = false }) {
+export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess }) {
+    const { settings } = useSettings(); // ✅ Access System Settings
+
     const [step, setStep] = useState(1);
-    const [loading, setLoading] = useState(false);
-    const [products, setProducts] = useState([]);
-    const [selectedProductId, setSelectedProductId] = useState('');
-    const [fee, setFee] = useState(0);
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [paymentStatus, setPaymentStatus] = useState('idle'); // idle, processing, verified, failed
+    const [phone, setPhone] = useState('');
+    const [feeAmount, setFeeAmount] = useState(500);
+    const [statusMessage, setStatusMessage] = useState('');
+    const [paymentStatus, setPaymentStatus] = useState('idle');
 
     useEffect(() => {
         if (isOpen) {
             setStep(1);
             setPaymentStatus('idle');
-            fetchInitialData();
+            setPhone('');
+            fetchFee();
         }
-    }, [isOpen, loan, isNewApplication]);
+    }, [isOpen]);
 
-    const fetchInitialData = async () => {
-        setLoading(true);
+    const fetchFee = async () => {
         try {
-            // 1. Always fetch products so user can choose if it's a new application
-            const res = await api.get('/api/loans/products');
-            if (res.data.success) {
-                setProducts(res.data.data);
-
-                if (isNewApplication && res.data.data.length > 0) {
-                    // Default to first product
-                    setSelectedProductId(res.data.data[0].id);
-                    setFee(res.data.data[0].processingFee || 500);
-                }
-            }
-
-            // 2. If it's an existing loan, set the specific fee
-            if (!isNewApplication && loan) {
-                setFee(loan.processingFee || 500);
-            }
+            const res = await api.get('/api/admin/settings/LOAN_APPLICATION_FEE');
+            // Handle { success: true, data: "500" } or direct value
+            const val = res.data.data || res.data;
+            if (val) setFeeAmount(Number(val));
         } catch (e) {
-            console.error("Failed to fetch initial data", e);
-        } finally {
-            setLoading(false);
+            console.warn("Using default fee 500");
         }
     };
 
-    // Update fee when product selection changes (for new apps)
-    const handleProductChange = (e) => {
-        const prodId = e.target.value;
-        setSelectedProductId(prodId);
-        const product = products.find(p => p.id === prodId);
-        setFee(product ? product.processingFee : 500);
-    };
-
-    const initiatePayment = async (e) => {
+    const handlePay = async (e) => {
         e.preventDefault();
         setStep(2);
         setPaymentStatus('processing');
+        setStatusMessage('Sending M-Pesa request...');
 
-        // SIMULATION: Triggers STK Push
-        // In your real 5-day sprint, replace this timeout with your actual M-Pesa API call
-        setTimeout(() => {
-            confirmPayment();
-        }, 4000);
-    };
-
-    const confirmPayment = async () => {
         try {
-            const refCode = "MPESA" + Math.floor(100000 + Math.random() * 900000);
+            const res = await api.post('/api/payments/mpesa/pay-loan-fee', { phoneNumber: phone });
 
-            if (isNewApplication) {
-                // ✅ NEW WORKFLOW: Create the Draft Loan by paying the fee
-                // Matches your LoanService.initiateWithFee(memberId, productId, refCode)
-                const response = await api.post('/api/loans/initiate-with-fee', {
-                    productId: selectedProductId,
-                    referenceCode: refCode
-                });
-
-                if (response.data.success) {
-                    setPaymentStatus('verified');
-                    setTimeout(() => {
-                        // Pass the created draft loan back to MemberLoans.jsx
-                        onSuccess(response.data.data);
-                        onClose();
-                    }, 2000);
-                }
+            if (res.data.success) {
+                setStatusMessage('Check your phone to enter PIN...');
+                startPolling(res.data.data.checkoutRequestId);
             } else {
-                // EXISTING WORKFLOW: Paying fee for a loan that already exists (e.g. Resume)
-                await api.post(`/api/loans/${loan.id}/pay-fee`, { referenceCode: refCode });
-                setPaymentStatus('verified');
-                setTimeout(() => {
-                    onSuccess();
-                    onClose();
-                }, 2000);
+                setPaymentStatus('failed');
+                setStatusMessage(res.data.message || 'Failed to initiate payment');
             }
         } catch (e) {
-            console.error("Payment verification failed:", e);
             setPaymentStatus('failed');
+            setStatusMessage('Network connection failed.');
         }
+    };
+
+    const startPolling = (reqId) => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await api.get(`/api/payments/mpesa/check-status/${reqId}`);
+                const status = res.data.data.status;
+
+                if (status === 'COMPLETED') {
+                    clearInterval(interval);
+                    setPaymentStatus('verified');
+                    setTimeout(() => {
+                        onSuccess();
+                    }, 2000);
+                }
+                else if (status === 'FAILED' || status === 'CANCELLED') {
+                    clearInterval(interval);
+                    setPaymentStatus('failed');
+                    setStatusMessage(res.data.data.message);
+                }
+            } catch (e) {
+                // Ignore transient errors
+            }
+        }, 3000);
     };
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200">
 
-                {/* Header */}
-                <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center text-slate-800">
-                    <h3 className="font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
-                        <CreditCard size={18} className="text-indigo-600"/>
-                        {isNewApplication ? 'New Application' : 'Pending Fee'}
+                {/* ✅ DYNAMIC HEADER */}
+                <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
+                    <h3 className="font-bold flex items-center gap-3 text-slate-800">
+                        {settings?.SACCO_LOGO ? (
+                            <img
+                                src={settings.SACCO_LOGO}
+                                alt="Sacco Logo"
+                                className="h-8 w-auto max-w-[100px] object-contain"
+                            />
+                        ) : (
+                            <ShieldCheck size={24} className="text-emerald-600"/>
+                        )}
+                        <span className="text-sm uppercase tracking-wider">Loan Application Fee</span>
                     </h3>
                     <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition"><X size={20} className="text-slate-400"/></button>
                 </div>
 
-                <div className="p-8">
+                <div className="p-6">
                     {step === 1 && (
-                        <form onSubmit={initiatePayment} className="space-y-6">
-                            {/* Product Selection for New Applications */}
-                            {isNewApplication && (
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Select Loan Type</label>
-                                    <select
-                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700"
-                                        value={selectedProductId}
-                                        onChange={handleProductChange}
-                                        required
-                                    >
-                                        {products.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-
-                            <div className="text-center py-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">Processing Fee</p>
-                                <h2 className="text-3xl font-black text-indigo-900 tracking-tight">KES {Number(fee).toLocaleString()}</h2>
-                                <p className="text-[10px] text-indigo-400 mt-1 font-medium">Non-refundable application charge</p>
+                        <form onSubmit={handlePay} className="space-y-6">
+                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center">
+                                <p className="text-emerald-600 text-xs font-bold uppercase tracking-widest mb-1">Fee Required</p>
+                                {/* ✅ DYNAMIC FEE */}
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tight">KES {Number(feeAmount).toLocaleString()}</h2>
+                                <p className="text-xs text-slate-500 mt-1">Non-refundable processing fee</p>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="border border-emerald-200 bg-emerald-50/30 p-4 rounded-xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-emerald-500 text-white p-2 rounded-lg"><Smartphone size={20}/></div>
-                                        <div>
-                                            <p className="font-bold text-slate-800 text-sm">M-Pesa Express</p>
-                                            <p className="text-[10px] text-slate-500">Instant STK Push</p>
-                                        </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1 ml-1">M-Pesa Number</label>
+                                <div className="relative">
+                                    {/* ✅ M-PESA ICON */}
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8">
+                                        <img
+                                            src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/M-PESA_LOGO-01.svg/320px-M-PESA_LOGO-01.svg.png"
+                                            alt="M-Pesa"
+                                            className="w-full h-auto object-contain"
+                                        />
                                     </div>
-                                    <CheckCircle size={18} className="text-emerald-500"/>
-                                </div>
-
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">M-Pesa Number</label>
                                     <input
                                         type="tel"
+                                        placeholder="07XX XXX XXX"
                                         required
-                                        placeholder="0712345678"
-                                        className="w-full p-3.5 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 font-mono text-lg font-bold text-slate-800 transition"
-                                        value={phoneNumber}
-                                        onChange={e => setPhoneNumber(e.target.value)}
+                                        // Increased padding for logo
+                                        className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                                        value={phone}
+                                        onChange={e => setPhone(e.target.value)}
                                     />
                                 </div>
                             </div>
 
-                            <button type="submit" className="w-full bg-slate-900 hover:bg-indigo-600 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95">
-                                Pay & Unlock Form <ArrowRight size={18}/>
+                            <button type="submit" className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95">
+                                Pay Now <ArrowRight size={18}/>
                             </button>
                         </form>
                     )}
 
                     {step === 2 && (
-                        <div className="text-center py-10 space-y-8 animate-in zoom-in-95 duration-300">
+                        <div className="text-center py-8 space-y-6 animate-in zoom-in-95 duration-300">
+
                             {paymentStatus === 'processing' && (
                                 <div className="flex flex-col items-center">
                                     <BrandedSpinner size="large" showTagline={false} borderColor="border-emerald-500" />
-                                    <div className="mt-8">
+                                    <div className="mt-6">
                                         <h3 className="text-lg font-bold text-slate-800">Check Your Phone</h3>
-                                        <p className="text-slate-500 text-sm mt-1">Enter your M-Pesa PIN to complete payment</p>
+                                        <p className="text-slate-500 text-sm mt-1">{statusMessage}</p>
                                     </div>
                                     <div className="mt-6 flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100 animate-pulse">
                                         <Loader size={14} className="animate-spin"/>
-                                        <span className="text-[10px] font-bold uppercase tracking-widest">Waiting for PIN...</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">Processing Payment...</span>
                                     </div>
                                 </div>
                             )}
@@ -194,8 +163,8 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan, 
                                     <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
                                         <CheckCircle size={40}/>
                                     </div>
-                                    <h3 className="text-xl font-bold text-slate-800">Fee Paid Successfully</h3>
-                                    <p className="text-slate-500 text-sm mt-1">Unlocking your application form...</p>
+                                    <h3 className="text-xl font-bold text-slate-800">Payment Successful!</h3>
+                                    <p className="text-slate-500 text-sm mt-1">Starting your application...</p>
                                 </div>
                             )}
 
@@ -205,6 +174,7 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan, 
                                         <AlertCircle size={40}/>
                                     </div>
                                     <h3 className="text-xl font-bold text-slate-800">Payment Failed</h3>
+                                    <p className="text-red-600 text-sm mt-2 font-medium px-4 py-2 bg-red-50 rounded-lg">{statusMessage}</p>
                                     <button onClick={() => setStep(1)} className="mt-6 bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2 rounded-lg text-sm font-bold transition">
                                         Try Again
                                     </button>

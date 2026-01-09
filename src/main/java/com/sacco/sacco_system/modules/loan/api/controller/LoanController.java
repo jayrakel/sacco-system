@@ -2,6 +2,7 @@ package com.sacco.sacco_system.modules.loan.api.controller;
 
 import com.sacco.sacco_system.modules.core.dto.ApiResponse;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanRequestDTO;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanApplicationService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanEligibilityService;
@@ -50,10 +51,8 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Fetched", readService.getMemberLoans(user.getEmail())));
     }
 
-    // ✅ ADDED: Admin/Officer: Fetch ALL loans
     @GetMapping("")
     public ResponseEntity<ApiResponse<Object>> getAllLoans() {
-        // Ideally add @PreAuthorize("hasRole('ADMIN') or hasRole('LOAN_OFFICER')")
         return ResponseEntity.ok(new ApiResponse<>(true, "All Loans Fetched", readService.getAllLoans()));
     }
 
@@ -72,13 +71,30 @@ public class LoanController {
 
     // --- 3. Application Process (Member) ---
 
-    @PostMapping("/apply")
-    public ResponseEntity<ApiResponse<Object>> apply(@AuthenticationPrincipal UserDetails userDetails, @RequestBody LoanRequestDTO req) {
-        User user = userService.findByEmail(userDetails.getUsername()).orElseThrow();
-        return ResponseEntity.ok(new ApiResponse<>(true, "Draft Created", applicationService.createDraft(user.getEmail(), req)));
+    // ✅ STEP 1: INITIATE APPLICATION
+    // Creates a DRAFT or resumes an existing one. No fee payment logic here.
+    @PostMapping("/initiate")
+    public ResponseEntity<ApiResponse<Loan>> initiateApplication(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody LoanRequestDTO req) {
+
+        Loan loan = applicationService.initiateApplication(userDetails.getUsername(), req);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Application Initiated", loan));
     }
 
-    // ✅ FIXED: Updated to match Frontend payload (memberId instead of guarantorMemberId)
+    // ✅ STEP 2: CONFIRM FEE PAYMENT
+    // Called after MPESA STK Push is successful to update status to PENDING_GUARANTORS
+    @PostMapping("/{loanId}/pay-fee")
+    public ResponseEntity<ApiResponse<Loan>> confirmFee(
+            @PathVariable UUID loanId,
+            @RequestBody Map<String, String> payload) {
+
+        String ref = payload.get("referenceCode");
+        Loan loan = applicationService.confirmApplicationFee(loanId, ref);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Fee Payment Confirmed", loan));
+    }
+
+    // ✅ ADD GUARANTOR (Next Phase)
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<ApiResponse<Object>> addGuarantor(@PathVariable UUID loanId, @RequestBody Map<String, Object> body) {
         String memberIdStr = (String) body.get("memberId");

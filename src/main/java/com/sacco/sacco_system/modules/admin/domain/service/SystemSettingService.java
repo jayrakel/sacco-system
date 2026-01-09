@@ -4,6 +4,7 @@ import com.sacco.sacco_system.modules.admin.domain.entity.SystemSetting;
 import com.sacco.sacco_system.modules.admin.domain.repository.SystemSettingRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,47 +23,34 @@ import static java.util.Map.entry;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SystemSettingService {
 
     private final SystemSettingRepository repository;
-    private final String UPLOAD_DIR = "uploads/settings/";
+    private static final String UPLOAD_DIR = "uploads/settings/"; // ✅ Fixed warning
 
-    // ✅ MERGED DEFAULTS: Consolidated all settings here
     private static final Map<String, String> DEFAULTS = Map.ofEntries(
-            // Fees & Contributions
             entry("REGISTRATION_FEE", "1000"),
             entry("MIN_MONTHLY_CONTRIBUTION", "500"),
-            entry("MIN_WEEKLY_DEPOSIT", "500"), // Added from DataInitializer
-            entry("PENALTY_MISSED_SAVINGS", "50"), // Added from DataInitializer
-            entry("MIN_SHARE_CAPITAL", "2000"), // Updated to 2000 to match DataInitializer
-
-            // Savings
-            entry("MINIMUM_SAVINGS_BALANCE", "50000.00"), // Added (Used for Product creation)
-
-            // Loans
-            entry("LOAN_INTEREST_RATE", "12"), // Updated to 12%
+            entry("MIN_WEEKLY_DEPOSIT", "500"),
+            entry("PENALTY_MISSED_SAVINGS", "50"),
+            entry("MIN_SHARE_CAPITAL", "2000"),
+            entry("MINIMUM_SAVINGS_BALANCE", "500.00"),
+            entry("LOAN_INTEREST_RATE", "12"),
             entry("LOAN_GRACE_PERIOD_WEEKS", "1"),
             entry("LOAN_LIMIT_MULTIPLIER", "3"),
-            entry("LOAN_APPLICATION_FEE", "500"), // Standardized name (was loan_processing_fee)
-            entry("LOAN_PROCESSING_FEE", "500"), // Kept for backward compatibility if needed
+            entry("LOAN_APPLICATION_FEE", "500"),
+            entry("LOAN_PROCESSING_FEE", "500"),
             entry("MIN_SAVINGS_FOR_LOAN", "5000"),
             entry("MIN_MONTHS_MEMBERSHIP", "3"),
-            entry("MIN_GUARANTORS", "2"), // Added
-
-            // Governance
+            entry("MIN_GUARANTORS", "2"),
             entry("MAX_ACTIVE_LOANS", "1"),
             entry("MAX_DEBT_RATIO", "0.66"),
             entry("LOAN_VOTING_METHOD", "MANUAL"),
-
-            // Guarantor Eligibility
             entry("MIN_SAVINGS_TO_GUARANTEE", "10000"),
             entry("MIN_MONTHS_TO_GUARANTEE", "6"),
             entry("MAX_GUARANTOR_LIMIT_RATIO", "2"),
-
-            // Shares
             entry("SHARE_VALUE", "100"),
-
-            // Branding & Contact
             entry("SACCO_NAME", "Seccure Sacco"),
             entry("SACCO_TAGLINE", "Empowering Your Future"),
             entry("SACCO_ADDRESS", "P.O. Box 12345-00100, Nairobi, Kenya"),
@@ -73,19 +61,16 @@ public class SystemSettingService {
             entry("SACCO_FAVICON", ""),
             entry("BRAND_COLOR_PRIMARY", "#059669"),
             entry("BRAND_COLOR_SECONDARY", "#0f172a"),
-
-            // Banking & GL
             entry("BANK_NAME", "Co-operative Bank"),
             entry("BANK_ACCOUNT_NAME", "Sacco Main Account"),
             entry("BANK_ACCOUNT_NUMBER", "01100000000000"),
             entry("PAYBILL_NUMBER", "400200"),
-            entry("DEFAULT_BANK_GL_CODE", "1012") // Added
+            entry("DEFAULT_BANK_GL_CODE", "1010")
     );
 
     @PostConstruct
     public void initDefaults() {
         DEFAULTS.forEach((key, value) -> {
-            // Only create if key doesn't exist (prevents overwriting custom changes)
             if (repository.findByKey(key).isEmpty()) {
                 String type = "NUMBER";
                 if (key.contains("SACCO") || key.contains("COLOR") || key.contains("BANK") || key.contains("NAME") || key.contains("ADDRESS") || key.contains("EMAIL") || key.contains("WEBSITE") || key.contains("CODE") || key.contains("METHOD")) {
@@ -102,15 +87,11 @@ public class SystemSettingService {
         });
     }
 
-    // ... [Keep your existing getter/setter methods below] ...
-
     public List<SystemSetting> getAllSettings() {
         return repository.findAll();
     }
 
-    public Optional<String> getSetting(String key) {
-        return repository.findByKey(key).map(SystemSetting::getValue);
-    }
+    // ✅ Removed unused getSetting method
 
     public String getString(String key, String defaultValue) {
         return repository.findByKey(key)
@@ -118,7 +99,6 @@ public class SystemSettingService {
                 .orElse(defaultValue);
     }
 
-    // Overload for single argument
     public String getString(String key) {
         return repository.findByKey(key)
                 .map(SystemSetting::getValue)
@@ -177,7 +157,10 @@ public class SystemSettingService {
         if (setting.getValue() != null && !setting.getValue().isEmpty()) {
             try {
                 Files.deleteIfExists(uploadPath.resolve(setting.getValue()));
-            } catch (Exception e) { }
+            } catch (Exception e) {
+                // ✅ Fixed empty catch block
+                log.warn("Failed to delete old image for setting {}: {}", key, e.getMessage());
+            }
         }
 
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);

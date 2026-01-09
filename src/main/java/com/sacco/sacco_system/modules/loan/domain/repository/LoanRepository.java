@@ -2,6 +2,7 @@ package com.sacco.sacco_system.modules.loan.domain.repository;
 
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan.LoanStatus;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,29 +11,40 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, UUID> {
 
-    // --- 1. STATUS CHECKS (Fixes "Cannot find symbol") ---
+    // --- 1. STATUS CHECKS ---
 
-    // Used to find loans with specific statuses (e.g., active or pending)
+    // Find all loans in the system with specific statuses
     List<Loan> findByLoanStatusIn(Collection<LoanStatus> statuses);
 
-    // Used for Eligibility: Check if member has specific loans (e.g., ACTIVE or IN_ARREARS)
+    // Eligibility: Check if member has specific loans (e.g., ACTIVE or IN_ARREARS)
     boolean existsByMemberIdAndLoanStatusIn(UUID memberId, Collection<LoanStatus> statuses);
 
-    // Used for Eligibility: Count specific loans
+    // Eligibility: Count specific loans
     long countByMemberIdAndLoanStatusIn(UUID memberId, Collection<LoanStatus> statuses);
 
     // --- 2. MEMBER DATA ---
 
-    // Fetch all loans for a specific member
+    // Fetch all loans for a specific member by ID
     List<Loan> findByMemberId(UUID memberId);
 
-    // Simple single-status fetch
+    // Fetch all loans for a specific member entity
+    List<Loan> findByMember(Member member);
+
+    // Simple single-status fetch (Global)
     List<Loan> findByLoanStatus(LoanStatus status);
+
+    // ✅ NEW: Find loans for a member with specific statuses (Used for Draft Resumption)
+    // Returns List because a member *might* theoretically have multiple closed drafts (though logic prevents it)
+    List<Loan> findByMemberIdAndLoanStatusIn(UUID memberId, Collection<LoanStatus> statuses);
+
+    // ✅ NEW: Find a specific loan by Member and Status (Used for Duplicate Checks)
+    Optional<Loan> findByMemberAndLoanStatus(Member member, LoanStatus status);
 
     // --- 3. DASHBOARD METRICS ---
 

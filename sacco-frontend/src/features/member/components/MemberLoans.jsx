@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
 import { useSettings } from '../../../context/SettingsContext';
-import { AlertCircle, CreditCard, Loader2, Plus } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
-// ✅ CORRECTED IMPORTS: Widgets are in the loans dashboard
+// Widgets
 import ActiveLoanCard from '../../loans/components/dashboard/ActiveLoanCard';
 import LoanVotingWidget from '../../loans/components/dashboard/LoanVotingWidget';
 import LoanEligibilityWidget from '../../loans/components/dashboard/LoanEligibilityWidget';
 import LoanHistoryList from '../../loans/components/dashboard/LoanHistoryList';
 
-// ✅ CORRECTED IMPORTS: Modals are also in the loans dashboard
+// Modals
 import LoanApplicationModal from '../../loans/components/dashboard/LoanApplicationModal';
-// We use the dashboard Fee Modal as it contains the logic we built earlier
-import LoanFeePaymentModal from '../../loans/components/dashboard/LoanFeePaymentModal';
+// ✅ IMPORT FROM LOCAL (This is the one we created for member fee payment)
+import LoanFeePaymentModal from './LoanFeePaymentModal';
 
 export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     const { settings } = useSettings();
@@ -25,6 +25,9 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     // Modal States
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
     const [isPayFeeModalOpen, setIsPayFeeModalOpen] = useState(false);
+
+    // We maintain 'selectedLoan' just in case we need to resume an old draft
+    // But for a NEW application, this will be null.
     const [selectedLoan, setSelectedLoan] = useState(null);
 
     useEffect(() => {
@@ -35,7 +38,6 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         setLoading(true);
         setError(null);
         try {
-            // Fetch everything in parallel
             const [loansRes, eligRes, votesRes] = await Promise.all([
                 api.get('/api/loans/my-loans').catch(e => ({ error: e })),
                 api.get('/api/loans/eligibility/check').catch(e => ({ error: e })),
@@ -66,32 +68,22 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         }
     };
 
-    // ✅ STEP 1: User clicks "Start Application" -> Open Form to Create Draft
+    // ✅ STEP 1: START -> OPEN PAYMENT MODAL FIRST
+    // This is triggered by the "Apply Now" button in LoanEligibilityWidget
     const handleStartApplication = () => {
-        setSelectedLoan(null);
-        setIsApplyModalOpen(true);
+        setSelectedLoan(null); // Ensure we are starting fresh
+        setIsPayFeeModalOpen(true);
     };
 
-    // ✅ STEP 2: Draft Created -> Close Form & Check Fee
-    const handleDraftCreated = (draftLoan) => {
-        setIsApplyModalOpen(false);
-
-        // Only open fee modal if the fee wasn't paid in the wizard
-        if (draftLoan.status === 'DRAFT' && !draftLoan.feePaid) {
-            setSelectedLoan(draftLoan);
-            setIsPayFeeModalOpen(true);
-        } else {
-            alert(`Application Created Successfully! Ref: ${draftLoan.loanNumber}`);
-        }
-
-        loadDashboardData(); // Refresh list
-    };
-
-    // ✅ STEP 3: Fee Paid -> Close Everything & Refresh
+    // ✅ STEP 2: PAYMENT SUCCESS -> OPEN APPLICATION FORM
+    // This is called by LoanFeePaymentModal when MPESA transaction is COMPLETED
     const handleFeeSuccess = () => {
         setIsPayFeeModalOpen(false);
-        alert("Application Fee Paid Successfully! You can now add guarantors.");
-        loadDashboardData();
+
+        // Slight delay for smooth UX transition
+        setTimeout(() => {
+            setIsApplyModalOpen(true);
+        }, 500);
     };
 
     const activeLoan = loans.find(l => l.status === 'ACTIVE' || l.status === 'IN_ARREARS');
@@ -112,8 +104,8 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
             <ActiveLoanCard
                 loan={activeLoan}
                 onPayFee={(loan) => {
-                    setSelectedLoan(loan);
-                    setIsPayFeeModalOpen(true);
+                    // For existing loans that need repayment (different from application fee)
+                    alert("Loan Repayment Modal would open here.");
                 }}
             />
 
@@ -125,30 +117,38 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 <LoanEligibilityWidget
                     eligibilityData={eligibilityData}
                     settings={settings}
-                    onApply={handleStartApplication}
+                    onApply={handleStartApplication} // ✅ Triggers Fee Payment Modal
                 />
             )}
 
             {/* 4. History Table */}
             <LoanHistoryList
                 loans={loans}
-                onSelect={(loan) => { setSelectedLoan(loan); setIsApplyModalOpen(true); }}
-                onPayFee={(loan) => { setSelectedLoan(loan); setIsPayFeeModalOpen(true); }}
+                onSelect={(loan) => {
+                    // If viewing an old draft, we might skip fee if already paid?
+                    // For now, let's just open the application modal to view details
+                    setSelectedLoan(loan);
+                    setIsApplyModalOpen(true);
+                }}
             />
 
-            {/* Modals */}
-            <LoanApplicationModal
-                isOpen={isApplyModalOpen}
-                onClose={() => setIsApplyModalOpen(false)}
-                onSuccess={handleDraftCreated} // Links to Fee Step check
-                resumeLoan={selectedLoan}
-            />
+            {/* --- MODALS --- */}
 
+            {/* 1. Fee Payment (First Step) */}
             <LoanFeePaymentModal
                 isOpen={isPayFeeModalOpen}
                 onClose={() => setIsPayFeeModalOpen(false)}
-                onSuccess={handleFeeSuccess}
-                loan={selectedLoan}
+                onSuccess={handleFeeSuccess} // ✅ Moves to Step 2
+            />
+
+            {/* 2. Application Form (Second Step) */}
+            <LoanApplicationModal
+                isOpen={isApplyModalOpen}
+                onClose={() => {
+                    setIsApplyModalOpen(false);
+                    loadDashboardData(); // Refresh list on close
+                }}
+                resumeLoan={selectedLoan} // Used if editing an old draft
             />
         </div>
     );
