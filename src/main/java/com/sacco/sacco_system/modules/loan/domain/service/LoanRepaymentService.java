@@ -31,7 +31,7 @@ public class LoanRepaymentService {
     public void processPayment(Loan loan, BigDecimal amount, String sourceAccountCode) {
         // 1. Update Balance
         // Using the new clean Loan entity fields
-        BigDecimal currentBalance = loan.getLoanBalance();
+        BigDecimal currentBalance = loan.getTotalOutstandingAmount();
         BigDecimal newBalance = currentBalance.subtract(amount);
 
         // Prevent negative balance (optional logic, but good for data integrity)
@@ -39,11 +39,11 @@ public class LoanRepaymentService {
             newBalance = BigDecimal.ZERO;
         }
 
-        loan.setLoanBalance(newBalance);
+        loan.setTotalOutstandingAmount(newBalance);
 
         // 2. Auto-Complete if paid off
         if (newBalance.compareTo(BigDecimal.ZERO) == 0) {
-            loan.setStatus(Loan.LoanStatus.COMPLETED);
+            loan.setLoanStatus(Loan.LoanStatus.CLOSED);
         }
 
         loanRepository.save(loan);

@@ -38,10 +38,10 @@ public class UserService {
                 .email(email)
                 .phoneNumber(phoneNumber)
                 .role(role)
-                .password(passwordEncoder.encode(tempPassword))
+                .passwordHash(passwordEncoder.encode(tempPassword))
                 .mustChangePassword(true)
                 .emailVerified(false)
-                .enabled(true)
+                .active(true)
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -67,10 +67,10 @@ public class UserService {
                 .officialEmail(officialEmail)
                 .phoneNumber(phoneNumber)
                 .role(role)
-                .password(passwordEncoder.encode(rawPassword))
+                .passwordHash(passwordEncoder.encode(rawPassword))
                 .mustChangePassword(true)
                 .emailVerified(true)
-                .enabled(true)
+                .active(true)
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -94,10 +94,10 @@ public class UserService {
                 .officialEmail(request.getOfficialEmail())
                 .phoneNumber(request.getPhoneNumber())
                 .role(request.getRole())
-                .password(passwordEncoder.encode(tempPassword))
+                .passwordHash(passwordEncoder.encode(tempPassword))
                 .mustChangePassword(true)
                 .emailVerified(false)
-                .enabled(true)
+                .active(true)
                 .build();
 
         User savedUser = userRepository.save(newUser);
@@ -112,7 +112,7 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         user.setEmailVerified(true);
-        user.setEnabled(true);
+        user.setActive(true);
         userRepository.save(user);
         log.info("Admin manually verified user: {}", user.getEmail());
     }
@@ -122,7 +122,7 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setMustChangePassword(true);
         userRepository.save(user);
         log.info("Admin reset password for user: {}", user.getEmail());
@@ -170,7 +170,7 @@ public class UserService {
         if (request.getOfficialEmail() != null) user.setOfficialEmail(request.getOfficialEmail());
         if (request.getPhoneNumber() != null) user.setPhoneNumber(request.getPhoneNumber());
         if (request.getRole() != null) user.setRole(request.getRole());
-        if (request.getEnabled() != null) user.setEnabled(request.getEnabled());
+        if (request.getEnabled() != null) user.setActive(request.getEnabled());
         if (request.getEmailVerified() != null) user.setEmailVerified(request.getEmailVerified());
 
         User updated = userRepository.save(user);
@@ -183,7 +183,8 @@ public class UserService {
     public void disableUser(UUID id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setEnabled(false);
+        user.setActive(false);
+        user.setUserStatus(User.UserStatus.DISABLED);
         userRepository.save(user);
         log.info("Disabled user: {}", user.getEmail());
     }
@@ -192,7 +193,8 @@ public class UserService {
     public void enableUser(UUID id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setEnabled(true);
+        user.setActive(true);
+        user.setUserStatus(User.UserStatus.ACTIVE);
         userRepository.save(user);
         log.info("Enabled user: {}", user.getEmail());
     }

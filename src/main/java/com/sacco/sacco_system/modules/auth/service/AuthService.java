@@ -39,7 +39,7 @@ public class AuthService {
 
     @Transactional
     public Map<String, Object> register(User user) {
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
 
         if (user.getRole() == null) user.setRole(User.Role.MEMBER);
 
@@ -130,7 +130,7 @@ public class AuthService {
             throw new RuntimeException("Current password is incorrect");
         }
         
-        currentUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        currentUser.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         currentUser.setMustChangePassword(false);
         userRepository.save(currentUser);
         
@@ -231,8 +231,8 @@ public class AuthService {
         }
 
         User user = verificationToken.getUser();
-        user.setPassword(passwordEncoder.encode(newPassword));
-        user.setMustChangePassword(false); 
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
         userRepository.save(user);
 
         tokenRepository.delete(verificationToken);

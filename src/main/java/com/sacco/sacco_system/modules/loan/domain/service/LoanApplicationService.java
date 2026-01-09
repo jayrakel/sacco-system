@@ -90,7 +90,7 @@ public class LoanApplicationService {
                 .principalAmount(request.getAmount())
                 .interestRate(product.getInterestRate())
                 .durationWeeks(request.getDurationWeeks())
-                .status(Loan.LoanStatus.DRAFT)
+                .loanStatus(Loan.LoanStatus.DRAFT)
                 .applicationDate(LocalDate.now())
                 .feePaid(true)
                 .build();
@@ -107,7 +107,7 @@ public class LoanApplicationService {
     @Transactional
     public void submitApplication(UUID loanId) {
         Loan loan = loanRepository.findById(loanId).orElseThrow();
-        loan.setStatus(Loan.LoanStatus.SUBMITTED);
+        loan.setLoanStatus(Loan.LoanStatus.SUBMITTED);
         loanRepository.save(loan);
     }
 }

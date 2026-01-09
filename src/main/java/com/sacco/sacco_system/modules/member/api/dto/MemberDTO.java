@@ -23,7 +23,7 @@ public class MemberDTO {
     private String lastName;
     private String email;
     private String phoneNumber;
-    private String idNumber;
+    private String nationalId;
     private String kraPin;
     private String address;
     private LocalDate dateOfBirth;
@@ -36,7 +36,7 @@ public class MemberDTO {
     private String status;
     private BigDecimal totalShares;
     private BigDecimal totalSavings;
-    private LocalDateTime registrationDate;
+    private LocalDateTime membershipDate;
 
     // ✅ NEW FIELDS
     private List<BeneficiaryDTO> beneficiaries;

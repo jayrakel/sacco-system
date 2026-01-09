@@ -24,7 +24,7 @@ public interface MemberRepository extends JpaRepository<Member, UUID> {
 
     Optional<Member> findByPhoneNumber(String phoneNumber);
 
-    Optional<Member> findByIdNumber(String idNumber);
+    Optional<Member> findByNationalId(String nationalId);
 
     List<Member> findByStatus(Member.MemberStatus status);
 

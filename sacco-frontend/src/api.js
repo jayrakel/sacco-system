@@ -43,11 +43,22 @@ api.interceptors.response.use(
         break;
 
       case 401:
-        console.warn("Session expired or unauthorized:", error.response.data);
+        console.warn("Session expired or unauthorized - redirecting to login");
+        localStorage.removeItem('sacco_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
         break;
 
       case 403:
-        console.warn("Access forbidden:", error.response.data);
+        console.warn("Access forbidden - checking authentication...");
+        const token = localStorage.getItem('sacco_token');
+        if (!token) {
+          console.error("No token found - redirecting to login");
+          window.location.href = '/login';
+        } else {
+          console.error("Token exists but access forbidden. You may not have permission for this action.");
+          alert("Access Denied: You don't have permission to perform this action.");
+        }
         break;
 
       case 404:

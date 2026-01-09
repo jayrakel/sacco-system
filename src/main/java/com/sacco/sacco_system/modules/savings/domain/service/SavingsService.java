@@ -61,10 +61,10 @@ public class SavingsService {
                 .member(member)
                 .product(product)
                 .accountNumber(accNumber)
-                .balance(BigDecimal.ZERO)
+                .balanceAmount(BigDecimal.ZERO)
                 .totalDeposits(BigDecimal.ZERO)
                 .totalWithdrawals(BigDecimal.ZERO)
-                .status(SavingsAccount.AccountStatus.ACTIVE)
+                .accountStatus(SavingsAccount.AccountStatus.ACTIVE)
                 .build();
 
         if (product.getMinDurationMonths() != null && product.getMinDurationMonths() > 0) {
@@ -128,7 +128,7 @@ public class SavingsService {
         SavingsAccount account = savingsAccountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
 
-        account.setBalance(account.getBalance().add(amount));
+        account.setBalanceAmount(account.getBalanceAmount().add(amount));
         account.setTotalDeposits(account.getTotalDeposits().add(amount));
         SavingsAccount savedAccount = savingsAccountRepository.save(account);
 
@@ -151,7 +151,7 @@ public class SavingsService {
                 .amount(amount)
                 .paymentMethod(paymentMethod)
                 .description(description != null ? description : "Deposit")
-                .balanceAfter(savedAccount.getBalance())
+                .balanceAfter(savedAccount.getBalanceAmount())
                 .build();
         transactionRepository.save(tx);
 
@@ -176,8 +176,8 @@ public class SavingsService {
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
         // 1. ✅ Check for Active Loans (Self)
-        boolean hasActiveLoans = loanRepository.existsByMemberIdAndStatusIn(
-                memberId, 
+        boolean hasActiveLoans = loanRepository.existsByMemberIdAndLoanStatusIn(
+                memberId,
                 List.of(
                     Loan.LoanStatus.ACTIVE,
                     Loan.LoanStatus.IN_ARREARS,
@@ -190,7 +190,7 @@ public class SavingsService {
         }
 
         // 2. ✅ Check for Active Guarantees (Others)
-        boolean isActiveGuarantor = guarantorRepository.existsByMemberIdAndLoanStatusIn(
+        boolean isActiveGuarantor = guarantorRepository.existsByMemberIdAndLoanLoanStatusIn(
                 memberId,
                 List.of(
                     Loan.LoanStatus.ACTIVE,
@@ -213,9 +213,9 @@ public class SavingsService {
         BigDecimal totalWithdrawal = BigDecimal.ZERO;
 
         for (SavingsAccount account : accounts) {
-            totalWithdrawal = totalWithdrawal.add(account.getBalance());
-            account.setStatus(SavingsAccount.AccountStatus.CLOSED);
-            account.setBalance(BigDecimal.ZERO);
+            totalWithdrawal = totalWithdrawal.add(account.getBalanceAmount());
+            account.setAccountStatus(SavingsAccount.AccountStatus.CLOSED);
+            account.setBalanceAmount(BigDecimal.ZERO);
             savingsAccountRepository.save(account);
         }
 
@@ -224,7 +224,7 @@ public class SavingsService {
         }
 
         member.setTotalSavings(BigDecimal.ZERO);
-        member.setStatus(Member.MemberStatus.INACTIVE); 
+        member.setStatus(Member.MemberStatus.EXITED);
         memberRepository.save(member);
 
         Transaction tx = Transaction.builder()
@@ -262,32 +262,43 @@ public class SavingsService {
     public void applyMonthlyInterest() {
         List<SavingsAccount> accounts = savingsAccountRepository.findAll();
         for (SavingsAccount acc : accounts) {
-            if (acc.getBalance().compareTo(BigDecimal.ZERO) > 0 && acc.getStatus() == SavingsAccount.AccountStatus.ACTIVE) {
+            if (acc.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0 && acc.getAccountStatus() == SavingsAccount.AccountStatus.ACTIVE) {
                 if (acc.getProduct() == null || acc.getProduct().getInterestRate() == null) continue;
 
                 BigDecimal annualRate = acc.getProduct().getInterestRate();
                 BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), 8, RoundingMode.HALF_UP);
-                BigDecimal interest = acc.getBalance().multiply(monthlyRate).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal interest = acc.getBalanceAmount().multiply(monthlyRate).setScale(2, RoundingMode.HALF_UP);
 
                 if (interest.compareTo(BigDecimal.ZERO) > 0) {
-                    acc.setBalance(acc.getBalance().add(interest));
-                    if(acc.getAccruedInterest() != null) acc.setAccruedInterest(acc.getAccruedInterest().add(interest));
+                    acc.setBalanceAmount(acc.getBalanceAmount().add(interest));
+                    if(acc.getAccruedInterest() != null) {
+                        acc.setAccruedInterest(acc.getAccruedInterest().add(interest));
+                    }
                     savingsAccountRepository.save(acc);
 
                     Transaction tx = Transaction.builder()
                             .member(acc.getMember())
+                            .savingsAccount(acc)
                             .type(Transaction.TransactionType.INTEREST_EARNED)
                             .amount(interest)
                             .paymentMethod(Transaction.PaymentMethod.SYSTEM)
                             .referenceCode(referenceCodeService.generateReferenceCode())
                             .description("Monthly Interest - " + acc.getAccountNumber())
-                            .balanceAfter(acc.getBalance())
+                            .balanceAfter(acc.getBalanceAmount())
                             .build();
                     transactionRepository.save(tx);
 
                     try {
-                        accountingService.postDoubleEntry("Interest " + acc.getAccountNumber(), null, "5006", "2001", interest);
-                    } catch (Exception e) {}
+                        accountingService.postDoubleEntry(
+                            "Interest " + acc.getAccountNumber(),
+                            null,
+                            "5006",
+                            "2001",
+                            interest
+                        );
+                    } catch (Exception e) {
+                        // Log error but don't fail the interest calculation
+                    }
                 }
             }
         }
@@ -298,7 +309,7 @@ public class SavingsService {
     // ========================================================================
 
     private SavingsAccountDTO convertToDTO(SavingsAccount account) {
-        String productName = (account.getProduct() != null) ? account.getProduct().getName() : "Ordinary Savings";
+        String productName = (account.getProduct() != null) ? account.getProduct().getProductName() : "Ordinary Savings";
         BigDecimal rate = (account.getProduct() != null) ? account.getProduct().getInterestRate() : BigDecimal.ZERO;
 
         return SavingsAccountDTO.builder()
@@ -306,10 +317,10 @@ public class SavingsService {
                 .accountNumber(account.getAccountNumber())
                 .memberId(account.getMember().getId())
                 .memberName(account.getMember().getFirstName() + " " + account.getMember().getLastName())
-                .balance(account.getBalance())
+                .balance(account.getBalanceAmount())
                 .totalDeposits(account.getTotalDeposits())
                 .totalWithdrawals(account.getTotalWithdrawals())
-                .status(account.getStatus().toString())
+                .status(account.getAccountStatus().toString())
                 .productName(productName)
                 .interestRate(rate)
                 .maturityDate(account.getMaturityDate())

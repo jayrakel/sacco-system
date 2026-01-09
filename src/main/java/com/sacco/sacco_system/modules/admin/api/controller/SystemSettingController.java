@@ -22,7 +22,7 @@ public class SystemSettingController {
         return ResponseEntity.ok(Map.of("success", true, "data", service.getAllSettings()));
     }
 
-    // âœ… ADD THIS METHOD: Handles the "Save" button from SystemSettings.jsx
+    // ✅ ADD THIS METHOD: Handles the "Save" button from SystemSettings.jsx
     @PostMapping
     public ResponseEntity<Map<String, Object>> createOrUpdateSetting(@RequestBody Map<String, String> body) {
         try {

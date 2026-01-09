@@ -151,7 +151,7 @@ public class DepositService {
             throw new SecurityException("Cannot deposit to another member's account");
         }
 
-        if (account.getStatus() != SavingsAccount.AccountStatus.ACTIVE) {
+        if (account.getAccountStatus() != SavingsAccount.AccountStatus.ACTIVE) {
             throw new IllegalStateException("Savings account is not active");
         }
 
@@ -184,7 +184,7 @@ public class DepositService {
             throw new SecurityException("Cannot pay another member's loan");
         }
 
-        if (loan.getStatus() != Loan.LoanStatus.ACTIVE) {
+        if (loan.getLoanStatus() != Loan.LoanStatus.ACTIVE) {
             throw new IllegalStateException("Loan is not active");
         }
 

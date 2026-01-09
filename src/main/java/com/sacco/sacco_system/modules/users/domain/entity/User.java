@@ -23,13 +23,22 @@ public class User implements UserDetails {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    // Business identifier (system-generated, immutable)
+    @Column(nullable = false, unique = true)
+    private UUID userId;
+
+    @Column(nullable = false, unique = true)
+    private String username;
+
+    @Column(nullable = false, unique = true)
     private String email;
 
-    @Column
+    @Column(unique = true)
     private String officialEmail; // SACCO email for administrative access (e.g., chairperson@sacco.com)
 
-    private String password;
+    @Column(nullable = false)
+    private String passwordHash;
+
     private String firstName;
     private String lastName;
     private String phoneNumber;
@@ -37,12 +46,23 @@ public class User implements UserDetails {
     @Enumerated(EnumType.STRING)
     private Role role;
 
-    private boolean enabled = true;
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private UserStatus userStatus = UserStatus.ACTIVE;
+
+    @Builder.Default
+    private Boolean active = true;
 
     @Column(name = "email_verified", nullable = false)
+    @Builder.Default
     private boolean emailVerified = false;
 
+    @Builder.Default
     private boolean mustChangePassword = false;
+
+    private String createdBy;
+
+    private String updatedBy;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -52,6 +72,12 @@ public class User implements UserDetails {
 
     @PrePersist
     protected void onCreate() {
+        if (userId == null) {
+            userId = UUID.randomUUID();
+        }
+        if (username == null) {
+            username = email; // Default username to email
+        }
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
@@ -68,18 +94,34 @@ public class User implements UserDetails {
     }
 
     @Override
+    public String getPassword() {
+        return passwordHash;
+    }
+
+    @Override
     public String getUsername() {
-        return email;
+        return username;
     }
 
     @Override
     public boolean isAccountNonExpired() { return true; }
+
     @Override
-    public boolean isAccountNonLocked() { return true; }
+    public boolean isAccountNonLocked() {
+        return userStatus != UserStatus.LOCKED;
+    }
+
     @Override
     public boolean isCredentialsNonExpired() { return true; }
+
     @Override
-    public boolean isEnabled() { return enabled; }
+    public boolean isEnabled() {
+        return active && userStatus == UserStatus.ACTIVE;
+    }
+
+    public enum UserStatus {
+        ACTIVE, LOCKED, DISABLED
+    }
 
     public enum Role {
         MEMBER, ADMIN, LOAN_OFFICER, TELLER, CHAIRPERSON, SECRETARY, TREASURER, ASSISTANT, ASSISTANT_LOAN_OFFICER, ASSISTANT_CHAIRPERSON, ASSISTANT_SECRETARY

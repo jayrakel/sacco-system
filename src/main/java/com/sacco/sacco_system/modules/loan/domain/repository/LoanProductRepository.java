@@ -2,6 +2,9 @@ package com.sacco.sacco_system.modules.loan.domain.repository;
 
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
 import java.util.UUID;
 
-public interface LoanProductRepository extends JpaRepository<LoanProduct, UUID> {}
+public interface LoanProductRepository extends JpaRepository<LoanProduct, UUID> {
+    Optional<LoanProduct> findByProductCode(String productCode);
+}

@@ -69,31 +69,31 @@ public class AnalyticsService {
 
         long totalLoans = allLoans.size();
         long activeLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DISBURSED)
                 .count();
         long completedLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.COMPLETED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.CLOSED)
                 .count();
         long defaultedLoans = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DEFAULTED)
                 .count();
 
         BigDecimal totalDisbursed = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED ||
-                            l.getStatus() == Loan.LoanStatus.COMPLETED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
+                            l.getLoanStatus() == Loan.LoanStatus.CLOSED)
                 .map(Loan::getPrincipalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalOutstanding = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DISBURSED)
-                .map(l -> l.getLoanBalance() != null ? l.getLoanBalance() : BigDecimal.ZERO)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DISBURSED)
+                .map(l -> l.getTotalOutstandingAmount() != null ? l.getTotalOutstandingAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalRepaid = totalDisbursed.subtract(totalOutstanding);
 
         // Calculate portfolio at risk (PAR)
         BigDecimal portfolioAtRisk = allLoans.stream()
-                .filter(l -> l.getStatus() == Loan.LoanStatus.DEFAULTED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DEFAULTED)
                 .map(Loan::getPrincipalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -126,12 +126,12 @@ public class AnalyticsService {
 
         long totalAccounts = savingsAccountRepository.count();
         long activeAccounts = savingsAccountRepository.findAll().stream()
-                .filter(a -> a.getStatus() == com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount.AccountStatus.ACTIVE)
+                .filter(a -> a.getAccountStatus() == com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount.AccountStatus.ACTIVE)
                 .count();
 
         // Get savings distribution
         List<BigDecimal> balances = savingsAccountRepository.findAll().stream()
-                .map(a -> a.getBalance() != null ? a.getBalance() : BigDecimal.ZERO)
+                .map(a -> a.getBalanceAmount() != null ? a.getBalanceAmount() : BigDecimal.ZERO)
                 .sorted()
                 .collect(Collectors.toList());
 

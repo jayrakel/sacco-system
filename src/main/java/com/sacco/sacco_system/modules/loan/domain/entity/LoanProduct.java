@@ -3,6 +3,7 @@ package com.sacco.sacco_system.modules.loan.domain.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -15,9 +16,16 @@ public class LoanProduct {
     private UUID id;
 
     @Column(nullable = false, unique = true)
-    private String name;
+    private String productCode; // Unique business identifier (e.g., "LOAN001")
+
+    @Column(nullable = false)
+    private String productName;
 
     private String description;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String currencyCode = "KES"; // ISO 4217 currency code
 
     // --- Terms ---
     @Column(nullable = false)
@@ -26,7 +34,7 @@ public class LoanProduct {
     // ✅ FEATURE: Interest Calculation Logic
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    private InterestType interestType = InterestType.FLAT_RATE;
+    private InterestType interestType = InterestType.FLAT;
 
     @Column(nullable = false)
     private Integer maxDurationWeeks; // Standardized duration unit
@@ -50,12 +58,32 @@ public class LoanProduct {
     @Column(name = "income_account_code")
     private String incomeAccountCode;     // e.g. "4001" (Interest Income)
 
+    // Global Audit & Identity fields (Phase A requirement)
     @Builder.Default
-    private Boolean isActive = true;
+    private Boolean active = true;
 
-    // ✅ ENUM DEFINITION
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    private String createdBy;
+
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    // ✅ ENUM DEFINITION - Aligned with Dictionary Phase B
     public enum InterestType {
-        FLAT_RATE,
+        FLAT,
         REDUCING_BALANCE
     }
 }

@@ -18,7 +18,7 @@ public class MemberValidator {
         ValidationUtils.validateNotEmpty(request.getEmail(), "email");
         ValidationUtils.validateEmail(request.getEmail());
         ValidationUtils.validateNotEmpty(request.getPhone(), "phone");
-        ValidationUtils.validateNotEmpty(request.getIdNumber(), "idNumber");
+        ValidationUtils.validateNotEmpty(request.getNationalId(), "nationalId");
     }
     
     public void validateUpdateRequest(UpdateMemberRequest request) {

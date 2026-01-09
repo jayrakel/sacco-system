@@ -56,9 +56,9 @@ public class Member {
     @Column(unique = true, nullable = false)
     private String phoneNumber;
 
-    @NotBlank(message = "ID number is required")
+    @NotBlank(message = "National ID is required")
     @Column(unique = true, nullable = false)
-    private String idNumber;
+    private String nationalId;
 
     @Column(unique = true)
     private String kraPin;
@@ -120,15 +120,21 @@ public class Member {
 
     // ---------------------------------------------------------
 
-    private LocalDateTime registrationDate;
+    private LocalDateTime membershipDate;
+
+    private Boolean active = true;
 
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
 
+    private String createdBy;
+
+    private String updatedBy;
+
     @PrePersist
     protected void onCreate() {
-        registrationDate = LocalDateTime.now();
+        membershipDate = LocalDateTime.now();
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
@@ -139,7 +145,7 @@ public class Member {
     }
 
     public enum MemberStatus {
-        ACTIVE, INACTIVE, SUSPENDED, DECEASED
+        ACTIVE, SUSPENDED, EXITED, DECEASED
     }
 
     public enum RegistrationStatus {

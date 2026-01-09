@@ -12,7 +12,7 @@ import java.time.LocalDate;
 @AllArgsConstructor
 @Builder
 public class EmploymentDetailsDTO {
-    private String terms; // e.g., PERMANENT
+    private String employmentTerms; // e.g., PERMANENT
     private String employerName;
     private String staffNumber;
     private String stationOrDepartment;

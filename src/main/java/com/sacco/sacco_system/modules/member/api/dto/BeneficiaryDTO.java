@@ -10,9 +10,10 @@ import lombok.Builder;
 @AllArgsConstructor
 @Builder
 public class BeneficiaryDTO {
-    private String fullName;
+    private String firstName;
+    private String lastName;
     private String relationship;
-    private String idNumber;
+    private String identityNumber;
     private String phoneNumber;
-    private Double allocation; // Percentage
+    private Double allocationPercentage; // Percentage
 }

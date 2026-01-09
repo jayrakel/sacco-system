@@ -20,20 +20,20 @@ public interface SavingsAccountRepository extends JpaRepository<SavingsAccount, 
 
     Optional<SavingsAccount> findByAccountNumber(String accountNumber);
 
-    List<SavingsAccount> findByStatus(SavingsAccount.AccountStatus status);
+    List<SavingsAccount> findByAccountStatus(SavingsAccount.AccountStatus accountStatus);
 
     // --- 2. FOR LOAN MODULE (Single Member Total) ---
     // Calculates total savings for ONE member (used for eligibility)
-    @Query("SELECT COALESCE(SUM(s.balance), 0) FROM SavingsAccount s WHERE s.member.id = :memberId AND s.status = 'ACTIVE'")
+    @Query("SELECT COALESCE(SUM(s.balanceAmount), 0) FROM SavingsAccount s WHERE s.member.id = :memberId AND s.accountStatus = 'ACTIVE'")
     BigDecimal getTotalSavings(@Param("memberId") UUID memberId);
 
     // --- 3. FOR FINANCIAL REPORTS (System Wide Total) ---
     // Calculates total savings for the ENTIRE SACCO (used for the dashboard)
     // We renamed this to 'getTotalActiveAccountsBalance' to match your FinancialReportService
-    @Query("SELECT COALESCE(SUM(s.balance), 0) FROM SavingsAccount s WHERE s.status = 'ACTIVE'")
+    @Query("SELECT COALESCE(SUM(s.balanceAmount), 0) FROM SavingsAccount s WHERE s.accountStatus = 'ACTIVE'")
     BigDecimal getTotalActiveAccountsBalance();
 
     // Helper for fetching a member's main account
-    @Query("SELECT s FROM SavingsAccount s WHERE s.member.id = :memberId AND s.status = 'ACTIVE'")
+    @Query("SELECT s FROM SavingsAccount s WHERE s.member.id = :memberId AND s.accountStatus = 'ACTIVE'")
     Optional<SavingsAccount> findActiveAccountByMemberId(@Param("memberId") UUID memberId);
 }

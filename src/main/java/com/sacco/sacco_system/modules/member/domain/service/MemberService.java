@@ -55,7 +55,7 @@ public class MemberService {
 
         if (memberRepository.findByEmail(memberDTO.getEmail()).isPresent()) throw new RuntimeException("Email already registered");
         if (memberRepository.findByPhoneNumber(memberDTO.getPhoneNumber()).isPresent()) throw new RuntimeException("Phone already registered");
-        if (memberRepository.findByIdNumber(memberDTO.getIdNumber()).isPresent()) throw new RuntimeException("ID number already registered");
+        if (memberRepository.findByNationalId(memberDTO.getNationalId()).isPresent()) throw new RuntimeException("National ID already registered");
 
         String imagePath = null;
         if (file != null && !file.isEmpty()) {
@@ -75,13 +75,13 @@ public class MemberService {
                 .lastName(memberDTO.getLastName())
                 .email(memberDTO.getEmail())
                 .phoneNumber(memberDTO.getPhoneNumber())
-                .idNumber(memberDTO.getIdNumber())
+                .nationalId(memberDTO.getNationalId())
                 .kraPin(memberDTO.getKraPin())
                 .address(memberDTO.getAddress())
                 .dateOfBirth(memberDTO.getDateOfBirth())
                 .profileImageUrl(imagePath)
-                // ✅ FIX: Status is INACTIVE until email verification
-                .status(Member.MemberStatus.INACTIVE)
+                // ✅ FIX: Status is ACTIVE by default (per dictionary)
+                .status(Member.MemberStatus.ACTIVE)
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
                 .beneficiaries(new ArrayList<>())
@@ -90,11 +90,12 @@ public class MemberService {
         if (memberDTO.getBeneficiaries() != null) {
             for (BeneficiaryDTO bDto : memberDTO.getBeneficiaries()) {
                 Beneficiary beneficiary = Beneficiary.builder()
-                        .fullName(bDto.getFullName())
+                        .firstName(bDto.getFirstName())
+                        .lastName(bDto.getLastName())
                         .relationship(bDto.getRelationship())
-                        .idNumber(bDto.getIdNumber())
+                        .identityNumber(bDto.getIdentityNumber())
                         .phoneNumber(bDto.getPhoneNumber())
-                        .allocation(bDto.getAllocation())
+                        .allocationPercentage(bDto.getAllocationPercentage())
                         .build();
                 member.addBeneficiary(beneficiary);
             }
@@ -102,13 +103,13 @@ public class MemberService {
 
         if (memberDTO.getEmploymentDetails() != null) {
             EmploymentDetailsDTO eDto = memberDTO.getEmploymentDetails();
-            EmploymentDetails.EmploymentTerms terms = EmploymentDetails.EmploymentTerms.PERMANENT;
+            EmploymentDetails.EmploymentTerms employmentTerms = EmploymentDetails.EmploymentTerms.PERMANENT;
             try {
-                if(eDto.getTerms() != null) terms = EmploymentDetails.EmploymentTerms.valueOf(eDto.getTerms());
+                if(eDto.getEmploymentTerms() != null) employmentTerms = EmploymentDetails.EmploymentTerms.valueOf(eDto.getEmploymentTerms());
             } catch (Exception e) {}
 
             EmploymentDetails details = EmploymentDetails.builder()
-                    .terms(terms)
+                    .employmentTerms(employmentTerms)
                     .employerName(eDto.getEmployerName())
                     .staffNumber(eDto.getStaffNumber())
                     .stationOrDepartment(eDto.getStationOrDepartment())
@@ -144,11 +145,12 @@ public class MemberService {
             member.getBeneficiaries().clear();
             for (BeneficiaryDTO bDto : updateDTO.getBeneficiaries()) {
                 Beneficiary b = Beneficiary.builder()
-                        .fullName(bDto.getFullName())
+                        .firstName(bDto.getFirstName())
+                        .lastName(bDto.getLastName())
                         .relationship(bDto.getRelationship())
-                        .idNumber(bDto.getIdNumber())
+                        .identityNumber(bDto.getIdentityNumber())
                         .phoneNumber(bDto.getPhoneNumber())
-                        .allocation(bDto.getAllocation())
+                        .allocationPercentage(bDto.getAllocationPercentage())
                         .build();
                 member.addBeneficiary(b);
             }
@@ -162,11 +164,11 @@ public class MemberService {
                 member.setEmploymentDetails(details);
             }
 
-            if (eDto.getTerms() != null && !eDto.getTerms().isEmpty()) {
+            if (eDto.getEmploymentTerms() != null && !eDto.getEmploymentTerms().isEmpty()) {
                 try {
-                    details.setTerms(EmploymentDetails.EmploymentTerms.valueOf(eDto.getTerms()));
+                    details.setEmploymentTerms(EmploymentDetails.EmploymentTerms.valueOf(eDto.getEmploymentTerms()));
                 } catch (Exception e) {
-                    log.warn("Invalid employment term: {}", eDto.getTerms());
+                    log.warn("Invalid employment term: {}", eDto.getEmploymentTerms());
                 }
             }
 
@@ -245,8 +247,8 @@ public class MemberService {
         SavingsAccount savingsAccount = SavingsAccount.builder()
                 .member(member)
                 .accountNumber(generateSavingsAccountNumber())
-                .balance(BigDecimal.ZERO)
-                .status(SavingsAccount.AccountStatus.ACTIVE)
+                .balanceAmount(BigDecimal.ZERO)
+                .accountStatus(SavingsAccount.AccountStatus.ACTIVE)
                 .build();
         savingsAccountRepository.save(savingsAccount);
     }
@@ -284,7 +286,7 @@ public class MemberService {
 
     public void deleteMember(UUID id) {
         Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
-        member.setStatus(Member.MemberStatus.INACTIVE);
+        member.setStatus(Member.MemberStatus.EXITED);
         memberRepository.save(member);
     }
 
@@ -306,7 +308,7 @@ public class MemberService {
                 .lastName(member.getLastName())
                 .email(member.getEmail())
                 .phoneNumber(member.getPhoneNumber())
-                .idNumber(member.getIdNumber())
+                .nationalId(member.getNationalId())
                 .kraPin(member.getKraPin())
                 .address(member.getAddress())
                 .dateOfBirth(member.getDateOfBirth())
@@ -314,23 +316,24 @@ public class MemberService {
                 .status(member.getStatus().toString())
                 .totalShares(member.getTotalShares())
                 .totalSavings(member.getTotalSavings())
-                .registrationDate(member.getRegistrationDate())
+                .membershipDate(member.getMembershipDate())
                 .build();
 
         if (member.getBeneficiaries() != null) {
             dto.setBeneficiaries(member.getBeneficiaries().stream().map(b -> BeneficiaryDTO.builder()
-                    .fullName(b.getFullName())
+                    .firstName(b.getFirstName())
+                    .lastName(b.getLastName())
                     .relationship(b.getRelationship())
-                    .idNumber(b.getIdNumber())
+                    .identityNumber(b.getIdentityNumber())
                     .phoneNumber(b.getPhoneNumber())
-                    .allocation(b.getAllocation())
+                    .allocationPercentage(b.getAllocationPercentage())
                     .build()).collect(Collectors.toList()));
         }
 
         if (member.getEmploymentDetails() != null) {
             EmploymentDetails ed = member.getEmploymentDetails();
             dto.setEmploymentDetails(EmploymentDetailsDTO.builder()
-                    .terms(ed.getTerms() != null ? ed.getTerms().toString() : "PERMANENT")
+                    .employmentTerms(ed.getEmploymentTerms() != null ? ed.getEmploymentTerms().toString() : "PERMANENT")
                     .employerName(ed.getEmployerName())
                     .staffNumber(ed.getStaffNumber())
                     .grossMonthlyIncome(ed.getGrossMonthlyIncome())

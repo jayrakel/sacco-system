@@ -65,6 +65,7 @@ public class LoanController {
     }
 
     @PostMapping("/products")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('ADMIN', 'LOAN_OFFICER')")
     public ResponseEntity<ApiResponse<Object>> createProduct(@RequestBody LoanProduct product) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Product Created", productService.createProduct(product)));
     }

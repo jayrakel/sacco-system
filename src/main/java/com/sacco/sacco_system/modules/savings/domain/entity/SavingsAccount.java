@@ -13,8 +13,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
 
 @Entity
 @Table(name = "savings_accounts")
@@ -42,7 +40,11 @@ public class SavingsAccount {
     private SavingsProduct product;
 
     @Builder.Default
-    private BigDecimal balance = BigDecimal.ZERO;
+    private BigDecimal balanceAmount = BigDecimal.ZERO;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String currencyCode = "KES"; // ISO 4217 currency code
 
     @Builder.Default
     private BigDecimal totalDeposits = BigDecimal.ZERO;
@@ -58,21 +60,29 @@ public class SavingsAccount {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    private AccountStatus status = AccountStatus.ACTIVE;
+    private AccountStatus accountStatus = AccountStatus.ACTIVE;
 
     private LocalDateTime accountOpenDate;
+
+    // Global Audit & Identity fields (Phase A requirement)
+    @Builder.Default
+    private Boolean active = true;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
 
+    private String createdBy;
+
+    private String updatedBy;
+
     @PrePersist
     protected void onCreate() {
         accountOpenDate = LocalDateTime.now();
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
-        if (balance == null) balance = BigDecimal.ZERO;
+        if (balanceAmount == null) balanceAmount = BigDecimal.ZERO;
     }
 
     @PreUpdate

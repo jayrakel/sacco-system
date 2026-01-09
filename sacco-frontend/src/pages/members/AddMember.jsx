@@ -12,12 +12,12 @@ export default function AddMember() {
     // 1. Personal Info State
     const [personal, setPersonal] = useState({
         firstName: '', lastName: '', email: '', phoneNumber: '',
-        idNumber: '', kraPin: '', address: '', dateOfBirth: ''
+        nationalId: '', kraPin: '', address: '', dateOfBirth: ''
     });
 
     // 2. Employment State (The "Brain" Data)
     const [employment, setEmployment] = useState({
-        terms: 'PERMANENT', // Enum default
+        employmentTerms: 'PERMANENT', // Enum default - matches backend DTO
         employerName: '',
         staffNumber: '',
         stationOrDepartment: '',
@@ -30,7 +30,7 @@ export default function AddMember() {
 
     // 3. Beneficiaries State (List)
     const [beneficiaries, setBeneficiaries] = useState([
-        { fullName: '', relationship: '', idNumber: '', phoneNumber: '', allocation: 100 }
+        { firstName: '', lastName: '', relationship: '', identityNumber: '', phoneNumber: '', allocationPercentage: 100 }
     ]);
 
     // 4. Registration Payment State
@@ -49,7 +49,7 @@ export default function AddMember() {
     };
 
     const addBeneficiary = () => {
-        setBeneficiaries([...beneficiaries, { fullName: '', relationship: '', idNumber: '', phoneNumber: '', allocation: 0 }]);
+        setBeneficiaries([...beneficiaries, { firstName: '', lastName: '', relationship: '', identityNumber: '', phoneNumber: '', allocationPercentage: 0 }]);
     };
 
     const removeBeneficiary = (index) => {
@@ -63,7 +63,7 @@ export default function AddMember() {
         setLoading(true);
 
         // Validate Allocation Total
-        const totalAllocation = beneficiaries.reduce((sum, b) => sum + Number(b.allocation), 0);
+        const totalAllocation = beneficiaries.reduce((sum, b) => sum + Number(b.allocationPercentage), 0);
         if (totalAllocation !== 100) {
             alert(`Beneficiary allocation must total 100%. Current: ${totalAllocation}%`);
             setLoading(false);
@@ -100,8 +100,20 @@ export default function AddMember() {
                 navigate('/admin-dashboard?tab=members');
             }
         } catch (error) {
-            console.error(error);
-            alert(error.response?.data?.message || "Registration Failed");
+            console.error('❌ Registration Error:', error);
+            console.error('📋 Error Response:', error.response?.data);
+            console.error('📝 Member Data Being Sent:', memberDTO);
+            console.error('🔍 Full Error Details:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data,
+                headers: error.response?.headers
+            });
+
+            // Show detailed error to user
+            const errorMessage = error.response?.data?.message || error.message || "Registration Failed";
+            alert(`❌ Registration Failed\n\n${errorMessage}\n\nCheck console for details.`);
         } finally {
             setLoading(false);
         }
@@ -135,7 +147,7 @@ export default function AddMember() {
                         <Input label="Last Name" value={personal.lastName} onChange={v => setPersonal({...personal, lastName: v})} required />
                         <Input label="Email Address" type="email" value={personal.email} onChange={v => setPersonal({...personal, email: v})} required />
                         <Input label="Phone Number" value={personal.phoneNumber} onChange={v => setPersonal({...personal, phoneNumber: v})} required />
-                        <Input label="ID / Passport Number" value={personal.idNumber} onChange={v => setPersonal({...personal, idNumber: v})} required />
+                        <Input label="ID / Passport Number" value={personal.nationalId} onChange={v => setPersonal({...personal, nationalId: v})} required />
                         <Input label="KRA PIN" value={personal.kraPin} onChange={v => setPersonal({...personal, kraPin: v})} />
                         <Input label="Date of Birth" type="date" value={personal.dateOfBirth} onChange={v => setPersonal({...personal, dateOfBirth: v})} required />
                         
@@ -195,8 +207,8 @@ export default function AddMember() {
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Employment Terms</label>
                                 <select 
                                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700"
-                                    value={employment.terms}
-                                    onChange={e => setEmployment({...employment, terms: e.target.value})}
+                                    value={employment.employmentTerms}
+                                    onChange={e => setEmployment({...employment, employmentTerms: e.target.value})}
                                 >
                                     <option value="PERMANENT">Permanent</option>
                                     <option value="CONTRACT">Contract</option>
@@ -237,13 +249,14 @@ export default function AddMember() {
 
                         {beneficiaries.map((b, index) => (
                             <div key={index} className="bg-slate-50 p-4 rounded-xl border border-slate-200 relative group">
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                                    <Input label="Full Name" value={b.fullName} onChange={v => handleBeneficiaryChange(index, 'fullName', v)} required />
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                                    <Input label="First Name" value={b.firstName} onChange={v => handleBeneficiaryChange(index, 'firstName', v)} required />
+                                    <Input label="Last Name" value={b.lastName} onChange={v => handleBeneficiaryChange(index, 'lastName', v)} required />
                                     <Input label="Relationship" placeholder="e.g. Spouse" value={b.relationship} onChange={v => handleBeneficiaryChange(index, 'relationship', v)} required />
-                                    <Input label="ID Number" value={b.idNumber} onChange={v => handleBeneficiaryChange(index, 'idNumber', v)} />
+                                    <Input label="ID Number" value={b.identityNumber} onChange={v => handleBeneficiaryChange(index, 'identityNumber', v)} />
                                     <Input label="Phone" value={b.phoneNumber} onChange={v => handleBeneficiaryChange(index, 'phoneNumber', v)} required />
                                     <div>
-                                        <Input label="Allocation %" type="number" value={b.allocation} onChange={v => handleBeneficiaryChange(index, 'allocation', v)} required />
+                                        <Input label="Allocation %" type="number" value={b.allocationPercentage} onChange={v => handleBeneficiaryChange(index, 'allocationPercentage', v)} required />
                                     </div>
                                 </div>
                                 

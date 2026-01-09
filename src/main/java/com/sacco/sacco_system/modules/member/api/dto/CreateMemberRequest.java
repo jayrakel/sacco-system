@@ -29,9 +29,9 @@ public class CreateMemberRequest {
     @NotBlank(message = "Phone is required")
     private String phone;
     
-    @NotBlank(message = "ID number is required")
-    private String idNumber;
-    
+    @NotBlank(message = "National ID is required")
+    private String nationalId;
+
     private String address;
     
     private LocalDate dateOfBirth;

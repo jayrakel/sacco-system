@@ -30,8 +30,8 @@ public class MemberResponse {
     
     private String phone;
     
-    private String idNumber;
-    
+    private String nationalId;
+
     private String address;
     
     private LocalDate dateOfBirth;

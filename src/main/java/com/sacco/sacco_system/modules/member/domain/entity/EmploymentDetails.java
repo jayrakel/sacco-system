@@ -6,6 +6,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -26,7 +27,7 @@ public class EmploymentDetails {
     private Member member;
 
     @Enumerated(EnumType.STRING)
-    private EmploymentTerms terms; // PERMANENT, CONTRACT, CASUAL, SELF_EMPLOYED
+    private EmploymentTerms employmentTerms; // PERMANENT, CONTRACT, CASUAL, SELF_EMPLOYED
 
     private String employerName;
     private String staffNumber;
@@ -39,10 +40,32 @@ public class EmploymentDetails {
     private BigDecimal grossMonthlyIncome;
     private BigDecimal netMonthlyIncome;
     
-    // Bank Details for Salary Processing
+    // Bank Details for Salary Processing (bankAccountDetails concept from dictionary)
     private String bankName;
     private String bankBranch;
     private String bankAccountNumber;
+
+    // Global Audit & Identity fields (Phase A requirement)
+    private Boolean active = true;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    private String createdBy;
+
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
     public enum EmploymentTerms {
         PERMANENT, CONTRACT, CASUAL, SELF_EMPLOYED, RETIRED, UNEMPLOYED

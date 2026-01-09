@@ -49,7 +49,7 @@ public class RegistrationService {
         String tempPassword = userService.generateTemporaryPassword();
 
         // ✅ Update the user's password in the DB to match the one we are sending
-        user.setPassword(passwordEncoder.encode(tempPassword));
+        user.setPasswordHash(passwordEncoder.encode(tempPassword));
 
         // Step 3: Create Member record (SACCO membership)
         // ✅ FIX: Passed bankAccountCode correctly instead of null

@@ -59,10 +59,10 @@ public class TransactionService {
 
             if (originalTx.getType() == Transaction.TransactionType.DEPOSIT) {
                 // Reversing Deposit -> Deduct money
-                if (acc.getBalance().compareTo(amount) < 0) {
+                if (acc.getBalanceAmount().compareTo(amount) < 0) {
                     throw new RuntimeException("Cannot reverse: Insufficient balance.");
                 }
-                acc.setBalance(acc.getBalance().subtract(amount));
+                acc.setBalanceAmount(acc.getBalanceAmount().subtract(amount));
                 acc.setTotalDeposits(acc.getTotalDeposits().subtract(amount));
 
                 // GL Reversal: Debit Savings (2002), Credit Cash (1001)
@@ -70,7 +70,7 @@ public class TransactionService {
 
             } else if (originalTx.getType() == Transaction.TransactionType.WITHDRAWAL) {
                 // Reversing Withdrawal -> Add money back
-                acc.setBalance(acc.getBalance().add(amount));
+                acc.setBalanceAmount(acc.getBalanceAmount().add(amount));
                 acc.setTotalWithdrawals(acc.getTotalWithdrawals().subtract(amount));
 
                 // GL Reversal: Debit Cash (1001), Credit Savings (2002)
@@ -91,7 +91,7 @@ public class TransactionService {
                 .amount(originalTx.getAmount()) // Keep positive for record keeping
                 .referenceCode("REV-" + originalTx.getReferenceCode())
                 .description("Reversal of " + originalTx.getTransactionId() + ": " + reason)
-                .balanceAfter(originalTx.getSavingsAccount().getBalance())
+                .balanceAfter(originalTx.getSavingsAccount().getBalanceAmount())
                 .build();
 
         transactionRepository.save(reversalTx);

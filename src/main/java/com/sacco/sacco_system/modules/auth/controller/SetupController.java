@@ -160,8 +160,8 @@ public class SetupController {
                     .phoneNumber(request.getPhoneNumber())
                     .role(role)
                     .officialEmail(generateOfficialEmail(role))
-                    .password(encodedPassword)
-                    .enabled(true)
+                    .passwordHash(encodedPassword)
+                    .active(true)
                     .emailVerified(true)
                     .mustChangePassword(true)
                     .build();

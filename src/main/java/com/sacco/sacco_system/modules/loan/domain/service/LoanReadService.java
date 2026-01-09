@@ -48,7 +48,7 @@ public class LoanReadService {
                 .collect(Collectors.toList());
 
         BigDecimal totalBalance = loans.stream()
-                .map(Loan::getLoanBalance)
+                .map(Loan::getTotalOutstandingAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return LoanDashboardDTO.builder()
@@ -84,8 +84,8 @@ public class LoanReadService {
         return requests.stream().map(g -> Map.<String, Object>of(
                 "requestId", g.getId(),
                 "borrowerName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName(),
-                "amount", g.getGuaranteeAmount() != null ? g.getGuaranteeAmount() : BigDecimal.ZERO,
-                "loanType", g.getLoan().getProduct().getName(),
+                "amount", g.getGuaranteedAmount() != null ? g.getGuaranteedAmount() : BigDecimal.ZERO,
+                "loanType", g.getLoan().getProduct().getProductName(),
                 "dateRequested", g.getLoan().getApplicationDate()
         )).collect(Collectors.toList());
     }
@@ -95,14 +95,14 @@ public class LoanReadService {
      */
     public List<Map<String, Object>> getPendingVotes(String email) {
         // In real apps, verify user role here (e.g., Committee Member)
-        List<Loan> loans = loanRepository.findByStatus(Loan.LoanStatus.SUBMITTED);
+        List<Loan> loans = loanRepository.findByLoanStatus(Loan.LoanStatus.SUBMITTED);
 
         // ✅ FIXED: Explicitly typed Map.<String, Object>of()
         return loans.stream().map(l -> Map.<String, Object>of(
                 "id", l.getId(),
                 "applicantName", l.getMember().getFirstName() + " " + l.getMember().getLastName(),
                 "amount", l.getPrincipalAmount(),
-                "productName", l.getProduct().getName(),
+                "productName", l.getProduct().getProductName(),
                 "dateSubmitted", l.getApplicationDate()
         )).collect(Collectors.toList());
     }
@@ -117,10 +117,10 @@ public class LoanReadService {
         return LoanResponseDTO.builder()
                 .id(loan.getId())
                 .loanNumber(loan.getLoanNumber())
-                .productName(loan.getProduct().getName())
+                .productName(loan.getProduct().getProductName())
                 .principalAmount(loan.getPrincipalAmount())
-                .balance(loan.getLoanBalance())
-                .status(loan.getStatus().name())
+                .balance(loan.getTotalOutstandingAmount())
+                .status(loan.getLoanStatus().name())
                 .applicationDate(loan.getApplicationDate())
                 .feePaid(loan.isFeePaid())
                 .build();

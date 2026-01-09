@@ -44,8 +44,8 @@ public class LoanEligibilityService {
 
         // ✅ FIX: Handle LocalDateTime to LocalDate conversion safely
         LocalDate joinDate;
-        if (member.getRegistrationDate() != null) {
-            joinDate = member.getRegistrationDate().toLocalDate();
+        if (member.getMembershipDate() != null) {
+            joinDate = member.getMembershipDate().toLocalDate();
         } else if (member.getCreatedAt() != null) {
             joinDate = member.getCreatedAt().toLocalDate();
         } else {

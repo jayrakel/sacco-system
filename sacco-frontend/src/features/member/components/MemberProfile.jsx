@@ -174,7 +174,7 @@ export default function MemberProfile() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <Field label="First Name" value={profile.firstName} disabled />
                         <Field label="Last Name" value={profile.lastName} disabled />
-                        <Field label="ID Number" value={profile.idNumber} disabled />
+                        <Field label="ID Number" value={profile.nationalId} disabled />
                         <Field label="KRA PIN" value={formData.kraPin} onChange={v => setFormData({...formData, kraPin: v})} isEditing={isEditing} />
                         <EditableField label="Email" value={formData.email} onChange={v => setFormData({...formData, email: v})} isEditing={isEditing} icon={Mail} />
                         <EditableField label="Phone" value={formData.phoneNumber} onChange={v => setFormData({...formData, phoneNumber: v})} isEditing={isEditing} icon={Phone} />

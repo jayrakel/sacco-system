@@ -89,24 +89,20 @@ export default function MemberSavings({ user }) {
                         <Wallet className="text-emerald-600"/> My Savings Accounts
                     </h2>
 
-            {/* Accounts List */}
+            {/* Accounts List - Clean Version */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {accounts.map(acc => (
-                    <div key={acc.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-2 bg-slate-50 rounded-bl-xl border-b border-l text-[10px] font-bold text-slate-500 uppercase">
+                    <div key={acc.id} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+                        {/* Status Badge */}
+                        <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-bold uppercase tracking-wider
+                            ${acc.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-500'}`}>
                             {acc.status}
                         </div>
-                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">{acc.productName}</p>
-                        <h3 className="text-2xl font-mono font-bold text-slate-800">KES {Number(acc.balance).toLocaleString()}</h3>
-                        <p className="text-xs text-slate-500 mt-2 font-mono">Acc: {acc.accountNumber}</p>
 
-                        <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
-                            <button onClick={() => { setAction('DEPOSIT'); setSelectedAccount(acc.accountNumber); }} className="flex-1 bg-emerald-50 text-emerald-700 text-xs font-bold py-2 rounded-lg hover:bg-emerald-100 flex items-center justify-center gap-1">
-                                <ArrowDownLeft size={14}/> Deposit
-                            </button>
-                            <button onClick={() => { setAction('WITHDRAW'); setSelectedAccount(acc.accountNumber); }} className="flex-1 bg-amber-50 text-amber-700 text-xs font-bold py-2 rounded-lg hover:bg-amber-100 flex items-center justify-center gap-1">
-                                <ArrowUpRight size={14}/> Withdraw
-                            </button>
+                        <div className="flex flex-col gap-1">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{acc.productName}</span>
+                            <h3 className="text-2xl font-mono font-bold text-slate-800">KES {Number(acc.balance).toLocaleString()}</h3>
+                            <p className="text-xs text-slate-500 font-mono">**** {acc.accountNumber.slice(-4)}</p>
                         </div>
                     </div>
                 ))}

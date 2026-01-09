@@ -17,7 +17,7 @@ public interface GuarantorRepository extends JpaRepository<Guarantor, UUID> {
      * Checks if a member is guaranteeing any loans that have specific statuses (e.g., ACTIVE, IN_ARREARS).
      * Used for eligibility checks to prevent members with risky guarantees from borrowing.
      */
-    boolean existsByMemberIdAndLoanStatusIn(UUID memberId, Collection<Loan.LoanStatus> statuses);
+    boolean existsByMemberIdAndLoanLoanStatusIn(UUID memberId, Collection<Loan.LoanStatus> statuses);
 
     // ✅ ADDED: Needed for "My Guarantor Requests" dashboard widget
     List<Guarantor> findByMemberAndStatus(Member member, Guarantor.GuarantorStatus status);

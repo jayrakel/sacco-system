@@ -4,6 +4,7 @@ import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -23,10 +24,32 @@ public class Guarantor {
     private Member member;
 
     @Column(nullable = false)
-    private BigDecimal guaranteeAmount;
+    private BigDecimal guaranteedAmount;
 
     @Enumerated(EnumType.STRING)
     private GuarantorStatus status;
+
+    // Global Audit & Identity fields (Phase A requirement)
+    private Boolean active = true;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    private String createdBy;
+
+    private String updatedBy;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
     public enum GuarantorStatus { PENDING, ACCEPTED, DECLINED }
 }
