@@ -19,15 +19,17 @@ public class SavingsAccountDTO {
     private String accountNumber;
     private UUID memberId;
     private String memberName;
-    private BigDecimal balance;
+    private BigDecimal balanceAmount;  // ✅ Changed from 'balance' to match dictionary
     private BigDecimal totalDeposits;
     private BigDecimal totalWithdrawals;
-    private String status;
+    private String accountStatus;  // ✅ Changed from 'status' to match dictionary
 
-    // âœ… NEW FIELDS FOR UI
+    // ✅ NEW FIELDS FOR UI
     private String productName;
     private BigDecimal interestRate;
-    private LocalDate maturityDate;    private BigDecimal accruedInterest;}
+    private LocalDate maturityDate;
+    private BigDecimal accruedInterest;
+}
 
 
 

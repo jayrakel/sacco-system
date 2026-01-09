@@ -119,8 +119,8 @@ public class LoanReadService {
                 .loanNumber(loan.getLoanNumber())
                 .productName(loan.getProduct().getProductName())
                 .principalAmount(loan.getPrincipalAmount())
-                .balance(loan.getTotalOutstandingAmount())
-                .status(loan.getLoanStatus().name())
+                .totalOutstandingAmount(loan.getTotalOutstandingAmount())  // ✅ Changed from balance
+                .loanStatus(loan.getLoanStatus().name())  // ✅ Changed from status
                 .applicationDate(loan.getApplicationDate())
                 .feePaid(loan.isFeePaid())
                 .build();

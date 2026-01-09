@@ -44,7 +44,7 @@ public class LoanApplicationService {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member profile not found", 400));
 
-        if (!member.getStatus().equals(Member.MemberStatus.ACTIVE)) {
+        if (!member.getMemberStatus().equals(Member.MemberStatus.ACTIVE)) {
             throw new ApiException("Only active members can apply for loans", 400);
         }
 

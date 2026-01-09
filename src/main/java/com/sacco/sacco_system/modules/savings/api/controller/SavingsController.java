@@ -181,7 +181,7 @@ public class SavingsController {
 
             // 4. Calculate Total Balance and Interest
             BigDecimal totalBalance = accounts.stream()
-                    .map(SavingsAccountDTO::getBalance)
+                    .map(SavingsAccountDTO::getBalanceAmount)  // ✅ Changed from getBalance to getBalanceAmount
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             
             BigDecimal totalInterestEarned = accounts.stream()

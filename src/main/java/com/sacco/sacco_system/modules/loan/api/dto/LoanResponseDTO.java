@@ -13,10 +13,11 @@ public class LoanResponseDTO {
     private String productName;
     private BigDecimal principalAmount;
 
-    // Current Balance
-    private BigDecimal balance;
+    // ✅ Changed from 'balance' to match dictionary
+    private BigDecimal totalOutstandingAmount;
 
-    private String status;
+    // ✅ Changed from 'status' to match dictionary
+    private String loanStatus;
     private LocalDate applicationDate;
 
     // ✅ ADDED: Fixes "cannot find symbol" error

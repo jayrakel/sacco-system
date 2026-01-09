@@ -48,7 +48,7 @@ public class AnalyticsService {
         // Calculate growth rate
         long totalMembers = allMembers.size();
         long activeMembers = allMembers.stream()
-                .filter(m -> m.getStatus() == Member.MemberStatus.ACTIVE)
+                .filter(m -> m.getMemberStatus() == Member.MemberStatus.ACTIVE)  // ✅ Changed to getMemberStatus
                 .count();
 
         return Map.of(

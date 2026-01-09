@@ -72,7 +72,7 @@ public class Member {
     private String nextOfKinRelation;
 
     @Enumerated(EnumType.STRING)
-    private MemberStatus status = MemberStatus.ACTIVE;
+    private MemberStatus memberStatus = MemberStatus.ACTIVE;
 
     @Enumerated(EnumType.STRING)
     private RegistrationStatus registrationStatus = RegistrationStatus.PENDING;

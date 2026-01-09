@@ -33,7 +33,7 @@ public class MemberDTO {
     private String nextOfKinPhone;
     private String nextOfKinRelation;
 
-    private String status;
+    private String memberStatus;  // ✅ Changed from 'status' to match dictionary
     private BigDecimal totalShares;
     private BigDecimal totalSavings;
     private LocalDateTime membershipDate;

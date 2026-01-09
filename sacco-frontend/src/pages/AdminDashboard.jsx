@@ -425,7 +425,7 @@ function MembersTab() {
                                 <td className="p-4 font-bold text-slate-800">{m.firstName} {m.lastName}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.email}</td>
                                 <td className="p-4 text-slate-500 text-xs">{m.phoneNumber}</td>
-                                <td className="p-4"><span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-[10px] font-bold uppercase">{m.status}</span></td>
+                                <td className="p-4"><span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full text-[10px] font-bold uppercase">{m.memberStatus}</span></td>
                                 <td className="p-4 text-right font-bold text-slate-800">KES {Number(m.totalSavings || 0).toLocaleString()}</td>
                             </tr>
                         ))}

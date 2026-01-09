@@ -80,8 +80,8 @@ public class MemberService {
                 .address(memberDTO.getAddress())
                 .dateOfBirth(memberDTO.getDateOfBirth())
                 .profileImageUrl(imagePath)
-                // ✅ FIX: Status is ACTIVE by default (per dictionary)
-                .status(Member.MemberStatus.ACTIVE)
+                // ✅ FIX: memberStatus is ACTIVE by default (per dictionary)
+                .memberStatus(Member.MemberStatus.ACTIVE)  // ✅ Changed from status to memberStatus
                 .totalShares(BigDecimal.ZERO)
                 .totalSavings(BigDecimal.ZERO)
                 .beneficiaries(new ArrayList<>())
@@ -286,7 +286,7 @@ public class MemberService {
 
     public void deleteMember(UUID id) {
         Member member = memberRepository.findById(id).orElseThrow(() -> new RuntimeException("Member not found"));
-        member.setStatus(Member.MemberStatus.EXITED);
+        member.setMemberStatus(Member.MemberStatus.EXITED);  // ✅ Changed from setStatus to setMemberStatus
         memberRepository.save(member);
     }
 
@@ -313,7 +313,7 @@ public class MemberService {
                 .address(member.getAddress())
                 .dateOfBirth(member.getDateOfBirth())
                 .profileImageUrl(member.getProfileImageUrl())
-                .status(member.getStatus().toString())
+                .memberStatus(member.getMemberStatus().toString())  // ✅ Changed to memberStatus
                 .totalShares(member.getTotalShares())
                 .totalSavings(member.getTotalSavings())
                 .membershipDate(member.getMembershipDate())

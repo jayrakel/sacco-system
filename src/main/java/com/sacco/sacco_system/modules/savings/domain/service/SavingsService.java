@@ -224,7 +224,7 @@ public class SavingsService {
         }
 
         member.setTotalSavings(BigDecimal.ZERO);
-        member.setStatus(Member.MemberStatus.EXITED);
+        member.setMemberStatus(Member.MemberStatus.EXITED);  // ✅ Changed from setStatus to setMemberStatus
         memberRepository.save(member);
 
         Transaction tx = Transaction.builder()
@@ -317,10 +317,10 @@ public class SavingsService {
                 .accountNumber(account.getAccountNumber())
                 .memberId(account.getMember().getId())
                 .memberName(account.getMember().getFirstName() + " " + account.getMember().getLastName())
-                .balance(account.getBalanceAmount())
+                .balanceAmount(account.getBalanceAmount())  // ✅ Changed from balance to balanceAmount
                 .totalDeposits(account.getTotalDeposits())
                 .totalWithdrawals(account.getTotalWithdrawals())
-                .status(account.getAccountStatus().toString())
+                .accountStatus(account.getAccountStatus().toString())  // ✅ Changed from status to accountStatus
                 .productName(productName)
                 .interestRate(rate)
                 .maturityDate(account.getMaturityDate())
