@@ -8,14 +8,26 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
     const { settings } = useSettings();
     const [step, setStep] = useState(1);
     const [phone, setPhone] = useState('');
-    const [feeAmount, setFeeAmount] = useState(500);
+    const [feeAmount, setFeeAmount] = useState(500); // Default, updated by fetch
     const [statusMessage, setStatusMessage] = useState('');
     const [paymentStatus, setPaymentStatus] = useState('idle');
 
-    // ✅ FIX 2: Memory Leak Prevention
+    // Polling State
     const pollingInterval = useRef(null);
     const pollingAttempts = useRef(0);
-    const MAX_ATTEMPTS = 36; // 36 * 5s = 180s (3 Minutes)
+    const MAX_ATTEMPTS = 36; // 3 minutes timeout
+
+    // ✅ FIX: Simple URL builder for Logo
+    const getLogoUrl = () => {
+        if (!settings?.SACCO_LOGO) return null;
+        if (settings.SACCO_LOGO.startsWith('http')) return settings.SACCO_LOGO;
+
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8082';
+        const path = settings.SACCO_LOGO.startsWith('/') ? settings.SACCO_LOGO : `/${settings.SACCO_LOGO}`;
+        return `${baseUrl}${path}`;
+    };
+
+    const logoUrl = getLogoUrl();
 
     useEffect(() => {
         if (isOpen) {
@@ -24,7 +36,6 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
             setPhone('');
             fetchFee();
         }
-        // Cleanup function runs when modal closes or component unmounts
         return () => stopPolling();
     }, [isOpen]);
 
@@ -35,13 +46,15 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
         }
     };
 
+    // ✅ FIX: Use correct endpoint for fee
     const fetchFee = async () => {
         try {
-            const res = await api.get('/api/admin/settings/LOAN_APPLICATION_FEE');
+            // Corrected Path: /api/settings/{key}
+            const res = await api.get('/api/settings/LOAN_APPLICATION_FEE');
             const val = res.data.data || res.data;
             if (val) setFeeAmount(Number(val));
         } catch (e) {
-            console.warn("Using default fee 500");
+            console.warn("Using default fee 500 (Setting not found)");
         }
     };
 
@@ -57,7 +70,7 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
         setStep(2);
         setPaymentStatus('processing');
         setStatusMessage('Sending M-Pesa request...');
-        pollingAttempts.current = 0; // Reset counter
+        pollingAttempts.current = 0;
 
         try {
             const payload = { phoneNumber: phone, draftId: loan.id };
@@ -75,23 +88,22 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                 setStatusMessage(res.data.message || 'Failed to initiate payment');
             }
         } catch (e) {
-            console.error("Payment Init Error:", e); // ✅ FIX 3: Better Logging
+            console.error("Payment Init Error:", e);
             setPaymentStatus('failed');
             setStatusMessage('Network connection failed.');
         }
     };
 
     const startPolling = (reqId) => {
-        stopPolling(); // Ensure no duplicates
+        stopPolling();
 
         pollingInterval.current = setInterval(async () => {
-            // ✅ FIX 1: Polling Timeout Protection
             pollingAttempts.current += 1;
+
             if (pollingAttempts.current > MAX_ATTEMPTS) {
                 stopPolling();
                 setPaymentStatus('failed');
                 setStatusMessage('Payment timed out. If you paid, please contact support.');
-                console.error("Polling timed out after 3 minutes");
                 return;
             }
 
@@ -109,9 +121,9 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                     setStatusMessage(res.data.data.message);
                 }
             } catch (e) {
-                console.warn("Polling error (transient):", e);
+                // Ignore transient errors
             }
-        }, 5000); // 5 Seconds Interval
+        }, 5000);
     };
 
     const confirmLoanFee = async (referenceCode) => {
@@ -135,7 +147,15 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200">
                 <div className="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
                     <h3 className="font-bold flex items-center gap-3 text-slate-800">
-                        <ShieldCheck size={24} className="text-emerald-600"/>
+                        {logoUrl ? (
+                            <img
+                                src={logoUrl}
+                                alt="Logo"
+                                className="h-8 w-auto max-w-[100px] object-contain"
+                            />
+                        ) : (
+                            <ShieldCheck size={24} className="text-emerald-600"/>
+                        )}
                         <span className="text-sm uppercase tracking-wider">Application Fee</span>
                     </h3>
                     <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition"><X size={20} className="text-slate-400"/></button>
@@ -153,23 +173,28 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 mb-1 ml-1">M-Pesa Number</label>
-                                <input
-                                    type="tel"
-                                    placeholder="07XX XXX XXX"
-                                    required
-                                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500"
-                                    value={phone}
-                                    onChange={e => setPhone(e.target.value)}
-                                />
+                                <div className="relative">
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8">
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/M-PESA_LOGO-01.svg/320px-M-PESA_LOGO-01.svg.png" alt="M-Pesa" className="w-8 h-auto object-contain"/>
+                                    </div>
+                                    <input
+                                        type="tel"
+                                        placeholder="07XX XXX XXX"
+                                        required
+                                        className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                                        value={phone}
+                                        onChange={e => setPhone(e.target.value)}
+                                    />
+                                </div>
                             </div>
-                            <button type="submit" className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all">
+                            <button type="submit" className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95">
                                 Pay Now <ArrowRight size={18}/>
                             </button>
                         </form>
                     )}
 
                     {step === 2 && (
-                        <div className="text-center py-8 space-y-6">
+                        <div className="text-center py-8 space-y-6 animate-in zoom-in-95 duration-300">
                             {paymentStatus === 'processing' && (
                                 <div className="flex flex-col items-center">
                                     <BrandedSpinner size="large" showTagline={false} borderColor="border-emerald-500" />
@@ -181,11 +206,12 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                                 </div>
                             )}
                             {paymentStatus === 'verified' && (
-                                <div className="flex flex-col items-center">
-                                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6">
+                                <div className="flex flex-col items-center animate-in zoom-in duration-300">
+                                    <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-inner">
                                         <CheckCircle size={40}/>
                                     </div>
                                     <h3 className="text-xl font-bold text-slate-800">Payment Verified!</h3>
+                                    <p className="text-slate-500 text-sm mt-1">Continuing application...</p>
                                 </div>
                             )}
                             {paymentStatus === 'failed' && (
@@ -194,8 +220,8 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
                                         <AlertCircle size={40}/>
                                     </div>
                                     <h3 className="text-xl font-bold text-slate-800">Payment Failed</h3>
-                                    <p className="text-red-600 text-sm mt-2 px-4">{statusMessage}</p>
-                                    <button onClick={() => setStep(1)} className="mt-6 bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2 rounded-lg text-sm font-bold">Try Again</button>
+                                    <p className="text-red-600 text-sm mt-2 font-medium px-4 py-2 bg-red-50 rounded-lg">{statusMessage}</p>
+                                    <button onClick={() => setStep(1)} className="mt-6 bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2 rounded-lg text-sm font-bold transition">Try Again</button>
                                 </div>
                             )}
                         </div>

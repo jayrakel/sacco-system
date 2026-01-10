@@ -22,7 +22,17 @@ public class SystemSettingController {
         return ResponseEntity.ok(Map.of("success", true, "data", service.getAllSettings()));
     }
 
-    // ✅ ADD THIS METHOD: Handles the "Save" button from SystemSettings.jsx
+    // ✅ ADDED: Get specific setting (Critical for fetching Fee)
+    @GetMapping("/{key}")
+    public ResponseEntity<Map<String, Object>> getSetting(@PathVariable String key) {
+        // Fetches value (e.g., "500") or returns 404 if not set
+        String value = service.getString(key, null);
+        if (value == null) {
+            return ResponseEntity.status(404).body(Map.of("success", false, "message", "Setting not found"));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "data", value));
+    }
+
     @PostMapping
     public ResponseEntity<Map<String, Object>> createOrUpdateSetting(@RequestBody Map<String, String> body) {
         try {
@@ -34,7 +44,6 @@ public class SystemSettingController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Key and Value are required"));
             }
 
-            // Convert key to uppercase snake_case (e.g. "My Setting" -> "MY_SETTING")
             String formattedKey = key.trim().toUpperCase().replace(" ", "_");
 
             SystemSetting updated = service.createOrUpdate(formattedKey, value, description);
@@ -54,7 +63,6 @@ public class SystemSettingController {
         }
     }
 
-    // âœ… NEW: Upload Endpoint
     @PostMapping(value = "/upload/{key}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> uploadSettingImage(
             @PathVariable String key,
@@ -68,6 +76,3 @@ public class SystemSettingController {
         }
     }
 }
-
-
-

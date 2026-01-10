@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation; // ✅ Added Import
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
@@ -36,7 +37,6 @@ public class PaymentService {
     private final SystemSettingService systemSettingService;
     private final AccountingService accountingService;
 
-    // ✅ FIX 3: HTTP Timeouts Configured
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -45,81 +45,54 @@ public class PaymentService {
             .build();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-
     private static final String TEST_PHONE_NUMBER = "254000000000";
 
-    /**
-     * ✅ FIX 2: Refactored to remove @Transactional from HTTP call boundaries.
-     * This prevents DB connection exhaustion during slow Safaricom responses.
-     */
+    // ✅ Refactored: No @Transactional on the HTTP method
     public Map<String, Object> initiateLoanFeePayment(String email, String phoneNumber, String draftId) {
-        // STEP 1: DB Read (Fast, Transactional)
-        // Checks idempotency and fetches member details
-        Optional<Map<String, Object>> existingRequest = checkExistingPayment(draftId);
-        if (existingRequest.isPresent()) {
-            return existingRequest.get();
-        }
+        Optional<Map<String, Object>> existing = checkExistingPayment(draftId);
+        if (existing.isPresent()) return existing.get();
 
-        Member member = getMemberByEmail(email); // Helper for DB read
+        Member member = getMemberByEmail(email);
         String feeStr = systemSettingService.getString("LOAN_APPLICATION_FEE", "500");
         BigDecimal amountBD = new BigDecimal(feeStr);
         String formattedPhone = formatPhoneNumber(phoneNumber);
 
-        // DEV BYPASS
         if (TEST_PHONE_NUMBER.equals(formattedPhone)) {
             return mockTestPayment(member, formattedPhone, amountBD, draftId);
         }
 
-        // STEP 2: HTTP Call (Slow, NO Transaction)
-        // Safaricom API call happens here without holding a DB connection
         Map<String, Object> stkResult = performStkPush(formattedPhone, amountBD.intValue());
 
-        // STEP 3: DB Write (Fast, Transactional)
-        // Save the result of the HTTP call
         if ((boolean) stkResult.get("success")) {
             saveNewPaymentLog(member, formattedPhone, amountBD, draftId, (String) stkResult.get("checkoutRequestId"));
         }
-
         return stkResult;
     }
 
-    // --- Helper: Read-Only Transaction ---
+    // --- Transactional Helpers ---
     @Transactional(readOnly = true)
     public Optional<Map<String, Object>> checkExistingPayment(String draftId) {
         List<PaymentLog> existingLogs = paymentLogRepository.findByReferenceIdAndTransactionTypeOrderByUpdatedAtDesc(
                 draftId, "LOAN_APPLICATION_FEE"
         );
-
         if (!existingLogs.isEmpty()) {
             PaymentLog latest = existingLogs.get(0);
             if (latest.getStatus() == PaymentLog.PaymentStatus.COMPLETED) {
-                return Optional.of(Map.of(
-                        "success", true,
-                        "checkoutRequestId", latest.getCheckoutRequestId(),
-                        "message", "Payment already completed",
-                        "status", "COMPLETED"
-                ));
+                return Optional.of(Map.of("success", true, "checkoutRequestId", latest.getCheckoutRequestId(), "status", "COMPLETED"));
             }
-            boolean isRecent = latest.getUpdatedAt().isAfter(java.time.LocalDateTime.now().minusMinutes(5));
-            if (latest.getStatus() == PaymentLog.PaymentStatus.PENDING && isRecent) {
-                return Optional.of(Map.of(
-                        "success", true,
-                        "checkoutRequestId", latest.getCheckoutRequestId(),
-                        "message", "Existing request found."
-                ));
+            if (latest.getStatus() == PaymentLog.PaymentStatus.PENDING &&
+                    latest.getUpdatedAt().isAfter(java.time.LocalDateTime.now().minusMinutes(5))) {
+                return Optional.of(Map.of("success", true, "checkoutRequestId", latest.getCheckoutRequestId(), "message", "Request pending"));
             }
         }
         return Optional.empty();
     }
 
-    // --- Helper: Read Transaction ---
     @Transactional(readOnly = true)
     public Member getMemberByEmail(String email) {
-        return memberRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Member not found"));
+        return memberRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("Member not found"));
     }
 
-    // --- Helper: Write Transaction ---
     @Transactional
     public void saveNewPaymentLog(Member member, String phone, BigDecimal amount, String draftId, String reqId) {
         PaymentLog logEntry = PaymentLog.builder()
@@ -135,12 +108,9 @@ public class PaymentService {
         paymentLogRepository.save(logEntry);
     }
 
-    // --- Core Logic: The HTTP Call (No DB Code here) ---
     private Map<String, Object> performStkPush(String phone, int amount) {
         try {
             String accessToken = getAccessToken();
-            if (accessToken == null) throw new RuntimeException("MPESA Auth Failed");
-
             String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
             String password = Base64.getEncoder().encodeToString((mpesaConfig.getShortCode() + mpesaConfig.getPassKey() + timestamp).getBytes());
 
@@ -163,12 +133,10 @@ public class PaymentService {
             try (Response response = client.newCall(request).execute()) {
                 String responseBody = response.body().string();
                 JsonNode json = objectMapper.readTree(responseBody);
-
                 if (json.has("ResponseCode") && "0".equals(json.get("ResponseCode").asText())) {
                     return Map.of("success", true, "checkoutRequestId", json.get("CheckoutRequestID").asText(), "message", "Request sent");
-                } else {
-                    throw new RuntimeException("MPESA Error: " + (json.has("errorMessage") ? json.get("errorMessage").asText() : "Unknown Error"));
                 }
+                throw new RuntimeException("MPESA Error: " + (json.has("errorMessage") ? json.get("errorMessage").asText() : "Unknown Error"));
             }
         } catch (Exception e) {
             log.error("Payment Init Failed", e);
@@ -176,14 +144,13 @@ public class PaymentService {
         }
     }
 
-    // --- Callback Processing (Transactional) ---
+    // ✅ FIX: Callback Processing with Safe Ledger Entry
     @Transactional
     public void processMpesaCallback(String rawPayload) {
         log.info("🔄 Processing M-Pesa Callback...");
         try {
             JsonNode root = objectMapper.readTree(rawPayload);
             JsonNode body = root.path("Body").path("stkCallback");
-
             String checkoutRequestId = body.path("CheckoutRequestID").asText();
             int resultCode = body.path("ResultCode").asInt();
             String resultDesc = body.path("ResultDesc").asText();
@@ -191,52 +158,46 @@ public class PaymentService {
             if (checkoutRequestId.isEmpty()) return;
 
             PaymentLog paymentLog = paymentLogRepository.findByCheckoutRequestId(checkoutRequestId).orElse(null);
-
-            if (paymentLog == null) {
-                log.warn("⚠️ No log found for CheckoutRequestID: {}", checkoutRequestId);
-                return;
-            }
-
-            if (paymentLog.getStatus() == PaymentLog.PaymentStatus.COMPLETED) {
-                log.info("✅ Payment {} already completed.", checkoutRequestId);
-                return;
-            }
+            if (paymentLog == null || paymentLog.getStatus() == PaymentLog.PaymentStatus.COMPLETED) return;
 
             if (resultCode == 0) {
+                // 1. Update Status (Must happen)
                 updateLogStatus(paymentLog, PaymentLog.PaymentStatus.COMPLETED, resultDesc);
-                createLedgerAndAccountingEntries(paymentLog);
-                log.info("✅ Payment Confirmed via Callback: {}", checkoutRequestId);
+
+                // 2. Ledger Entry (Can fail without rolling back status if needed)
+                try {
+                    createLedgerAndAccountingEntries(paymentLog);
+                    log.info("✅ Payment Confirmed via Callback: {}", checkoutRequestId);
+                } catch (Exception e) {
+                    log.error("⚠️ Payment Confirmed but Ledger Failed for {}. Reason: {}", checkoutRequestId, e.getMessage());
+                    // We do NOT re-throw here to avoid rolling back the "COMPLETED" status of the payment itself.
+                }
             } else {
-                PaymentLog.PaymentStatus status = (resultCode == 1032) ? PaymentLog.PaymentStatus.CANCELLED : PaymentLog.PaymentStatus.FAILED;
-                updateLogStatus(paymentLog, status, resultDesc);
+                updateLogStatus(paymentLog, resultCode == 1032 ? PaymentLog.PaymentStatus.CANCELLED : PaymentLog.PaymentStatus.FAILED, resultDesc);
                 log.error("❌ Payment Failed (Code {}): {}", resultCode, resultDesc);
             }
-
         } catch (Exception e) {
-            log.error("❌ Error parsing callback payload", e);
+            log.error("❌ Error parsing callback", e);
         }
     }
 
-    // ... (Test Mode, Check Status, Ledger, Helpers remain unchanged from previous correct version)
-
+    // ... (Test Mode helpers...)
     private Map<String, Object> mockTestPayment(Member member, String phone, BigDecimal amount, String draftId) {
         String mockReqId = "TEST-" + UUID.randomUUID().toString();
-        // Use local Transactional method to save
         saveNewPaymentLog(member, phone, amount, draftId, mockReqId);
         return Map.of("success", true, "checkoutRequestId", mockReqId, "message", "[TEST MODE] Success");
     }
 
+    // ... (checkPaymentStatus...)
     @Transactional
     public Map<String, Object> checkPaymentStatus(String checkoutRequestId) {
-        // [Existing checkPaymentStatus logic]
-        // Ensure you rely on createLedgerAndAccountingEntries inside it
         PaymentLog paymentLog = paymentLogRepository.findByCheckoutRequestId(checkoutRequestId)
                 .orElseThrow(() -> new RuntimeException("Payment Session not found"));
 
         if (checkoutRequestId.startsWith("TEST-")) {
             if (paymentLog.getStatus() != PaymentLog.PaymentStatus.COMPLETED) {
                 updateLogStatus(paymentLog, PaymentLog.PaymentStatus.COMPLETED, "Test Payment Success");
-                createLedgerAndAccountingEntries(paymentLog);
+                try { createLedgerAndAccountingEntries(paymentLog); } catch(Exception e) { log.error("Test Ledger Failed", e); }
             }
             return Map.of("status", "COMPLETED", "message", "Test Payment Successful");
         }
@@ -247,7 +208,6 @@ public class PaymentService {
         if (paymentLog.getStatus() != PaymentLog.PaymentStatus.PENDING) {
             return Map.of("status", paymentLog.getStatus().toString(), "message", paymentLog.getResultDescription());
         }
-
         return querySafaricomStatus(paymentLog);
     }
 
@@ -276,7 +236,13 @@ public class PaymentService {
 
                     if ("0".equals(code)) {
                         updateLogStatus(paymentLog, PaymentLog.PaymentStatus.COMPLETED, desc);
-                        createLedgerAndAccountingEntries(paymentLog);
+
+                        try {
+                            createLedgerAndAccountingEntries(paymentLog);
+                        } catch(Exception e) {
+                            log.error("⚠️ Payment Confirmed but Ledger Failed: {}", e.getMessage());
+                        }
+
                         return Map.of("status", "COMPLETED", "message", "Payment Successful");
                     } else if ("1032".equals(code)) {
                         updateLogStatus(paymentLog, PaymentLog.PaymentStatus.CANCELLED, "User Cancelled");
@@ -302,10 +268,11 @@ public class PaymentService {
         paymentLogRepository.save(paymentLog);
     }
 
-    private void createLedgerAndAccountingEntries(PaymentLog paymentLog) {
-        if (transactionRepository.findByExternalReference(paymentLog.getCheckoutRequestId()).isPresent()) {
-            return;
-        }
+    // ✅ FIX: ISOLATED TRANSACTION for Ledger
+    // This prevents "Silent Rollback" error if accounting fails
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createLedgerAndAccountingEntries(PaymentLog paymentLog) {
+        if (transactionRepository.findByExternalReference(paymentLog.getCheckoutRequestId()).isPresent()) return;
 
         Transaction tx = Transaction.builder()
                 .member(paymentLog.getMember())
