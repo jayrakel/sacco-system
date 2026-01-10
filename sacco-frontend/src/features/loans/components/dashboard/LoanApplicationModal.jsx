@@ -1,77 +1,87 @@
 import React, { useState, useEffect } from 'react';
-import api from '../../../../api'; // Adjust path if necessary
-import { X, ChevronRight, AlertCircle, CheckCircle, Calculator, Users, FileText } from 'lucide-react';
+import api from '../../../../api';
+import { X, ChevronRight, AlertCircle, Users, FileText } from 'lucide-react';
 
-export default function LoanApplicationModal({ isOpen, onClose }) {
-    // --- STATE ---
-    const [step, setStep] = useState(1); // 1: Details, 2: Guarantors, 3: Review
+export default function LoanApplicationModal({ isOpen, onClose, onDraftCreated, resumeLoan }) {
+    const [step, setStep] = useState(1);
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // Form Data (Matches Backend DTO)
     const [formData, setFormData] = useState({
         productId: '',
         amount: '',
-        repaymentPeriod: ''
+        durationWeeks: ''
     });
 
-    // Response from Backend after Step 1 (Draft Creation)
-    const [activeLoanDraft, setActiveLoanDraft] = useState(null);
-
-    // --- EFFECT: Load Products ---
+    // Load Data & State Management
     useEffect(() => {
         if (isOpen) {
             fetchProducts();
-            setStep(1);
+
+            // Logic: Decide which step to show
+            if (resumeLoan) {
+                // If resuming a draft
+                setFormData({
+                    productId: resumeLoan.product?.id || '', // Adapt based on your DTO structure
+                    amount: resumeLoan.principalAmount,
+                    durationWeeks: resumeLoan.repaymentPeriod // or durationWeeks
+                });
+
+                if (resumeLoan.feePaid) {
+                    setStep(2); // Go to Guarantors
+                } else {
+                    setStep(1); // Review Details (or could allow editing if logic permits)
+                }
+            } else {
+                // Fresh Start
+                setStep(1);
+                setFormData({ productId: '', amount: '', durationWeeks: '' });
+            }
             setError('');
-            setFormData({ productId: '', amount: '', repaymentPeriod: '' });
         }
-    }, [isOpen]);
+    }, [isOpen, resumeLoan]);
 
     const fetchProducts = async () => {
         try {
-            const res = await api.get('/api/loans/products'); // Ensure this endpoint exists and returns list
+            const res = await api.get('/api/loans/products');
             if (res.data.success) {
-                setProducts(res.data.data.filter(p => p.active)); // Only active products
+                setProducts(res.data.data.filter(p => p.active));
             }
         } catch (e) {
             setError("Failed to load loan products.");
         }
     };
 
-    // --- ACTIONS ---
-
-    // Step 1: Create Draft Loan (Initiate)
-    const handleInitiate = async (e) => {
+    // --- STEP 1: CREATE DRAFT ---
+    const handleCreateDraft = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
-        // Validation
         const selectedProduct = products.find(p => p.id === formData.productId);
         if (!selectedProduct) { setError("Invalid Product"); setLoading(false); return; }
 
-        if (Number(formData.amount) < selectedProduct.minLimit || Number(formData.amount) > selectedProduct.maxLimit) {
-            setError(`Amount must be between ${selectedProduct.minLimit} and ${selectedProduct.maxLimit}`);
+        if (Number(formData.amount) < selectedProduct.minAmount || Number(formData.amount) > selectedProduct.maxAmount) {
+            setError(`Amount must be between ${selectedProduct.minAmount} and ${selectedProduct.maxAmount}`);
             setLoading(false);
             return;
         }
 
         try {
-            // ✅ PAYLOAD MATCHES BACKEND LoanRequestDTO
             const payload = {
                 productId: formData.productId,
                 amount: Number(formData.amount),
-                repaymentPeriod: Number(formData.repaymentPeriod)
+                durationWeeks: Number(formData.durationWeeks)
             };
 
-            const res = await api.post('/api/loans/apply', payload);
+            // ✅ CALL BACKEND TO PERSIST DRAFT
+            const res = await api.post('/api/loans/initiate', payload);
 
             if (res.data.success) {
-                // Success! We have a draft loan ID now.
-                setActiveLoanDraft(res.data.data); // Contains loanId, loanNumber, etc.
-                setStep(2); // Move to Guarantors
+                // Notify Parent (MemberLoans) that draft exists
+                // This triggers the Dashboard State Change & Opens Fee Modal
+                onDraftCreated(res.data.data);
             } else {
                 setError(res.data.message);
             }
@@ -80,13 +90,6 @@ export default function LoanApplicationModal({ isOpen, onClose }) {
         } finally {
             setLoading(false);
         }
-    };
-
-    // Placeholder for future steps
-    const handleSubmitFinal = async () => {
-        // We will implement this in the next phase
-        alert("Submitting Loan " + activeLoanDraft?.loanNumber);
-        onClose();
     };
 
     if (!isOpen) return null;
@@ -98,20 +101,14 @@ export default function LoanApplicationModal({ isOpen, onClose }) {
                 {/* Header */}
                 <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
                     <div>
-                        <h2 className="font-bold text-slate-800 text-lg">New Loan Application</h2>
+                        <h2 className="font-bold text-slate-800 text-lg">
+                            {step === 1 ? 'Start Application' : 'Add Guarantors'}
+                        </h2>
                         <p className="text-xs text-slate-500">Step {step} of 3</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition"><X size={20}/></button>
                 </div>
 
-                {/* Progress Bar */}
-                <div className="flex border-b border-slate-100">
-                    <div className={`flex-1 p-2 text-center text-xs font-bold ${step >= 1 ? 'text-emerald-600 border-b-2 border-emerald-500' : 'text-slate-400'}`}>1. Details</div>
-                    <div className={`flex-1 p-2 text-center text-xs font-bold ${step >= 2 ? 'text-emerald-600 border-b-2 border-emerald-500' : 'text-slate-400'}`}>2. Guarantors</div>
-                    <div className={`flex-1 p-2 text-center text-xs font-bold ${step >= 3 ? 'text-emerald-600 border-b-2 border-emerald-500' : 'text-slate-400'}`}>3. Review</div>
-                </div>
-
-                {/* Body Content */}
                 <div className="p-6 overflow-y-auto">
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
@@ -119,9 +116,9 @@ export default function LoanApplicationModal({ isOpen, onClose }) {
                         </div>
                     )}
 
-                    {/* --- STEP 1: LOAN DETAILS --- */}
+                    {/* --- STEP 1: FORM --- */}
                     {step === 1 && (
-                        <form onSubmit={handleInitiate} className="space-y-5">
+                        <form onSubmit={handleCreateDraft} className="space-y-5">
                             <div>
                                 <label className="block text-sm font-bold text-slate-700 mb-1">Select Product</label>
                                 <select
@@ -129,11 +126,12 @@ export default function LoanApplicationModal({ isOpen, onClose }) {
                                     value={formData.productId}
                                     onChange={(e) => setFormData({...formData, productId: e.target.value})}
                                     required
+                                    disabled={!!resumeLoan} // Lock if resuming (optional)
                                 >
                                     <option value="">-- Choose a Loan Product --</option>
                                     {products.map(p => (
                                         <option key={p.id} value={p.id}>
-                                            {p.productName} (Interest: {p.interestRate}% p.a)
+                                            {p.productName} (Interest: {p.interestRate}%)
                                         </option>
                                     ))}
                                 </select>
@@ -145,56 +143,43 @@ export default function LoanApplicationModal({ isOpen, onClose }) {
                                     <input
                                         type="number"
                                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
-                                        placeholder="e.g. 50000"
                                         value={formData.amount}
                                         onChange={(e) => setFormData({...formData, amount: e.target.value})}
                                         required
+                                        readOnly={!!resumeLoan} // Lock if resuming
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-1">Repayment (Months)</label>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Duration (Weeks/Months)</label>
                                     <input
                                         type="number"
                                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
-                                        placeholder="e.g. 12"
-                                        value={formData.repaymentPeriod}
-                                        onChange={(e) => setFormData({...formData, repaymentPeriod: e.target.value})}
+                                        value={formData.durationWeeks}
+                                        onChange={(e) => setFormData({...formData, durationWeeks: e.target.value})}
                                         required
+                                        readOnly={!!resumeLoan}
                                     />
                                 </div>
                             </div>
-
-                            {/* Dynamic Hint based on selection */}
-                            {formData.productId && (
-                                <div className="p-3 bg-blue-50 text-blue-700 text-xs rounded-lg">
-                                    <strong>Product Limits:</strong>
-                                    Min: KES {products.find(p=>p.id===formData.productId)?.minLimit?.toLocaleString()} |
-                                    Max: KES {products.find(p=>p.id===formData.productId)?.maxLimit?.toLocaleString()}
-                                </div>
-                            )}
 
                             <div className="pt-4">
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
                                 >
-                                    {loading ? "Processing..." : <>Next: Add Guarantors <ChevronRight size={18}/></>}
+                                    {loading ? "Creating Draft..." : <>Create Draft & Proceed <ChevronRight size={18}/></>}
                                 </button>
                             </div>
                         </form>
                     )}
 
-                    {/* --- STEP 2: GUARANTORS (Placeholder for next interaction) --- */}
+                    {/* --- STEP 2: GUARANTORS (Placeholder) --- */}
                     {step === 2 && (
                         <div className="text-center py-10">
                             <Users size={48} className="mx-auto text-emerald-200 mb-4"/>
-                            <h3 className="text-xl font-bold text-slate-800">Draft Created: {activeLoanDraft?.loanNumber}</h3>
-                            <p className="text-slate-500">We are ready to add guarantors in the next step.</p>
-
-                            <button onClick={handleSubmitFinal} className="mt-6 bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold">
-                                Proceed (Simulated)
-                            </button>
+                            <h3 className="text-xl font-bold text-slate-800">Guarantor Selection</h3>
+                            <p className="text-slate-500">This module is under construction.</p>
                         </div>
                     )}
                 </div>

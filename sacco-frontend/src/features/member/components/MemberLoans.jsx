@@ -7,17 +7,21 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import ActiveLoanCard from '../../loans/components/dashboard/ActiveLoanCard';
 import LoanVotingWidget from '../../loans/components/dashboard/LoanVotingWidget';
 import LoanEligibilityWidget from '../../loans/components/dashboard/LoanEligibilityWidget';
+import DraftLoanWidget from '../../loans/components/dashboard/DraftLoanWidget'; // ✅ New Widget
 import LoanHistoryList from '../../loans/components/dashboard/LoanHistoryList';
 
 // Modals
 import LoanApplicationModal from '../../loans/components/dashboard/LoanApplicationModal';
-// ✅ IMPORT FROM LOCAL (This is the one we created for member fee payment)
 import LoanFeePaymentModal from './LoanFeePaymentModal';
 
 export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     const { settings } = useSettings();
     const [loans, setLoans] = useState([]);
     const [activeVotes, setActiveVotes] = useState([]);
+
+    // ✅ STATE: Tracks if a draft exists (Temporal State)
+    const [activeDraft, setActiveDraft] = useState(null);
+
     const [loading, setLoading] = useState(true);
     const [eligibilityData, setEligibilityData] = useState(null);
     const [error, setError] = useState(null);
@@ -26,9 +30,8 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
     const [isPayFeeModalOpen, setIsPayFeeModalOpen] = useState(false);
 
-    // We maintain 'selectedLoan' just in case we need to resume an old draft
-    // But for a NEW application, this will be null.
-    const [selectedLoan, setSelectedLoan] = useState(null);
+    // Used for viewing history details (Read Only)
+    const [selectedHistoryLoan, setSelectedHistoryLoan] = useState(null);
 
     useEffect(() => {
         loadDashboardData();
@@ -38,15 +41,20 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         setLoading(true);
         setError(null);
         try {
-            const [loansRes, eligRes, votesRes] = await Promise.all([
+            // ✅ READ-ONLY: Check if draft exists, but DO NOT create one yet.
+            const [loansRes, eligRes, votesRes, draftRes] = await Promise.all([
                 api.get('/api/loans/my-loans').catch(e => ({ error: e })),
                 api.get('/api/loans/eligibility/check').catch(e => ({ error: e })),
-                api.get('/api/loans/voting/active').catch(e => ({ error: e }))
+                api.get('/api/loans/voting/active').catch(e => ({ error: e })),
+                api.get('/api/loans/draft').catch(e => ({ error: e }))
             ]);
 
             if (loansRes.data?.success) setLoans(loansRes.data.data);
             if (eligRes.data?.success) setEligibilityData(eligRes.data.data);
             if (votesRes.data?.success) setActiveVotes(votesRes.data.data);
+
+            // If a draft exists, load it. If not, this remains null.
+            if (draftRes.data?.success) setActiveDraft(draftRes.data.data);
 
         } catch (e) {
             console.error("Failed to load dashboard data", e);
@@ -68,25 +76,49 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         }
     };
 
-    // ✅ STEP 1: START -> OPEN PAYMENT MODAL FIRST
-    // This is triggered by the "Apply Now" button in LoanEligibilityWidget
-    const handleStartApplication = () => {
-        setSelectedLoan(null); // Ensure we are starting fresh
-        setIsPayFeeModalOpen(true);
+    // ✅ ACTION: User Clicks "Start Application"
+    // This creates the Draft Entity and switches the view
+    const handleStartApplication = async () => {
+        setSelectedHistoryLoan(null);
+        try {
+            // 1. Create the Draft (Backend Write)
+            const res = await api.post('/api/loans/start');
+
+            if (res.data.success) {
+                const newDraft = res.data.data;
+                setActiveDraft(newDraft); // Switch UI to Draft Mode
+
+                // 2. Immediately Prompt for Fee
+                setIsPayFeeModalOpen(true);
+            }
+        } catch (e) {
+            alert(e.response?.data?.message || "Failed to start application. Please check eligibility.");
+        }
     };
 
-    // ✅ STEP 2: PAYMENT SUCCESS -> OPEN APPLICATION FORM
-    // This is called by LoanFeePaymentModal when MPESA transaction is COMPLETED
+    // ✅ ACTION: User Clicks "Resume" on the Draft Widget
+    const handleResumeDraft = () => {
+        if (!activeDraft) return;
+
+        if (activeDraft.status === 'PENDING_FEE') {
+            setIsPayFeeModalOpen(true);
+        } else if (activeDraft.status === 'FEE_PAID') {
+            setIsApplyModalOpen(true);
+        }
+    };
+
+    // ✅ CALLBACK: Fee Paid Successfully
     const handleFeeSuccess = () => {
         setIsPayFeeModalOpen(false);
 
-        // Slight delay for smooth UX transition
-        setTimeout(() => {
+        // Reload to update draft status to FEE_PAID, then open form
+        loadDashboardData().then(() => {
             setIsApplyModalOpen(true);
-        }, 500);
+        });
     };
 
-    const activeLoan = loans.find(l => l.status === 'ACTIVE' || l.status === 'IN_ARREARS');
+    // Determine Primary View
+    const activeLoan = loans.find(l => ['PENDING_GUARANTORS', 'ACTIVE', 'IN_ARREARS', 'DISBURSED'].includes(l.status));
 
     if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse"><Loader2 className="animate-spin mx-auto mb-2"/> Loading Dashboard...</div>;
 
@@ -100,55 +132,56 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 </div>
             )}
 
-            {/* 1. Show Active Loan (Top Priority) */}
-            <ActiveLoanCard
-                loan={activeLoan}
-                onPayFee={(loan) => {
-                    // For existing loans that need repayment (different from application fee)
-                    alert("Loan Repayment Modal would open here.");
-                }}
-            />
+            {/* --- 1. PRIMARY STATUS AREA (Mutually Exclusive) --- */}
 
-            {/* 2. Show Voting Actions */}
-            <LoanVotingWidget activeVotes={activeVotes} onVote={handleCastVote} />
-
-            {/* 3. Show Eligibility Card (Only if no active loan) */}
-            {!activeLoan && (
+            {activeLoan ? (
+                // CASE A: Active Loan exists -> Show Status Card
+                <ActiveLoanCard loan={activeLoan} />
+            ) : activeDraft ? (
+                // CASE B: Draft exists -> Show Draft Widget (Resume/Pay)
+                <DraftLoanWidget
+                    draftLoan={activeDraft}
+                    onResume={handleResumeDraft}
+                />
+            ) : (
+                // CASE C: Nothing exists -> Show Eligibility & Start Button
                 <LoanEligibilityWidget
                     eligibilityData={eligibilityData}
                     settings={settings}
-                    onApply={handleStartApplication} // ✅ Triggers Fee Payment Modal
+                    onApply={handleStartApplication} // Triggers Draft Creation
                 />
             )}
 
-            {/* 4. History Table */}
+            {/* --- 2. SECONDARY WIDGETS --- */}
+            <LoanVotingWidget activeVotes={activeVotes} onVote={handleCastVote} />
+
             <LoanHistoryList
                 loans={loans}
                 onSelect={(loan) => {
-                    // If viewing an old draft, we might skip fee if already paid?
-                    // For now, let's just open the application modal to view details
-                    setSelectedLoan(loan);
+                    setSelectedHistoryLoan(loan); // View old loan
                     setIsApplyModalOpen(true);
                 }}
             />
 
             {/* --- MODALS --- */}
 
-            {/* 1. Fee Payment (First Step) */}
+            {/* 1. Fee Payment (Uses Active Draft) */}
             <LoanFeePaymentModal
                 isOpen={isPayFeeModalOpen}
                 onClose={() => setIsPayFeeModalOpen(false)}
-                onSuccess={handleFeeSuccess} // ✅ Moves to Step 2
+                onSuccess={handleFeeSuccess}
+                loan={activeDraft} // Passes the temporal draft
             />
 
-            {/* 2. Application Form (Second Step) */}
+            {/* 2. Application Form (Uses Paid Draft OR History Loan) */}
             <LoanApplicationModal
                 isOpen={isApplyModalOpen}
                 onClose={() => {
                     setIsApplyModalOpen(false);
-                    loadDashboardData(); // Refresh list on close
+                    loadDashboardData();
                 }}
-                resumeLoan={selectedLoan} // Used if editing an old draft
+                draft={activeDraft} // Pass draft for conversion
+                resumeLoan={selectedHistoryLoan} // Pass history if viewing old
             />
         </div>
     );
