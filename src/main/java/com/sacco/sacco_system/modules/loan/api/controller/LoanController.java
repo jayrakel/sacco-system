@@ -8,7 +8,6 @@ import com.sacco.sacco_system.modules.loan.domain.service.LoanApplicationService
 import com.sacco.sacco_system.modules.loan.domain.service.LoanEligibilityService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanProductService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanReadService;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.service.UserService;
@@ -32,11 +31,10 @@ public class LoanController {
     private final LoanReadService readService;
     private final LoanProductService productService;
     private final UserService userService;
-    private final MemberRepository memberRepository; // ✅ Added to fetch Member for limits
+    private final MemberRepository memberRepository;
 
     // --- DRAFT PROCESS ---
 
-    // ✅ Read-Only check.
     @GetMapping("/draft")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> getCurrentDraft(@AuthenticationPrincipal UserDetails userDetails) {
         return applicationService.getCurrentDraft(userDetails.getUsername())
@@ -44,7 +42,6 @@ public class LoanController {
                 .orElse(ResponseEntity.ok(new ApiResponse<>(true, "No Active Draft", null)));
     }
 
-    // ✅ Creates draft (Start Button Logic)
     @PostMapping("/start")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> startApplication(@AuthenticationPrincipal UserDetails userDetails) {
         User user = userService.findByEmail(userDetails.getUsername()).orElseThrow();
@@ -52,7 +49,6 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Application Started", draft));
     }
 
-    // ✅ Pay Fee
     @PostMapping("/drafts/{draftId}/pay-fee")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> confirmDraftFee(
             @PathVariable UUID draftId,
@@ -62,23 +58,13 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Fee Confirmed", draft));
     }
 
-    // ✅ NEW: Fetch Member Limits (For UI Guardrails)
+    // ✅ FIXED: Now calls the service method that returns 'totalDeposits'
     @GetMapping("/limits")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMemberLimits(@AuthenticationPrincipal UserDetails userDetails) {
-        Member member = memberRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new RuntimeException("Member not found"));
-
-        // Calculates Savings * Multiplier
-        BigDecimal maxAmount = eligibilityService.calculateMaxLoanLimit(member);
-
-        return ResponseEntity.ok(new ApiResponse<>(true, "Limits Calculated", Map.of(
-                "maxEligibleAmount", maxAmount,
-                "currency", "KES"
-        )));
+        Map<String, Object> limits = eligibilityService.getLoanLimits(userDetails.getUsername());
+        return ResponseEntity.ok(new ApiResponse<>(true, "Limits Calculated", limits));
     }
 
-    // ✅ NEW: Submit Details (Product, Amount, Duration) -> Creates Loan
-    // Replaces 'convertDraft' with a more descriptive name, though logic is similar
     @PostMapping("/drafts/{draftId}/submit-details")
     public ResponseEntity<ApiResponse<Loan>> submitLoanDetails(
             @PathVariable UUID draftId,
@@ -88,6 +74,7 @@ public class LoanController {
     }
 
     // --- 4. REAL LOAN PROCESS ---
+
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<ApiResponse<Object>> addGuarantor(@PathVariable UUID loanId, @RequestBody Map<String, Object> body) {
         String memberIdStr = (String) body.get("memberId");
@@ -99,6 +86,12 @@ public class LoanController {
 
         applicationService.addGuarantor(loanId, guarantorId, amount);
         return ResponseEntity.ok(new ApiResponse<>(true, "Guarantor Added"));
+    }
+
+    // ✅ NEW ENDPOINT: Get Guarantors for a Loan (For Resume Application State)
+    @GetMapping("/{loanId}/guarantors")
+    public ResponseEntity<ApiResponse<Object>> getLoanGuarantors(@PathVariable UUID loanId) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Guarantors fetched", readService.getLoanGuarantors(loanId)));
     }
 
     @PostMapping("/{loanId}/submit")

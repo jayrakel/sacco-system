@@ -16,29 +16,40 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     // List & Status State
     const [guarantors, setGuarantors] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(true); // ✅ Loading state for fetch
     const [message, setMessage] = useState(null);
 
-    // --- 1. SMART COVERAGE LOGIC ---
+    // --- 0. INIT: FETCH EXISTING GUARANTORS ---
+    useEffect(() => {
+        fetchGuarantors();
+    }, [loan.id]);
 
-    // A. How much is the loan?
+    const fetchGuarantors = async () => {
+        try {
+            const res = await api.get(`/api/loans/${loan.id}/guarantors`);
+            if (res.data.success) {
+                setGuarantors(res.data.data);
+            }
+        } catch (e) {
+            console.error("Failed to load guarantors", e);
+        } finally {
+            setInitialLoading(false);
+        }
+    };
+
+    // --- 1. SMART COVERAGE LOGIC ---
     const principal = Number(loan.principalAmount);
 
-    // B. How much does the APPLICANT cover themselves? (Self-Guarantee)
-    // ✅ FIX: Use the actual totalDeposits passed from the backend.
-    // We no longer guess by dividing maxEligibleAmount by 3.
+    // Applicant Self-Coverage
     const mySavings = applicantLimits?.totalDeposits
         ? Number(applicantLimits.totalDeposits)
         : 0;
 
-    // The applicant guarantees their own loan up to their savings amount
-    // (e.g., If Loan is 50k and Savings are 80k, Self-Guarantee is 50k)
-    // (e.g., If Loan is 100k and Savings are 80k, Self-Guarantee is 80k)
     const selfGuaranteedAmount = Math.min(principal, mySavings);
 
-    // C. How much have OTHERS pledged?
+    // Others Coverage (Calculated from the fetched list)
     const othersGuaranteedAmount = guarantors.reduce((sum, g) => sum + Number(g.guaranteedAmount || 0), 0);
 
-    // D. What is the GAP?
     const totalCovered = selfGuaranteedAmount + othersGuaranteedAmount;
     const remainingGap = Math.max(0, principal - totalCovered);
     const isFullySecured = remainingGap <= 0;
@@ -49,7 +60,7 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
         const timer = setTimeout(() => {
             if (searchTerm.length >= 3) searchMembers();
             else setSearchResults([]);
-        }, 400); // Debounce
+        }, 400);
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
@@ -58,8 +69,13 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
         try {
             const res = await api.get(`/api/members?search=${searchTerm}`);
             const data = res.data.data?.content || res.data.data || [];
-            // Filter: Remove self and already added guarantors
-            const filtered = data.filter(m => m.id !== loan.memberId && !guarantors.some(g => g.memberId === m.id));
+
+            // ✅ FILTER: Exclude members who are ALREADY in the 'guarantors' list
+            // Since 'guarantors' is now populated from the backend, this prevents duplicates!
+            const filtered = data.filter(m =>
+                m.id !== loan.memberId && // Not self
+                !guarantors.some(g => g.memberId === m.id) // Not already added
+            );
             setSearchResults(filtered);
         } catch (e) {
             console.error(e);
@@ -74,7 +90,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
         setSelectedMember(member);
         setSearchTerm('');
         setSearchResults([]);
-        // Auto-fill: Suggest the remaining gap (or 0 if fully covered but they want extra security)
         setGuaranteeAmount(remainingGap > 0 ? remainingGap : '');
         setMessage(null);
     };
@@ -92,13 +107,16 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                 amount: Number(guaranteeAmount)
             });
 
-            // Update local state to reflect the new pledge
-            setGuarantors(prev => [...prev, {
-                ...selectedMember,
+            // Refresh list from backend to be safe, or append locally
+            const newGuarantor = {
                 memberId: selectedMember.id,
+                firstName: selectedMember.firstName,
+                lastName: selectedMember.lastName,
                 guaranteedAmount: Number(guaranteeAmount),
                 status: 'PENDING'
-            }]);
+            };
+
+            setGuarantors(prev => [...prev, newGuarantor]);
 
             setSelectedMember(null);
             setGuaranteeAmount('');
@@ -118,12 +136,14 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
         setLoading(true);
         try {
             await api.post(`/api/loans/${loan.id}/submit`);
-            onSuccess(); // Close modal, refresh dashboard
+            onSuccess();
         } catch (e) {
             setMessage({ type: 'error', text: 'Submission failed. Please try again.' });
             setLoading(false);
         }
     };
+
+    if (initialLoading) return <div className="p-8 flex justify-center"><BrandedSpinner /></div>;
 
     return (
         <div className="space-y-6 animate-in fade-in">
@@ -196,7 +216,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                         {isSearching && <div className="absolute right-3 top-3.5"><BrandedSpinner size="small"/></div>}
                     </div>
 
-                    {/* ✅ SCROLLABLE DROPDOWN (Fixed Height + Scroll) */}
                     {searchResults.length > 0 && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2">
                             {searchResults.map(m => (
@@ -232,8 +251,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                             className="w-full p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg text-slate-800"
                             value={guaranteeAmount}
                             onChange={(e) => setGuaranteeAmount(e.target.value)}
-                            // Validations: Can't exceed remaining gap (unless gap is 0, then user decides)
-                            // Can't exceed loan total
                             max={principal}
                             placeholder="0.00"
                             autoFocus
@@ -264,7 +281,7 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                         <div key={idx} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
                             <div className="flex items-center gap-3">
                                 <div className="h-9 w-9 bg-slate-100 rounded-full flex items-center justify-center font-bold text-sm text-slate-500">
-                                    {g.firstName.charAt(0)}
+                                    {g.firstName ? g.firstName.charAt(0) : '?'}
                                 </div>
                                 <div>
                                     <p className="text-sm font-bold text-slate-700">{g.firstName} {g.lastName}</p>
@@ -272,7 +289,7 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-100">
-                                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></span> Waiting
+                                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></span> {g.status || 'Waiting'}
                             </div>
                         </div>
                     ))}

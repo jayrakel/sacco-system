@@ -7,7 +7,7 @@ import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanApplicationDraft;
 import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanApplicationDraftRepository; // ✅ Import
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanApplicationDraftRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
@@ -30,7 +30,7 @@ public class LoanReadService {
     private final MemberRepository memberRepository;
     private final GuarantorRepository guarantorRepository;
     private final LoanEligibilityService eligibilityService;
-    private final LoanApplicationDraftRepository draftRepository; // ✅ Injected
+    private final LoanApplicationDraftRepository draftRepository;
 
     @Transactional(readOnly = true)
     public LoanDashboardDTO getMemberDashboard(String email) {
@@ -63,13 +63,12 @@ public class LoanReadService {
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED || l.getLoanStatus() == Loan.LoanStatus.APPROVED)
                 .collect(Collectors.toList());
 
-        // 4. ✅ NEW: Loans In Progress (Stuck at Guarantors Step)
-        // These need a "Resume" button on the dashboard
+        // 4. ✅ Loans In Progress (Stuck at Guarantors Step)
         List<Loan> loansInProgress = allLoans.stream()
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.PENDING_GUARANTORS)
                 .collect(Collectors.toList());
 
-        // 5. ✅ NEW: Fetch Current Draft (Stuck at Fee Payment or Details)
+        // 5. ✅ Fetch Current Draft (Stuck at Fee Payment or Details)
         Optional<LoanApplicationDraft> currentDraft = draftRepository.findFirstByMemberIdAndStatusIn(
                 member.getId(),
                 Arrays.asList(LoanApplicationDraft.DraftStatus.PENDING_FEE, LoanApplicationDraft.DraftStatus.FEE_PAID)
@@ -78,8 +77,8 @@ public class LoanReadService {
         return LoanDashboardDTO.builder()
                 .activeLoans(activeLoans)
                 .pendingApplications(pendingApplications)
-                .loansInProgress(loansInProgress) // ✅ Added
-                .currentDraft(currentDraft.orElse(null)) // ✅ Added
+                .loansInProgress(loansInProgress)
+                .currentDraft(currentDraft.orElse(null))
                 .build();
     }
 
@@ -114,6 +113,29 @@ public class LoanReadService {
                 "loanType", g.getLoan().getProduct().getProductName(),
                 "dateRequested", g.getLoan().getApplicationDate() != null ? g.getLoan().getApplicationDate() : LocalDate.now()
         )).collect(Collectors.toList());
+    }
+
+    /**
+     * ✅ NEW: Fetch all guarantors for a specific loan
+     * Used by the UI to restore state when "Resuming" an application.
+     */
+    public List<Map<String, Object>> getLoanGuarantors(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Loan not found"));
+
+        List<Guarantor> guarantors = guarantorRepository.findAllByLoan(loan);
+
+        return guarantors.stream().map(g -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", g.getId());
+            map.put("memberId", g.getMember().getId());
+            map.put("firstName", g.getMember().getFirstName());
+            map.put("lastName", g.getMember().getLastName());
+            map.put("memberNumber", g.getMember().getMemberNumber());
+            map.put("guaranteedAmount", g.getGuaranteedAmount());
+            map.put("status", g.getStatus()); // PENDING, ACCEPTED, REJECTED
+            return map;
+        }).collect(Collectors.toList());
     }
 
     /**
