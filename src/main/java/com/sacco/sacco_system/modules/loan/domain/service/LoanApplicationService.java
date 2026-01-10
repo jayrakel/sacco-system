@@ -236,7 +236,7 @@ public class LoanApplicationService {
         }
     }
 
-    // --- STEP 4 & 5 (Guarantors & Submit) - Kept as is ---
+    // --- STEP 4: ADD GUARANTORS ---
     @Transactional
     public void addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new ApiException("Loan not found", 404));
@@ -272,11 +272,31 @@ public class LoanApplicationService {
         guarantorRepository.save(guarantor);
     }
 
+    // --- STEP 5: SUBMIT APPLICATION (Submit & Wait Logic) ---
     @Transactional
     public void submitApplication(UUID loanId) {
-        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new ApiException("Loan not found", 404));
-        if (loan.getLoanStatus() != Loan.LoanStatus.PENDING_GUARANTORS) throw new ApiException("Invalid status", 400);
-        loan.setLoanStatus(Loan.LoanStatus.SUBMITTED);
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new ApiException("Loan not found", 404));
+
+        if (loan.getLoanStatus() != Loan.LoanStatus.PENDING_GUARANTORS) {
+            throw new ApiException("Loan cannot be submitted. Current status: " + loan.getLoanStatus(), 400);
+        }
+
+        // ✅ Check if we are waiting for any guarantors to accept
+        long pendingGuarantors = guarantorRepository.findAllByLoan(loan).stream()
+                .filter(g -> g.getStatus() == Guarantor.GuarantorStatus.PENDING)
+                .count();
+
+        if (pendingGuarantors > 0) {
+            // Case A: Guarantors exist but haven't approved yet -> Set to AWAITING_GUARANTORS
+            loan.setLoanStatus(Loan.LoanStatus.AWAITING_GUARANTORS);
+            log.info("Loan {} set to AWAITING_GUARANTORS. Pending approvals: {}", loan.getLoanNumber(), pendingGuarantors);
+        } else {
+            // Case B: No guarantors (Self-guaranteed) OR All already accepted -> Submit to Officer
+            loan.setLoanStatus(Loan.LoanStatus.SUBMITTED);
+            log.info("Loan {} fully secured and SUBMITTED for review", loan.getLoanNumber());
+        }
+
         loanRepository.save(loan);
     }
 }

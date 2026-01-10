@@ -110,6 +110,7 @@ public class Loan {
     public enum LoanStatus {
         DRAFT,
         PENDING_GUARANTORS,
+        AWAITING_GUARANTORS,
         SUBMITTED,
         UNDER_REVIEW,
         APPROVED,

@@ -55,20 +55,25 @@ public class LoanReadService {
 
         // 2. Filter: Active Loans (Running or In Arrears)
         List<Loan> activeLoans = allLoans.stream()
-                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.ACTIVE || l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.ACTIVE ||
+                        l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS ||
+                        l.getLoanStatus() == Loan.LoanStatus.DISBURSED)
                 .collect(Collectors.toList());
 
-        // 3. Filter: Pending Applications (Submitted for approval)
+        // 3. Filter: Pending Applications (Submitted, Approved, or Waiting for Guarantors)
+        // ✅ UPDATE: Added AWAITING_GUARANTORS so users see these as "Submitted/In Progress"
         List<Loan> pendingApplications = allLoans.stream()
-                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED || l.getLoanStatus() == Loan.LoanStatus.APPROVED)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED ||
+                        l.getLoanStatus() == Loan.LoanStatus.APPROVED ||
+                        l.getLoanStatus() == Loan.LoanStatus.AWAITING_GUARANTORS)
                 .collect(Collectors.toList());
 
-        // 4. ✅ Loans In Progress (Stuck at Guarantors Step)
+        // 4. Loans In Progress (Stuck at Guarantors Step - "Resume" mode)
         List<Loan> loansInProgress = allLoans.stream()
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.PENDING_GUARANTORS)
                 .collect(Collectors.toList());
 
-        // 5. ✅ Fetch Current Draft (Stuck at Fee Payment or Details)
+        // 5. Fetch Current Draft (Stuck at Fee Payment or Details)
         Optional<LoanApplicationDraft> currentDraft = draftRepository.findFirstByMemberIdAndStatusIn(
                 member.getId(),
                 Arrays.asList(LoanApplicationDraft.DraftStatus.PENDING_FEE, LoanApplicationDraft.DraftStatus.FEE_PAID)
@@ -116,12 +121,12 @@ public class LoanReadService {
     }
 
     /**
-     * ✅ NEW: Fetch all guarantors for a specific loan
+     * Fetch all guarantors for a specific loan
      * Used by the UI to restore state when "Resuming" an application.
      */
     public List<Map<String, Object>> getLoanGuarantors(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
-                .orElseThrow(() -> new RuntimeException("Loan not found"));
+                .orElseThrow(() -> new ApiException("Loan not found", 404));
 
         List<Guarantor> guarantors = guarantorRepository.findAllByLoan(loan);
 

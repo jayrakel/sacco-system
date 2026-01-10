@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { Search, Plus, UserCheck, AlertTriangle, CheckCircle, Info, X, Shield, Lock, Send } from 'lucide-react';
+import { Search, Plus, UserCheck, AlertTriangle, CheckCircle, Info, X, Shield, Lock, Send, Clock } from 'lucide-react';
 import BrandedSpinner from '../../../components/BrandedSpinner';
 
 export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
+    // --- 1. DETERMINE MODE (Edit vs View) ---
+    // We check both 'loanStatus' (backend DTO) and 'status' (fallback)
+    const status = loan.loanStatus || loan.status || 'DRAFT';
+    const isEditable = ['DRAFT', 'PENDING_GUARANTORS'].includes(status);
+    const isWaiting = status === 'AWAITING_GUARANTORS';
+
     // Search State
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -16,7 +22,7 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     // List & Status State
     const [guarantors, setGuarantors] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [initialLoading, setInitialLoading] = useState(true); // ✅ Loading state for fetch
+    const [initialLoading, setInitialLoading] = useState(true);
     const [message, setMessage] = useState(null);
 
     // --- 0. INIT: FETCH EXISTING GUARANTORS ---
@@ -39,39 +45,28 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
 
     // --- 1. SMART COVERAGE LOGIC ---
     const principal = Number(loan.principalAmount);
-
-    // Applicant Self-Coverage
-    const mySavings = applicantLimits?.totalDeposits
-        ? Number(applicantLimits.totalDeposits)
-        : 0;
-
+    const mySavings = applicantLimits?.totalDeposits ? Number(applicantLimits.totalDeposits) : 0;
     const selfGuaranteedAmount = Math.min(principal, mySavings);
-
-    // Others Coverage (Calculated from the fetched list)
     const othersGuaranteedAmount = guarantors.reduce((sum, g) => sum + Number(g.guaranteedAmount || 0), 0);
-
     const totalCovered = selfGuaranteedAmount + othersGuaranteedAmount;
     const remainingGap = Math.max(0, principal - totalCovered);
     const isFullySecured = remainingGap <= 0;
 
-
     // --- 2. SEARCH LOGIC ---
     useEffect(() => {
+        if (!isEditable) return; // Disable search in View Mode
         const timer = setTimeout(() => {
             if (searchTerm.length >= 3) searchMembers();
             else setSearchResults([]);
         }, 400);
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, isEditable]);
 
     const searchMembers = async () => {
         setIsSearching(true);
         try {
             const res = await api.get(`/api/members?search=${searchTerm}`);
             const data = res.data.data?.content || res.data.data || [];
-
-            // ✅ FILTER: Exclude members who are ALREADY in the 'guarantors' list
-            // Since 'guarantors' is now populated from the backend, this prevents duplicates!
             const filtered = data.filter(m =>
                 m.id !== loan.memberId && // Not self
                 !guarantors.some(g => g.memberId === m.id) // Not already added
@@ -85,7 +80,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     };
 
     // --- 3. ACTIONS ---
-
     const handleSelectMember = (member) => {
         setSelectedMember(member);
         setSearchTerm('');
@@ -97,7 +91,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     const handleSendRequest = async (e) => {
         e.preventDefault();
         if (!selectedMember || !guaranteeAmount) return;
-
         setLoading(true);
         setMessage(null);
 
@@ -107,7 +100,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                 amount: Number(guaranteeAmount)
             });
 
-            // Refresh list from backend to be safe, or append locally
             const newGuarantor = {
                 memberId: selectedMember.id,
                 firstName: selectedMember.firstName,
@@ -117,7 +109,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
             };
 
             setGuarantors(prev => [...prev, newGuarantor]);
-
             setSelectedMember(null);
             setGuaranteeAmount('');
             setMessage({ type: 'success', text: `Request sent to ${selectedMember.firstName}!` });
@@ -132,7 +123,6 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     const handleSubmitApplication = async () => {
         if (!isFullySecured) return;
         if (!window.confirm("Confirm submission? Requests will be finalized and sent for approval.")) return;
-
         setLoading(true);
         try {
             await api.post(`/api/loans/${loan.id}/submit`);
@@ -148,7 +138,22 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
     return (
         <div className="space-y-6 animate-in fade-in">
 
-            {/* --- SMART COVERAGE VISUALIZER --- */}
+            {/* --- READ-ONLY BANNER (Only in View Mode) --- */}
+            {!isEditable && (
+                <div className={`p-4 rounded-xl border flex items-start gap-3 ${isWaiting ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+                    {isWaiting ? <Clock className="shrink-0 mt-0.5" size={20}/> : <Info className="shrink-0 mt-0.5" size={20}/>}
+                    <div>
+                        <p className="font-bold text-sm">{isWaiting ? 'Waiting for Signatures' : 'Application Status'}</p>
+                        <p className="text-xs opacity-90 mt-1">
+                            {isWaiting
+                                ? "This loan is pending approval from the guarantors listed below. Once they accept, it will be forwarded to the loan officer."
+                                : "This application has been submitted and is under review. You cannot make further changes."}
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {/* --- SMART COVERAGE VISUALIZER (Always Visible) --- */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
                 <div className="flex justify-between items-end">
                     <div>
@@ -165,27 +170,15 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                     </div>
                 </div>
 
-                {/* Progress Bar */}
                 <div className="h-4 bg-slate-200 rounded-full overflow-hidden flex w-full">
-                    {/* 1. Self Guarantee (Blue) */}
-                    <div
-                        className="bg-blue-500 h-full transition-all duration-500 flex items-center justify-center text-[9px] text-white font-bold"
-                        style={{ width: `${(selfGuaranteedAmount / principal) * 100}%` }}
-                        title={`Self Covered: ${selfGuaranteedAmount.toLocaleString()}`}
-                    >
+                    <div className="bg-blue-500 h-full transition-all duration-500 flex items-center justify-center text-[9px] text-white font-bold" style={{ width: `${(selfGuaranteedAmount / principal) * 100}%` }} title="Me">
                         {selfGuaranteedAmount > 0 && "ME"}
                     </div>
-                    {/* 2. Others Guarantee (Green) */}
-                    <div
-                        className="bg-emerald-500 h-full transition-all duration-500 flex items-center justify-center text-[9px] text-white font-bold"
-                        style={{ width: `${(othersGuaranteedAmount / principal) * 100}%` }}
-                        title={`Guarantors: ${othersGuaranteedAmount.toLocaleString()}`}
-                    >
+                    <div className="bg-emerald-500 h-full transition-all duration-500 flex items-center justify-center text-[9px] text-white font-bold" style={{ width: `${(othersGuaranteedAmount / principal) * 100}%` }} title="Guarantors">
                         {othersGuaranteedAmount > 0 && "OTHERS"}
                     </div>
                 </div>
 
-                {/* Legend */}
                 <div className="flex gap-4 text-xs text-slate-500 font-medium">
                     <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500"></div> My Savings ({selfGuaranteedAmount.toLocaleString()})</div>
                     <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Guarantors ({othersGuaranteedAmount.toLocaleString()})</div>
@@ -200,81 +193,85 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                 </div>
             )}
 
-            {/* --- GUARANTOR SEARCH --- */}
-            {!selectedMember ? (
-                <div className="relative z-20">
-                    <label className="text-sm font-bold text-slate-700 mb-1 block">Add Guarantor</label>
-                    <div className="relative">
-                        <Search size={18} className="absolute left-3 top-3.5 text-slate-400"/>
-                        <input
-                            type="text"
-                            className="w-full pl-10 p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition shadow-sm"
-                            placeholder="Search by Name, Member No, or Phone..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                        {isSearching && <div className="absolute right-3 top-3.5"><BrandedSpinner size="small"/></div>}
-                    </div>
-
-                    {searchResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2">
-                            {searchResults.map(m => (
-                                <button
-                                    key={m.id}
-                                    onClick={() => handleSelectMember(m)}
-                                    className="w-full text-left p-3 hover:bg-slate-50 border-b border-slate-50 last:border-0 flex justify-between items-center group transition"
-                                >
-                                    <div>
-                                        <p className="font-bold text-sm text-slate-800 group-hover:text-blue-700">{m.firstName} {m.lastName}</p>
-                                        <p className="text-xs text-slate-500">{m.memberNumber}</p>
-                                    </div>
-                                    <Plus size={16} className="text-slate-300 group-hover:text-blue-600"/>
-                                </button>
-                            ))}
+            {/* --- GUARANTOR SEARCH (Only if Editable) --- */}
+            {isEditable && (
+                !selectedMember ? (
+                    <div className="relative z-20">
+                        <label className="text-sm font-bold text-slate-700 mb-1 block">Add Guarantor</label>
+                        <div className="relative">
+                            <Search size={18} className="absolute left-3 top-3.5 text-slate-400"/>
+                            <input
+                                type="text"
+                                className="w-full pl-10 p-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition shadow-sm"
+                                placeholder="Search by Name, Member No, or Phone..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                            {isSearching && <div className="absolute right-3 top-3.5"><BrandedSpinner size="small"/></div>}
                         </div>
-                    )}
-                </div>
-            ) : (
-                /* --- AMOUNT INPUT FORM --- */
-                <form onSubmit={handleSendRequest} className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4 animate-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center pb-2 border-b border-blue-200">
-                        <span className="font-bold text-blue-900 flex items-center gap-2">
-                            <UserCheck size={18}/> {selectedMember.firstName} {selectedMember.lastName}
-                        </span>
-                        <button type="button" onClick={() => setSelectedMember(null)} className="text-blue-400 hover:text-red-500 transition"><X size={20}/></button>
-                    </div>
 
-                    <div>
-                        <label className="text-xs font-bold text-blue-700 uppercase mb-1 block">Request Guarantee Amount (KES)</label>
-                        <input
-                            type="number"
-                            className="w-full p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg text-slate-800"
-                            value={guaranteeAmount}
-                            onChange={(e) => setGuaranteeAmount(e.target.value)}
-                            max={principal}
-                            placeholder="0.00"
-                            autoFocus
-                        />
-                        <p className="text-xs text-blue-600 mt-1">
-                            Recommended: KES {remainingGap > 0 ? remainingGap.toLocaleString() : '0'}
-                        </p>
+                        {searchResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2">
+                                {searchResults.map(m => (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => handleSelectMember(m)}
+                                        className="w-full text-left p-3 hover:bg-slate-50 border-b border-slate-50 last:border-0 flex justify-between items-center group transition"
+                                    >
+                                        <div>
+                                            <p className="font-bold text-sm text-slate-800 group-hover:text-blue-700">{m.firstName} {m.lastName}</p>
+                                            <p className="text-xs text-slate-500">{m.memberNumber}</p>
+                                        </div>
+                                        <Plus size={16} className="text-slate-300 group-hover:text-blue-600"/>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
+                ) : (
+                    /* --- AMOUNT INPUT FORM --- */
+                    <form onSubmit={handleSendRequest} className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4 animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center pb-2 border-b border-blue-200">
+                            <span className="font-bold text-blue-900 flex items-center gap-2">
+                                <UserCheck size={18}/> {selectedMember.firstName} {selectedMember.lastName}
+                            </span>
+                            <button type="button" onClick={() => setSelectedMember(null)} className="text-blue-400 hover:text-red-500 transition"><X size={20}/></button>
+                        </div>
 
-                    <button
-                        type="submit"
-                        disabled={loading || !guaranteeAmount || guaranteeAmount <= 0}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 disabled:opacity-50 transition shadow-md"
-                    >
-                        {loading ? <BrandedSpinner size="small" color="border-white"/> : <>Send Request <Send size={16}/></>}
-                    </button>
-                </form>
+                        <div>
+                            <label className="text-xs font-bold text-blue-700 uppercase mb-1 block">Request Guarantee Amount (KES)</label>
+                            <input
+                                type="number"
+                                className="w-full p-3 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg text-slate-800"
+                                value={guaranteeAmount}
+                                onChange={(e) => setGuaranteeAmount(e.target.value)}
+                                max={principal}
+                                placeholder="0.00"
+                                autoFocus
+                            />
+                            <p className="text-xs text-blue-600 mt-1">
+                                Recommended: KES {remainingGap > 0 ? remainingGap.toLocaleString() : '0'}
+                            </p>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading || !guaranteeAmount || guaranteeAmount <= 0}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 disabled:opacity-50 transition shadow-md"
+                        >
+                            {loading ? <BrandedSpinner size="small" color="border-white"/> : <>Send Request <Send size={16}/></>}
+                        </button>
+                    </form>
+                )
             )}
 
-            {/* --- LIST OF ADDED GUARANTORS --- */}
-            {guarantors.length > 0 && (
+            {/* --- LIST OF ADDED GUARANTORS (Always Visible) --- */}
+            {guarantors.length > 0 ? (
                 <div className="space-y-2 pt-2">
                     <div className="flex justify-between items-end">
-                        <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Pending Approvals</p>
+                        <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                            {isEditable ? 'Pending Approvals' : 'Guarantor Status'}
+                        </p>
                         <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">{guarantors.length}</span>
                     </div>
                     {guarantors.map((g, idx) => (
@@ -289,37 +286,44 @@ export default function GuarantorManager({ loan, onSuccess, applicantLimits }) {
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-100">
-                                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></span> {g.status || 'Waiting'}
+                                {g.status === 'PENDING' && <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse"></span>}
+                                {g.status || 'Waiting'}
                             </div>
                         </div>
                     ))}
                 </div>
+            ) : !isEditable && (
+                <div className="text-center py-8 text-slate-400 text-sm bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    No guarantors added (Self-Guaranteed)
+                </div>
             )}
 
-            {/* --- FINAL ACTION BUTTON --- */}
-            <div className="pt-2 border-t border-slate-100">
-                <button
-                    onClick={handleSubmitApplication}
-                    disabled={!isFullySecured || loading}
-                    className={`w-full font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95
-                        ${isFullySecured
-                            ? 'bg-slate-900 hover:bg-emerald-600 text-white cursor-pointer'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                        }
-                    `}
-                >
-                    {isFullySecured ? (
-                         <>Submit for Approval <CheckCircle size={20}/></>
-                    ) : (
-                        <><Lock size={18}/> Add Guarantors to Submit</>
+            {/* --- FINAL ACTION BUTTON (Only if Editable) --- */}
+            {isEditable && (
+                <div className="pt-2 border-t border-slate-100">
+                    <button
+                        onClick={handleSubmitApplication}
+                        disabled={!isFullySecured || loading}
+                        className={`w-full font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95
+                            ${isFullySecured
+                                ? 'bg-slate-900 hover:bg-emerald-600 text-white cursor-pointer'
+                                : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                            }
+                        `}
+                    >
+                        {isFullySecured ? (
+                             <>Submit for Approval <CheckCircle size={20}/></>
+                        ) : (
+                            <><Lock size={18}/> Add Guarantors to Submit</>
+                        )}
+                    </button>
+                    {!isFullySecured && (
+                        <p className="text-center text-xs text-slate-400 mt-2">
+                            You need to cover the remaining KES {remainingGap.toLocaleString()} to submit.
+                        </p>
                     )}
-                </button>
-                {!isFullySecured && (
-                    <p className="text-center text-xs text-slate-400 mt-2">
-                        You need to cover the remaining KES {remainingGap.toLocaleString()} to submit.
-                    </p>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 }
