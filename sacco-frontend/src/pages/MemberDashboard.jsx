@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { CreditCard, PiggyBank, HandCoins, Activity, FileText, User as UserIcon } from 'lucide-react';
+
+// ✅ CORRECTED IMPORT PATHS
 import DashboardHeader from '../components/DashboardHeader';
 import MemberOverview from '../features/member/components/MemberOverview';
 import MemberSavings from '../features/member/components/MemberSavings';
@@ -8,12 +10,14 @@ import MemberLoans from '../features/member/components/MemberLoans';
 import MemberActivities from '../features/member/components/MemberActivities';
 import MemberStatements from '../features/member/components/MemberStatements';
 import MemberProfile from '../features/member/components/MemberProfile';
+import GuarantorRequestsWidget from '../features/loans/components/dashboard/GuarantorRequestsWidget';
 import api from '../api';
 
 export default function MemberDashboard() {
     const [user, setUser] = useState(null);
     const [searchParams] = useSearchParams();
-    const [pendingVotesCount, setPendingVotesCount] = useState(0); // ✅ Track Pending Votes
+    const [pendingVotesCount, setPendingVotesCount] = useState(0);
+    const [hasPendingGuarantorRequests, setHasPendingGuarantorRequests] = useState(false);
 
     const activeTab = searchParams.get('tab') || 'overview';
 
@@ -21,7 +25,7 @@ export default function MemberDashboard() {
         const storedUser = localStorage.getItem('sacco_user');
         if (storedUser) setUser(JSON.parse(storedUser));
         fetchUserProfile();
-        fetchPendingVotes(); // ✅ Check for notifications on load
+        fetchPendingVotes();
     }, []);
 
     const fetchUserProfile = async () => {
@@ -36,16 +40,15 @@ export default function MemberDashboard() {
         }
     };
 
-    // ✅ NEW: Fetch active votes count to show the Red Dot
-    // This endpoint excludes the user's own loans automatically via backend logic
     const fetchPendingVotes = async () => {
         try {
-            const res = await api.get('/api/loans/voting/active');
-            if (res.data.success) {
-                setPendingVotesCount(res.data.data.length);
+            // Check Voting
+            const voteRes = await api.get('/api/loans/voting/active');
+            if (voteRes.data.success) {
+                setPendingVotesCount(voteRes.data.data.length);
             }
         } catch (e) {
-            console.error("Failed to check pending votes", e);
+            console.error("Failed to check pending tasks", e);
         }
     };
 
@@ -54,6 +57,9 @@ export default function MemberDashboard() {
             <DashboardHeader user={user} title="Member Portal" />
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8 space-y-8 animate-in fade-in duration-500">
+
+                {/* ✅ GUARANTOR REQUESTS WIDGET */}
+                <GuarantorRequestsWidget />
 
                 {/* Dashboard Tabs Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pb-2 border-b border-slate-200">
@@ -102,7 +108,6 @@ export default function MemberDashboard() {
                     {activeTab === 'overview' && <MemberOverview user={user} />}
                     {activeTab === 'savings' && <MemberSavings />}
 
-                    {/* ✅ LATEST: Pass fetchPendingVotes to update dot after voting */}
                     {activeTab === 'loans' && (
                         <div className="animate-in slide-in-from-bottom-2 duration-500">
                             <MemberLoans

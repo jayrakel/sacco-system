@@ -100,6 +100,20 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Submitted"));
     }
 
+    // ✅ NEW: Guarantor Responds (Approve/Reject)
+    @PostMapping("/guarantors/{requestId}/respond")
+    public ResponseEntity<ApiResponse<Object>> respondToGuarantorRequest(
+            @PathVariable UUID requestId,
+            @RequestBody Map<String, Boolean> payload) {
+
+        Boolean approved = payload.get("approved");
+        if (approved == null) throw new IllegalArgumentException("Approval status required");
+
+        applicationService.respondToGuarantorRequest(requestId, approved);
+
+        return ResponseEntity.ok(new ApiResponse<>(true, approved ? "Request Accepted" : "Request Rejected"));
+    }
+
     // --- READ & DASHBOARD ---
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<Object>> getLoanDashboard(@AuthenticationPrincipal UserDetails userDetails) {

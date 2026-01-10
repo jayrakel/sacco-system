@@ -16,6 +16,7 @@ import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
+import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,7 @@ public class LoanApplicationService {
     private final GuarantorRepository guarantorRepository;
     private final MemberRepository memberRepository;
     private final SavingsAccountRepository savingsAccountRepository;
+    private final EmailService emailService; // ✅ Injected Email Service
 
     private final LoanEligibilityService eligibilityService;
     private final TransactionService transactionService;
@@ -236,7 +238,7 @@ public class LoanApplicationService {
         }
     }
 
-    // --- STEP 4: ADD GUARANTORS ---
+    // --- STEP 4: ADD GUARANTORS (With Notifications) ---
     @Transactional
     public void addGuarantor(UUID loanId, UUID guarantorMemberId, BigDecimal amount) {
         Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new ApiException("Loan not found", 404));
@@ -270,9 +272,95 @@ public class LoanApplicationService {
                 .active(true)
                 .build();
         guarantorRepository.save(guarantor);
+
+        // ✅ SEND EMAIL TO GUARANTOR
+        try {
+            String subject = "Action Required: Guarantorship Request";
+            String message = String.format(
+                    "Hello %s,\n\n" +
+                            "%s %s has requested you to guarantee their loan.\n" +
+                            "Loan Amount: %s %s\n" +
+                            "Requested Guarantee: %s %s\n\n" +
+                            "Please log in to your dashboard to Approve or Reject this request.",
+                    guarantorMember.getFirstName(),
+                    loan.getMember().getFirstName(), loan.getMember().getLastName(),
+                    loan.getCurrencyCode(), loan.getPrincipalAmount(),
+                    loan.getCurrencyCode(), amount
+            );
+            emailService.sendEmail(guarantorMember.getEmail(), subject, message);
+        } catch (Exception e) {
+            log.error("Failed to send guarantor email", e);
+        }
     }
 
-    // --- STEP 5: SUBMIT APPLICATION (Submit & Wait Logic) ---
+    // --- STEP 5: GUARANTOR RESPONDS (Approve/Reject) ---
+    @Transactional
+    public void respondToGuarantorRequest(UUID guarantorId, boolean approved) {
+        Guarantor guarantor = guarantorRepository.findById(guarantorId)
+                .orElseThrow(() -> new ApiException("Request not found", 404));
+
+        if (guarantor.getStatus() != Guarantor.GuarantorStatus.PENDING) {
+            throw new ApiException("This request has already been processed.", 400);
+        }
+
+        // Update Status
+        guarantor.setStatus(approved ? Guarantor.GuarantorStatus.ACCEPTED : Guarantor.GuarantorStatus.DECLINED);
+        guarantorRepository.save(guarantor);
+
+        Loan loan = guarantor.getLoan();
+        Member applicant = loan.getMember();
+
+        // Notify Applicant
+        try {
+            String statusText = approved ? "ACCEPTED" : "REJECTED";
+            String subject = "Guarantor Response: " + statusText;
+            String body = String.format(
+                    "Hello %s,\n\n" +
+                            "%s has %s your request to guarantee %s %s.\n\n" +
+                            "Check your dashboard for details.",
+                    applicant.getFirstName(),
+                    guarantor.getMember().getFirstName(), statusText,
+                    loan.getCurrencyCode(), guarantor.getGuaranteedAmount()
+            );
+            emailService.sendEmail(applicant.getEmail(), subject, body);
+        } catch (Exception e) {
+            log.error("Failed to send applicant notification email", e);
+        }
+
+        // Check if all are done
+        if (loan.getLoanStatus() == Loan.LoanStatus.AWAITING_GUARANTORS) {
+            checkAndProgressLoan(loan);
+        }
+    }
+
+    private void checkAndProgressLoan(Loan loan) {
+        List<Guarantor> allGuarantors = guarantorRepository.findAllByLoan(loan);
+
+        boolean anyRejected = allGuarantors.stream().anyMatch(g -> g.getStatus() == Guarantor.GuarantorStatus.DECLINED);
+        boolean allAccepted = allGuarantors.stream().allMatch(g -> g.getStatus() == Guarantor.GuarantorStatus.ACCEPTED);
+
+        if (anyRejected) {
+            log.info("Loan {} has rejected guarantors.", loan.getLoanNumber());
+        }
+        else if (allAccepted) {
+            // ✅ SUCCESS: Everyone signed! Move to SUBMITTED (Officer Queue)
+            loan.setLoanStatus(Loan.LoanStatus.SUBMITTED);
+            loanRepository.save(loan);
+
+            // Notify Applicant
+            try {
+                emailService.sendEmail(
+                        loan.getMember().getEmail(),
+                        "Loan Application Forwarded",
+                        "Great news! All your guarantors have accepted. Your application has been forwarded to the Loan Officer for final review."
+                );
+            } catch (Exception e) {
+                log.error("Failed to send final submission email", e);
+            }
+        }
+    }
+
+    // --- STEP 6: SUBMIT APPLICATION (Submit & Wait Logic) ---
     @Transactional
     public void submitApplication(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
@@ -282,7 +370,6 @@ public class LoanApplicationService {
             throw new ApiException("Loan cannot be submitted. Current status: " + loan.getLoanStatus(), 400);
         }
 
-        // ✅ Check if we are waiting for any guarantors to accept
         long pendingGuarantors = guarantorRepository.findAllByLoan(loan).stream()
                 .filter(g -> g.getStatus() == Guarantor.GuarantorStatus.PENDING)
                 .count();
@@ -290,11 +377,27 @@ public class LoanApplicationService {
         if (pendingGuarantors > 0) {
             // Case A: Guarantors exist but haven't approved yet -> Set to AWAITING_GUARANTORS
             loan.setLoanStatus(Loan.LoanStatus.AWAITING_GUARANTORS);
-            log.info("Loan {} set to AWAITING_GUARANTORS. Pending approvals: {}", loan.getLoanNumber(), pendingGuarantors);
+            try {
+                emailService.sendEmail(
+                        loan.getMember().getEmail(),
+                        "Application Waiting for Guarantors",
+                        "Your application has been saved. We have notified your guarantors. Once they accept, it will be forwarded automatically."
+                );
+            } catch (Exception e) {
+                log.error("Failed to send submission email", e);
+            }
         } else {
             // Case B: No guarantors (Self-guaranteed) OR All already accepted -> Submit to Officer
             loan.setLoanStatus(Loan.LoanStatus.SUBMITTED);
-            log.info("Loan {} fully secured and SUBMITTED for review", loan.getLoanNumber());
+            try {
+                emailService.sendEmail(
+                        loan.getMember().getEmail(),
+                        "Application Submitted",
+                        "Your application has been received and is under review."
+                );
+            } catch (Exception e) {
+                log.error("Failed to send submission email", e);
+            }
         }
 
         loanRepository.save(loan);

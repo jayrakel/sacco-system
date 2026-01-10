@@ -225,6 +225,8 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 isOpen={isApplyModalOpen}
                 onClose={() => {
                     setIsApplyModalOpen(false);
+                    setResumeLoan(null);        // ✅ Clear resume state on close
+                    setSelectedHistoryLoan(null); // ✅ Clear history selection on close
                     loadDashboardData();
                 }}
                 onSuccess={() => {
@@ -232,7 +234,8 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                     loadDashboardData();
                 }}
                 draft={activeDraft}
-                existingLoan={resumeLoan} // ✅ Passes the loan if resuming Step 2
+                // ✅ CRITICAL FIX: Pass the history loan if resumeLoan is empty
+                existingLoan={resumeLoan || selectedHistoryLoan}
             />
         </div>
     );
