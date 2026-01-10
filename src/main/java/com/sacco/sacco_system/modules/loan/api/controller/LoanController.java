@@ -114,6 +114,13 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, approved ? "Request Accepted" : "Request Rejected"));
     }
 
+    // ✅ NEW: Remind Guarantor Endpoint
+    @PostMapping("/guarantors/{guarantorId}/remind")
+    public ResponseEntity<ApiResponse<Object>> remindGuarantor(@PathVariable UUID guarantorId) {
+        applicationService.resendGuarantorNotification(guarantorId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Reminder sent successfully"));
+    }
+
     // --- READ & DASHBOARD ---
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<Object>> getLoanDashboard(@AuthenticationPrincipal UserDetails userDetails) {
@@ -142,5 +149,11 @@ public class LoanController {
     public ResponseEntity<ApiResponse<Object>> getActiveVotes(@AuthenticationPrincipal UserDetails userDetails) {
         User user = userService.findByEmail(userDetails.getUsername()).orElseThrow();
         return ResponseEntity.ok(new ApiResponse<>(true, "Votes fetched", readService.getPendingVotes(user.getEmail())));
+    }
+
+    @DeleteMapping("/{loanId}")
+    public ResponseEntity<ApiResponse<Object>> deleteLoan(@PathVariable UUID loanId) {
+        applicationService.deleteLoanApplication(loanId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Application deleted successfully"));
     }
 }

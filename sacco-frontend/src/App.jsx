@@ -19,6 +19,7 @@ import FinanceDashboard from './pages/FinanceDashboard';
 import ChairpersonDashboard from './pages/ChairpersonDashboard';
 import SecretaryDashboard from './pages/SecretaryDashboard';
 
+
 // Error Pages
 import NotFound from './pages/errors/NotFound';
 import Unauthorized from './pages/errors/Unauthorized';
@@ -64,6 +65,7 @@ function App() {
           <Route path="/finance-dashboard" element={<FinanceDashboard />} />
           <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
           <Route path="/secretary-dashboard" element={<SecretaryDashboard />} />
+
 
           {/* Admin Tools */}
           <Route path="/add-member" element={<AddMember />} />

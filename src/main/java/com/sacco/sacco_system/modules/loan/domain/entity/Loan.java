@@ -1,5 +1,6 @@
 package com.sacco.sacco_system.modules.loan.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
 import lombok.*;
@@ -13,6 +14,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "loans")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Loan {
 
     @Id

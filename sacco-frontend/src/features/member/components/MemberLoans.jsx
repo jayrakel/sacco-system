@@ -210,6 +210,14 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                     setSelectedHistoryLoan(loan);
                     setIsApplyModalOpen(true);
                 }}
+                onDelete={() => {
+                    loadDashboardData(); // ⭐ Refresh local data
+                    if (onUpdate) onUpdate(); // Also notify parent if callback exists
+                }}
+                onRefresh={() => {
+                    loadDashboardData(); // ⭐ Refresh local data
+                    if (onUpdate) onUpdate(); // Also notify parent if callback exists
+                }}
             />
 
             {/* --- MODALS --- */}
@@ -237,6 +245,8 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
                 // ✅ CRITICAL FIX: Pass the history loan if resumeLoan is empty
                 existingLoan={resumeLoan || selectedHistoryLoan}
             />
+
+
         </div>
     );
 }

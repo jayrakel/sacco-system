@@ -89,6 +89,33 @@ public class AuditService {
     }
 
     /**
+     * Log loan officer actions (simplified - uses email instead of User object)
+     */
+    @Async
+    public void logLoanAction(String officerEmail, String action, String description, String loanId) {
+        try {
+            HttpServletRequest request = getCurrentRequest();
+
+            AuditLog auditLog = AuditLog.builder()
+                    .userEmail(officerEmail)
+                    .userName(officerEmail)
+                    .action(action)
+                    .entityType("LOAN")
+                    .entityId(loanId)
+                    .description(description)
+                    .status(AuditLog.Status.SUCCESS)
+                    .ipAddress(getClientIp(request))
+                    .userAgent(getUserAgent(request))
+                    .build();
+
+            auditLogRepository.save(auditLog);
+            log.debug("Loan action logged: {} - {}", action, description);
+        } catch (Exception e) {
+            log.error("Failed to log loan action: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Log system actions (no user)
      */
     @Async

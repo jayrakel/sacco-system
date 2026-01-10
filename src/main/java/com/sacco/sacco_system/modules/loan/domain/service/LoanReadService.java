@@ -176,4 +176,73 @@ public class LoanReadService {
                 .feePaid(loan.isFeePaid())
                 .build();
     }
+
+    /**
+     * Get all loans pending review for loan officers
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getPendingLoansForOfficer() {
+        List<Loan> pendingLoans = loanRepository.findByLoanStatusIn(Arrays.asList(
+                Loan.LoanStatus.SUBMITTED,
+                Loan.LoanStatus.UNDER_REVIEW
+        ));
+
+        return pendingLoans.stream().map(loan -> {
+            Map<String, Object> loanData = new HashMap<>();
+            loanData.put("id", loan.getId());
+            loanData.put("loanNumber", loan.getLoanNumber());
+            loanData.put("memberName", loan.getMember().getFirstName() + " " + loan.getMember().getLastName());
+            loanData.put("memberNumber", loan.getMember().getMemberNumber());
+            loanData.put("productName", loan.getProduct().getProductName());
+            loanData.put("principalAmount", loan.getPrincipalAmount());
+            loanData.put("durationWeeks", loan.getDurationWeeks());
+            loanData.put("interestRate", loan.getInterestRate());
+            loanData.put("status", loan.getLoanStatus().name());
+            loanData.put("applicationDate", loan.getApplicationDate());
+            loanData.put("guarantorsCount", loan.getGuarantors().size());
+            loanData.put("guarantorsApproved", loan.getGuarantors().stream()
+                    .filter(g -> g.getStatus() == Guarantor.GuarantorStatus.ACCEPTED)
+                    .count());
+            return loanData;
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * Get statistics for loan officer dashboard
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getLoanOfficerStatistics() {
+        List<Loan> allLoans = loanRepository.findAll();
+
+        long submitted = allLoans.stream().filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED).count();
+        long underReview = allLoans.stream().filter(l -> l.getLoanStatus() == Loan.LoanStatus.UNDER_REVIEW).count();
+        long approved = allLoans.stream().filter(l -> l.getLoanStatus() == Loan.LoanStatus.APPROVED).count();
+        long rejected = allLoans.stream().filter(l -> l.getLoanStatus() == Loan.LoanStatus.REJECTED).count();
+        long active = allLoans.stream().filter(l ->
+                l.getLoanStatus() == Loan.LoanStatus.ACTIVE ||
+                l.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
+                l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS).count();
+
+        BigDecimal totalDisbursed = allLoans.stream()
+                .filter(l -> l.getDisbursedAmount() != null)
+                .map(Loan::getDisbursedAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalOutstanding = allLoans.stream()
+                .filter(l -> l.getTotalOutstandingAmount() != null)
+                .map(Loan::getTotalOutstandingAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("pendingReview", submitted + underReview);
+        stats.put("submitted", submitted);
+        stats.put("underReview", underReview);
+        stats.put("approved", approved);
+        stats.put("rejected", rejected);
+        stats.put("activeLoans", active);
+        stats.put("totalDisbursed", totalDisbursed);
+        stats.put("totalOutstanding", totalOutstanding);
+
+        return stats;
+    }
 }

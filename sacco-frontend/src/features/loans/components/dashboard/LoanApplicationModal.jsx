@@ -17,7 +17,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, draft
     const [error, setError] = useState(null);
     const [products, setProducts] = useState([]);
 
-    // Limits (Savings/Eligibility) - Needed for Step 1 Validation AND Step 2 Self-Guarantee Logic
+    // Limits
     const [limits, setLimits] = useState({ maxEligibleAmount: 0, totalDeposits: 0, currency: 'KES' });
 
     const [formData, setFormData] = useState({ productId: '', amount: '', durationWeeks: '' });
@@ -27,11 +27,10 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, draft
     // --- INIT LOGIC ---
     useEffect(() => {
         if (isOpen) {
-            // Always fetch limits so Step 2 has them for "Self-Guarantee" calculations
             fetchData();
 
             if (existingLoan) {
-                // RESUME MODE: Skip Step 1, go straight to Step 2
+                // RESUME MODE: Skip Step 1
                 console.log("Resuming existing loan application:", existingLoan);
                 setActiveLoan(existingLoan);
                 setStep(2);
@@ -116,7 +115,7 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, draft
                 durationWeeks: Number(formData.durationWeeks)
             });
 
-            if (res.data.success) {
+            if (res.data.success && res.data.data) {
                 console.log("Step 1 Success. Transitioning to Step 2 with Loan:", res.data.data);
 
                 // 1. Store the created loan (needed for Step 2)
@@ -125,13 +124,13 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, draft
                 // 2. Move UI to Step 2
                 setStep(2);
             } else {
-                setError(res.data.message);
+                setError(res.data.message || "Submission failed. Please try again.");
             }
         } catch (e) {
             console.error(e);
             setError(e.response?.data?.message || "Failed to create loan application.");
         } finally {
-            setSubmitting(false);
+            setSubmitting(false); // ✅ Ensures spinner stops even if Step 2 doesn't load
         }
     };
 
@@ -191,12 +190,20 @@ export default function LoanApplicationModal({ isOpen, onClose, onSuccess, draft
 
                     {/* --- STEP 2: GUARANTORS --- */}
                     {/* This renders only when step is 2 AND activeLoan is set */}
-                    {step === 2 && activeLoan && (
+                    {step === 2 && activeLoan ? (
                         <GuarantorManager
                             loan={activeLoan}
                             onSuccess={onSuccess}
                             applicantLimits={limits} // ✅ Passes Savings Data for Self-Guarantee Logic
                         />
+                    ) : (
+                        // Fallback in case Step is 2 but Loan is missing (prevents blank screen)
+                        step === 2 && (
+                            <div className="text-center py-10 text-red-500">
+                                <AlertTriangle size={32} className="mx-auto mb-2"/>
+                                Error loading loan details. Please restart application.
+                            </div>
+                        )
                     )}
                 </div>
             </div>

@@ -360,6 +360,37 @@ public class LoanApplicationService {
         }
     }
 
+    // ✅ NEW: Resend Notification Logic
+    @Transactional
+    public void resendGuarantorNotification(UUID guarantorId) {
+        Guarantor guarantor = guarantorRepository.findById(guarantorId)
+                .orElseThrow(() -> new ApiException("Guarantor request not found", 404));
+
+        if (guarantor.getStatus() != Guarantor.GuarantorStatus.PENDING) {
+            throw new ApiException("Cannot remind a guarantor who has already responded.", 400);
+        }
+
+        // Re-use the email logic
+        try {
+            String subject = "Reminder: Guarantorship Request";
+            String message = String.format(
+                    "Hello %s,\n\n" +
+                            "This is a reminder that %s %s has requested you to guarantee their loan.\n" +
+                            "Loan Amount: %s %s\n" +
+                            "Requested Guarantee: %s %s\n\n" +
+                            "Please log in to your dashboard to Approve or Reject this request.",
+                    guarantor.getMember().getFirstName(),
+                    guarantor.getLoan().getMember().getFirstName(), guarantor.getLoan().getMember().getLastName(),
+                    guarantor.getLoan().getCurrencyCode(), guarantor.getLoan().getPrincipalAmount(),
+                    guarantor.getLoan().getCurrencyCode(), guarantor.getGuaranteedAmount()
+            );
+            emailService.sendEmail(guarantor.getMember().getEmail(), subject, message);
+        } catch (Exception e) {
+            log.error("Failed to resend email", e);
+            throw new ApiException("Failed to send email. Please check system logs.", 500);
+        }
+    }
+
     // --- STEP 6: SUBMIT APPLICATION (Submit & Wait Logic) ---
     @Transactional
     public void submitApplication(UUID loanId) {
@@ -399,7 +430,24 @@ public class LoanApplicationService {
                 log.error("Failed to send submission email", e);
             }
         }
-
         loanRepository.save(loan);
+    }
+    // --- STEP 7: DELETE UNFINISHED LOAN ---
+    @Transactional
+    public void deleteLoanApplication(UUID loanId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new ApiException("Loan application not found", 404));
+
+        // strict check: Only allow deleting loans that are still being built
+        boolean isDeletable = loan.getLoanStatus() == Loan.LoanStatus.DRAFT ||
+                loan.getLoanStatus() == Loan.LoanStatus.PENDING_GUARANTORS;
+
+        if (!isDeletable) {
+            throw new ApiException("Cannot delete this loan. It has already been submitted or processed.", 400);
+        }
+
+        // Delete the loan (Cascading will handle guarantors if configured, otherwise JPA handles it)
+        loanRepository.delete(loan);
+        log.info("Deleted unfinished loan application: {}", loan.getLoanNumber());
     }
 }

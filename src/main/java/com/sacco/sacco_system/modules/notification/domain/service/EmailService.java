@@ -94,6 +94,38 @@ public class EmailService {
         sendHtmlEmail(to, "Password Reset", "Hello " + firstName, content, "PASSWORD_RESET", "USER", null);
     }
 
+    @Async
+    public void sendLoanApprovalEmail(String to, String memberName, String loanNumber, java.math.BigDecimal approvedAmount, String productName) {
+        String content = String.format(
+                "<p>Dear <strong>%s</strong>,</p>" +
+                "<p>🎉 <strong>Congratulations!</strong> Your loan application has been approved.</p>" +
+                "<table style='margin: 20px 0; width: 100%%; border-collapse: collapse;'>" +
+                "<tr style='background: #f0fdf4;'><td style='padding: 10px; border: 1px solid #d1fae5;'><strong>Loan Number:</strong></td><td style='padding: 10px; border: 1px solid #d1fae5;'>%s</td></tr>" +
+                "<tr><td style='padding: 10px; border: 1px solid #d1fae5;'><strong>Product:</strong></td><td style='padding: 10px; border: 1px solid #d1fae5;'>%s</td></tr>" +
+                "<tr style='background: #f0fdf4;'><td style='padding: 10px; border: 1px solid #d1fae5;'><strong>Approved Amount:</strong></td><td style='padding: 10px; border: 1px solid #d1fae5;'><strong>KES %s</strong></td></tr>" +
+                "</table>" +
+                "<p>Your loan will be disbursed shortly. You will receive another notification once the funds are transferred.</p>" +
+                "<p>Thank you for being a valued member.</p>",
+                memberName, loanNumber, productName, approvedAmount.toPlainString()
+        );
+        sendHtmlEmail(to, "Loan Approved - " + loanNumber, "Loan Application Approved ✅", content, "LOAN_APPROVED", "LOAN", loanNumber);
+    }
+
+    @Async
+    public void sendLoanRejectionEmail(String to, String memberName, String loanNumber, String rejectionReason) {
+        String content = String.format(
+                "<p>Dear <strong>%s</strong>,</p>" +
+                "<p>We regret to inform you that your loan application <strong>%s</strong> has not been approved at this time.</p>" +
+                "<div style='background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0;'>" +
+                "<p style='margin: 0;'><strong>Reason:</strong> %s</p>" +
+                "</div>" +
+                "<p>If you have any questions or would like to discuss your application, please contact our loan department.</p>" +
+                "<p>You may reapply after addressing the noted concerns.</p>",
+                memberName, loanNumber, rejectionReason
+        );
+        sendHtmlEmail(to, "Loan Application Update - " + loanNumber, "Loan Application Status", content, "LOAN_REJECTED", "LOAN", loanNumber);
+    }
+
     // --- 2. Generic Methods ---
 
     @Async
