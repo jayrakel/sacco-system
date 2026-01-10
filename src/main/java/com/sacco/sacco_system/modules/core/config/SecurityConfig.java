@@ -69,6 +69,7 @@ public class SecurityConfig {
                                 "/api/settings/**",
                                 "/api/verify/**",            // <--- ADD THIS LINE
                                 "/api/resend-verification/**",
+                                "/api/payments/callback",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",

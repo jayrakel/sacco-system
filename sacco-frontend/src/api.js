@@ -56,8 +56,8 @@ api.interceptors.response.use(
           console.error("No token found - redirecting to login");
           window.location.href = '/login';
         } else {
-          console.error("Token exists but access forbidden. You may not have permission for this action.");
-          alert("Access Denied: You don't have permission to perform this action.");
+          // ✅ EDITED: Removed the alert() popup as requested.
+          console.error("Token exists but access forbidden. Check permissions in console.");
         }
         break;
 
