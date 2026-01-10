@@ -115,7 +115,8 @@ public class Loan {
         AWAITING_GUARANTORS,
         SUBMITTED,
         UNDER_REVIEW,
-        APPROVED,
+        APPROVED,                    // Approved by loan officer
+        APPROVED_BY_COMMITTEE,       // Approved by committee, awaiting treasurer disbursement
         REJECTED,
         CANCELLED,
         DISBURSED,

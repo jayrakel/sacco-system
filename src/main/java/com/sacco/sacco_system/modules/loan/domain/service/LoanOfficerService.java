@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
 import com.sacco.sacco_system.modules.core.exception.ApiException;
+import com.sacco.sacco_system.modules.loan.api.dto.LoanReviewDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.notification.domain.service.EmailService;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for Loan Officer actions: Review, Approve, Reject loans
@@ -244,10 +246,10 @@ public class LoanOfficerService {
     }
 
     /**
-     * Get loan details for review (with guarantor info, member history, etc.)
+     * Get loan details for review (returns DTO to avoid circular references)
      */
     @Transactional(readOnly = true)
-    public Loan getLoanForReview(UUID loanId) {
+    public LoanReviewDTO getLoanForReview(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new ApiException("Loan not found", 404));
 // start of copilot change
@@ -290,7 +292,61 @@ public class LoanOfficerService {
                 loan.getLoanNumber(),
                 loan.getGuarantors() != null ? loan.getGuarantors().size() : 0);
 
-        return loan;
+        // Convert to DTO to avoid circular references and security issues
+        return convertToReviewDTO(loan);
+    }
+
+    /**
+     * Convert Loan entity to LoanReviewDTO (prevents circular references and security leaks)
+     */
+    private LoanReviewDTO convertToReviewDTO(Loan loan) {
+        return LoanReviewDTO.builder()
+                .id(loan.getId())
+                .loanNumber(loan.getLoanNumber())
+                .principalAmount(loan.getPrincipalAmount())
+                .interestRate(loan.getInterestRate())
+                .durationWeeks(loan.getDurationWeeks())
+                .weeklyRepaymentAmount(loan.getWeeklyRepaymentAmount())
+                .loanStatus(loan.getLoanStatus().name())
+                .applicationDate(loan.getApplicationDate())
+                .approvalDate(loan.getApprovalDate())
+                .approvedAmount(loan.getApprovedAmount())
+                .product(LoanReviewDTO.ProductInfo.builder()
+                        .id(loan.getProduct().getId())
+                        .productCode(loan.getProduct().getProductCode())
+                        .productName(loan.getProduct().getProductName())
+                        .interestRate(loan.getProduct().getInterestRate())
+                        .build())
+                .member(LoanReviewDTO.MemberInfo.builder()
+                        .id(loan.getMember().getId())
+                        .memberNumber(loan.getMember().getMemberNumber())
+                        .firstName(loan.getMember().getFirstName())
+                        .lastName(loan.getMember().getLastName())
+                        .email(loan.getMember().getEmail())
+                        .phoneNumber(loan.getMember().getPhoneNumber())
+                        .memberStatus(loan.getMember().getMemberStatus().name())
+                        .createdAt(loan.getMember().getCreatedAt() != null ? loan.getMember().getCreatedAt().toString() : null)
+                        .build())
+                .guarantors(loan.getGuarantors() != null ?
+                        loan.getGuarantors().stream()
+                                .map(g -> LoanReviewDTO.GuarantorInfo.builder()
+                                        .id(g.getId())
+                                        .guaranteedAmount(g.getGuaranteedAmount())
+                                        .status(g.getStatus().name())
+                                        .member(LoanReviewDTO.MemberInfo.builder()
+                                                .id(g.getMember().getId())
+                                                .memberNumber(g.getMember().getMemberNumber())
+                                                .firstName(g.getMember().getFirstName())
+                                                .lastName(g.getMember().getLastName())
+                                                .email(g.getMember().getEmail())
+                                                .phoneNumber(g.getMember().getPhoneNumber())
+                                                .memberStatus(g.getMember().getMemberStatus().name())
+                                                .createdAt(null)
+                                                .build())
+                                        .build())
+                                .collect(Collectors.toList())
+                        : null)
+                .build();
     }
 }
 

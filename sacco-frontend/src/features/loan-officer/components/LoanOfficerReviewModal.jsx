@@ -1,15 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../../api';
-import { X, User, Briefcase, CheckCircle, XCircle, DollarSign, Calendar, Users } from 'lucide-react';
+import { X, User, Briefcase, CheckCircle, XCircle, DollarSign, Calendar, Users, History, TrendingUp } from 'lucide-react';
 import BrandedSpinner from '../../../components/BrandedSpinner';
 
 export default function LoanOfficerReviewModal({ loan, onClose, onAction }) {
     const [loading, setLoading] = useState(false);
+    const [memberHistory, setMemberHistory] = useState(null);
+    const [loadingHistory, setLoadingHistory] = useState(true);
     const [approvedAmount, setApprovedAmount] = useState(loan.principalAmount);
     const [notes, setNotes] = useState('');
     const [rejectionReason, setRejectionReason] = useState('');
     const [showApproveConfirm, setShowApproveConfirm] = useState(false);
     const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+
+    useEffect(() => {
+        loadMemberHistory();
+    }, []);
+
+    const loadMemberHistory = async () => {
+        setLoadingHistory(true);
+        try {
+            // Fetch member's loan history
+            const historyRes = await api.get(`/api/loans/member/${loan.member.id}`);
+            setMemberHistory(historyRes.data.data || []);
+        } catch (error) {
+            console.error('Failed to load member history:', error);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('en-KE', {
@@ -19,21 +38,6 @@ export default function LoanOfficerReviewModal({ loan, onClose, onAction }) {
         }).format(amount);
     };
 
-    const handleStartReview = async () => {
-        if (loan.loanStatus === 'SUBMITTED') {
-            try {
-                setLoading(true);
-                await api.post(`/api/loan-officer/loans/${loan.id}/start-review`);
-                alert('Loan moved to Under Review');
-                onClose();
-                window.location.reload(); // Refresh to show updated status
-            } catch (error) {
-                alert(error.response?.data?.message || 'Failed to start review');
-            } finally {
-                setLoading(false);
-            }
-        }
-    };
 
     const handleApprove = () => {
         if (!approvedAmount || approvedAmount <= 0) {
@@ -212,24 +216,62 @@ export default function LoanOfficerReviewModal({ loan, onClose, onAction }) {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Member Financial History */}
+                                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                    <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
+                                        <History size={18}/> Member Financial History
+                                    </h3>
+                                    {loadingHistory ? (
+                                        <div className="flex justify-center py-4"><BrandedSpinner /></div>
+                                    ) : !memberHistory || memberHistory.length === 0 ? (
+                                        <p className="text-slate-400 text-sm italic">No previous loan history</p>
+                                    ) : (
+                                        <div className="space-y-3 max-h-60 overflow-y-auto">
+                                            {memberHistory.filter(l => l.id !== loan.id).map((pastLoan) => (
+                                                <div key={pastLoan.id} className="p-3 bg-slate-50 rounded-lg text-sm">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="font-bold text-slate-800">{pastLoan.loanNumber}</p>
+                                                            <p className="text-xs text-slate-500">{pastLoan.product?.productName || 'N/A'}</p>
+                                                        </div>
+                                                        <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                                                            pastLoan.loanStatus === 'CLOSED' ? 'bg-green-100 text-green-700' :
+                                                            pastLoan.loanStatus === 'ACTIVE' ? 'bg-blue-100 text-blue-700' :
+                                                            pastLoan.loanStatus === 'DEFAULTED' ? 'bg-red-100 text-red-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                        }`}>
+                                                            {pastLoan.loanStatus}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                                        <div>
+                                                            <span className="text-slate-400">Principal:</span>
+                                                            <span className="font-bold ml-1">{formatCurrency(pastLoan.principalAmount)}</span>
+                                                        </div>
+                                                        {pastLoan.loanStatus === 'ACTIVE' && (
+                                                            <div>
+                                                                <span className="text-slate-400">Outstanding:</span>
+                                                                <span className="font-bold ml-1 text-orange-600">
+                                                                    {formatCurrency(pastLoan.totalOutstandingAmount || 0)}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* RIGHT COLUMN: ACTIONS */}
                             <div className="space-y-6">
                                 {/* Quick Actions */}
                                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
-                                    <h3 className="font-bold text-slate-700 border-b pb-2">Officer Actions</h3>
+                                    <h3 className="font-bold text-slate-700 border-b pb-2">Loan Officer Decision</h3>
 
-                                    {loan.loanStatus === 'SUBMITTED' && (
-                                        <button
-                                            onClick={handleStartReview}
-                                            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition"
-                                        >
-                                            Start Review
-                                        </button>
-                                    )}
-
-                                    {/* Approve Section */}
+                                    {/* Approve/Reject Section - Available for SUBMITTED or UNDER_REVIEW loans */}
                                     {(loan.loanStatus === 'SUBMITTED' || loan.loanStatus === 'UNDER_REVIEW') && (
                                         <>
                                             <div>
@@ -293,10 +335,18 @@ export default function LoanOfficerReviewModal({ loan, onClose, onAction }) {
                 {showApproveConfirm && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4">
                         <div className="bg-white rounded-lg p-6 max-w-md w-full">
-                            <h3 className="text-lg font-bold text-slate-800 mb-4">Confirm Approval</h3>
-                            <p className="text-slate-600 mb-4">
+                            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                <CheckCircle className="text-green-600" size={24}/>
+                                Approve & Forward to Committee
+                            </h3>
+                            <p className="text-slate-600 mb-2">
                                 Are you sure you want to approve this loan for <strong>{formatCurrency(approvedAmount)}</strong>?
                             </p>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                <p className="text-sm text-blue-800">
+                                    ℹ️ This loan will be forwarded to the committee/secretary for final approval before disbursement.
+                                </p>
+                            </div>
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowApproveConfirm(false)}
@@ -308,7 +358,7 @@ export default function LoanOfficerReviewModal({ loan, onClose, onAction }) {
                                     onClick={confirmApprove}
                                     className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
                                 >
-                                    Confirm
+                                    Approve & Forward
                                 </button>
                             </div>
                         </div>

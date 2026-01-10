@@ -111,13 +111,18 @@ public class LoanReadService {
 
         List<Guarantor> requests = guarantorRepository.findByMemberAndStatus(memberOpt.get(), Guarantor.GuarantorStatus.PENDING);
 
-        return requests.stream().map(g -> Map.<String, Object>of(
-                "requestId", g.getId(),
-                "borrowerName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName(),
-                "amount", g.getGuaranteedAmount() != null ? g.getGuaranteedAmount() : BigDecimal.ZERO,
-                "loanType", g.getLoan().getProduct().getProductName(),
-                "dateRequested", g.getLoan().getApplicationDate() != null ? g.getLoan().getApplicationDate() : LocalDate.now()
-        )).collect(Collectors.toList());
+        return requests.stream().map(g -> {
+            Map<String, Object> data = new HashMap<>();
+            data.put("id", g.getId());  // ✅ Match frontend expectation
+            data.put("applicantName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName());  // ✅ Match frontend
+            data.put("applicantMemberNumber", g.getLoan().getMember().getMemberNumber());  // ✅ New field
+            data.put("guaranteeAmount", g.getGuaranteedAmount() != null ? g.getGuaranteedAmount() : BigDecimal.ZERO);  // ✅ Match frontend
+            data.put("loanNumber", g.getLoan().getLoanNumber());  // ✅ New field
+            data.put("loanProduct", g.getLoan().getProduct().getProductName());  // ✅ New field
+            data.put("loanAmount", g.getLoan().getPrincipalAmount());  // ✅ Total loan amount
+            data.put("applicationDate", g.getLoan().getApplicationDate() != null ? g.getLoan().getApplicationDate().toString() : LocalDate.now().toString());
+            return data;
+        }).collect(Collectors.toList());
     }
 
     /**
@@ -208,6 +213,43 @@ public class LoanReadService {
     }
 
     /**
+     * Get ALL loans for loan officer dashboard (supports all tabs: pending, approved, rejected, all)
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getAllLoansForOfficer() {
+        // Get all loans that have been submitted (exclude DRAFT and PENDING_GUARANTORS)
+        List<Loan> allLoans = loanRepository.findByLoanStatusIn(Arrays.asList(
+                Loan.LoanStatus.SUBMITTED,
+                Loan.LoanStatus.UNDER_REVIEW,
+                Loan.LoanStatus.APPROVED,
+                Loan.LoanStatus.REJECTED,
+                Loan.LoanStatus.DISBURSED,
+                Loan.LoanStatus.ACTIVE,
+                Loan.LoanStatus.CLOSED,
+                Loan.LoanStatus.CANCELLED
+        ));
+
+        return allLoans.stream().map(loan -> {
+            Map<String, Object> loanData = new HashMap<>();
+            loanData.put("id", loan.getId());
+            loanData.put("loanNumber", loan.getLoanNumber());
+            loanData.put("memberName", loan.getMember().getFirstName() + " " + loan.getMember().getLastName());
+            loanData.put("memberNumber", loan.getMember().getMemberNumber());
+            loanData.put("productName", loan.getProduct().getProductName());
+            loanData.put("principalAmount", loan.getPrincipalAmount());
+            loanData.put("durationWeeks", loan.getDurationWeeks());
+            loanData.put("interestRate", loan.getInterestRate());
+            loanData.put("status", loan.getLoanStatus().name());
+            loanData.put("applicationDate", loan.getApplicationDate());
+            loanData.put("guarantorsCount", loan.getGuarantors().size());
+            loanData.put("guarantorsApproved", loan.getGuarantors().stream()
+                    .filter(g -> g.getStatus() == Guarantor.GuarantorStatus.ACCEPTED)
+                    .count());
+            return loanData;
+        }).collect(Collectors.toList());
+    }
+
+    /**
      * Get statistics for loan officer dashboard
      */
     @Transactional(readOnly = true)
@@ -223,13 +265,23 @@ public class LoanReadService {
                 l.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
                 l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS).count();
 
+        // ✅ FIX: Only count disbursed amount from loans that are ACTUALLY disbursed
         BigDecimal totalDisbursed = allLoans.stream()
-                .filter(l -> l.getDisbursedAmount() != null)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
+                            l.getLoanStatus() == Loan.LoanStatus.ACTIVE ||
+                            l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS ||
+                            l.getLoanStatus() == Loan.LoanStatus.DEFAULTED ||
+                            l.getLoanStatus() == Loan.LoanStatus.CLOSED)
+                .filter(l -> l.getDisbursedAmount() != null && l.getDisbursedAmount().compareTo(BigDecimal.ZERO) > 0)
                 .map(Loan::getDisbursedAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // ✅ FIX: Only count outstanding from loans that are currently ACTIVE
         BigDecimal totalOutstanding = allLoans.stream()
-                .filter(l -> l.getTotalOutstandingAmount() != null)
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.ACTIVE ||
+                            l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS ||
+                            l.getLoanStatus() == Loan.LoanStatus.DEFAULTED)
+                .filter(l -> l.getTotalOutstandingAmount() != null && l.getTotalOutstandingAmount().compareTo(BigDecimal.ZERO) > 0)
                 .map(Loan::getTotalOutstandingAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 

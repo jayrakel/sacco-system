@@ -100,6 +100,12 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Submitted"));
     }
 
+    // ✅ NEW: Get Guarantor Requests for current user
+    @GetMapping("/guarantors/requests")
+    public ResponseEntity<ApiResponse<Object>> getGuarantorRequests(@AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Requests fetched", readService.getGuarantorRequests(userDetails.getUsername())));
+    }
+
     // ✅ NEW: Guarantor Responds (Approve/Reject)
     @PostMapping("/guarantors/{requestId}/respond")
     public ResponseEntity<ApiResponse<Object>> respondToGuarantorRequest(

@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.loan.api.controller;
 
 import com.sacco.sacco_system.modules.core.dto.ApiResponse;
+import com.sacco.sacco_system.modules.loan.api.dto.LoanReviewDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanOfficerService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanReadService;
@@ -39,12 +40,21 @@ public class LoanOfficerController {
     }
 
     /**
-     * Get detailed loan information for review
+     * Get ALL loans for officer dashboard (supports all tabs)
+     */
+    @GetMapping("/all-loans")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getAllLoans() {
+        List<Map<String, Object>> loans = loanReadService.getAllLoansForOfficer();
+        return ResponseEntity.ok(new ApiResponse<>(true, "All loans retrieved", loans));
+    }
+
+    /**
+     * Get detailed loan information for review (returns DTO to prevent circular references)
      */
     @GetMapping("/loans/{loanId}")
-    public ResponseEntity<ApiResponse<Loan>> getLoanDetails(@PathVariable UUID loanId) {
-        Loan loan = loanOfficerService.getLoanForReview(loanId);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Loan details retrieved", loan));
+    public ResponseEntity<ApiResponse<LoanReviewDTO>> getLoanDetails(@PathVariable UUID loanId) {
+        LoanReviewDTO loanDTO = loanOfficerService.getLoanForReview(loanId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Loan details retrieved", loanDTO));
     }
 
     /**

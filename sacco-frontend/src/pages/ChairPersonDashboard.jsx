@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api';
-import { Users, TrendingUp, CheckCircle, Gavel, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { Users, TrendingUp, CheckCircle, Gavel, Calendar, Clock, AlertCircle, Vote, PlayCircle, XCircle, Eye, MapPin } from 'lucide-react';
 import DashboardHeader from '../components/DashboardHeader';
 import BrandedSpinner from '../components/BrandedSpinner';
 import ShareCapitalCard from '../components/ShareCapitalCard';
@@ -8,10 +9,10 @@ import ShareCapitalCard from '../components/ShareCapitalCard';
 export default function ChairpersonDashboard() {
     const [user, setUser] = useState(null);
 
-    // ✅ NEW STATES for the missing stages
-    const [scheduledMeetings, setScheduledMeetings] = useState([]); // Status: SECRETARY_TABLED
-    const [activeVotes, setActiveVotes] = useState([]);             // Status: VOTING_OPEN
-    const [approvalQueue, setApprovalQueue] = useState([]);         // Status: SECRETARY_DECISION
+    // ✅ UPDATED: Use new meeting-based states
+    const [scheduledMeetings, setScheduledMeetings] = useState([]);
+    const [activeMeetings, setActiveMeetings] = useState([]);
+    const [completedMeetings, setCompletedMeetings] = useState([]);
 
     const [loading, setLoading] = useState(true);
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -21,27 +22,29 @@ export default function ChairpersonDashboard() {
         if (storedUser) setUser(JSON.parse(storedUser));
         fetchAgenda();
 
-        // Update clock every minute so the "Start Voting" button enables automatically when time reaches
+        // Update clock every minute
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-        return () => clearInterval(timer);
+
+        // Auto-refresh meetings every 30 seconds
+        const refreshInterval = setInterval(fetchAgenda, 30000);
+
+        return () => {
+            clearInterval(timer);
+            clearInterval(refreshInterval);
+        };
     }, []);
 
     const fetchAgenda = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/api/loans/admin/pending');
-            if (res.data.success) {
-                const data = res.data.data;
+            // ✅ Use /all endpoint to get meetings of all statuses
+            const res = await api.get('/api/meetings/all');
+            const meetings = res.data.data || [];
 
-                // ✅ 1. Scheduled: Ready for Chair to Open Floor
-                setScheduledMeetings(data.filter(l => l.status === 'SECRETARY_TABLED'));
-
-                // ✅ 2. Active: Currently being voted on
-                setActiveVotes(data.filter(l => l.status === 'VOTING_OPEN'));
-
-                // ✅ 3. Decision: Passed vote, waiting for final sign-off (Existing)
-                setApprovalQueue(data.filter(l => l.status === 'SECRETARY_DECISION'));
-            }
+            // Separate by status
+            setScheduledMeetings(meetings.filter(m => m.status === 'SCHEDULED'));
+            setActiveMeetings(meetings.filter(m => m.status === 'IN_PROGRESS'));
+            setCompletedMeetings(meetings.filter(m => m.status === 'COMPLETED'));
         } catch (e) {
             console.error("Failed to load dashboard", e);
         } finally {
@@ -49,33 +52,40 @@ export default function ChairpersonDashboard() {
         }
     };
 
-    // ✅ NEW HANDLER: Opens the voting floor
-    const handleStartVoting = async (loan) => {
-        if (!window.confirm(`Open the floor for voting on Loan ${loan.loanNumber}?`)) return;
+    // ✅ UPDATED: Open voting for a meeting
+    const handleOpenVoting = async (meetingId) => {
+        if (!window.confirm('Open voting for this meeting? This can only be done after the meeting time has passed.')) {
+            return;
+        }
+
         try {
-            await api.post(`/api/loans/chairperson/${loan.id}/start-voting`);
-            alert("Voting Session Started. Committee members can now vote.");
+            await api.post(`/api/voting/meetings/${meetingId}/open`);
+            alert("Voting opened successfully! Committee members can now vote.");
             fetchAgenda();
         } catch (error) {
-            alert(error.response?.data?.message || "Failed to start voting");
+            alert(error.response?.data?.message || "Failed to open voting");
         }
     };
 
-    const handleFinalApproval = async (loan) => {
-        if (!window.confirm(`Grant Final Executive Approval for Loan ${loan.loanNumber}? This authorizes disbursement.`)) return;
+    // ✅ Close voting (no more votes can be cast)
+    const handleCloseVoting = async (meetingId) => {
+        if (!window.confirm('Close voting? No more votes will be accepted. Secretary will finalize results and generate minutes.')) {
+            return;
+        }
+
         try {
-            await api.post(`/api/loans/chairperson/${loan.id}/final-approval`);
-            alert("Final Approval Granted. Loan forwarded to Treasurer.");
+            await api.post(`/api/voting/meetings/${meetingId}/close`);
+            alert("Voting closed successfully! No more votes can be cast. Awaiting secretary to finalize results.");
             fetchAgenda();
         } catch (error) {
-            alert(error.response?.data?.message || "Action failed");
+            alert(error.response?.data?.message || "Failed to close voting");
         }
     };
 
     // Helper: Check if meeting time has passed
-    const isMeetingTime = (dateStr) => {
-        if (!dateStr) return true;
-        return new Date() >= new Date(dateStr);
+    const canOpenVoting = (meeting) => {
+        const meetingDateTime = new Date(`${meeting.meetingDate}T${meeting.meetingTime}`);
+        return new Date() >= meetingDateTime;
     };
 
     return (
@@ -91,74 +101,108 @@ export default function ChairpersonDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    {/* Scheduled Card */}
+                    {/* Scheduled Meetings Card */}
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-blue-100 flex flex-col items-center text-center">
                         <div className="p-4 bg-blue-50 text-blue-600 rounded-full mb-4"><Calendar size={32}/></div>
-                        <h3 className="font-bold text-slate-700 text-lg">Scheduled</h3>
+                        <h3 className="font-bold text-slate-700 text-lg">Scheduled Meetings</h3>
                         <div className="text-3xl font-bold text-slate-900 mt-2">{scheduledMeetings.length}</div>
                     </div>
 
-                    {/* Active Votes Card */}
-                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-purple-100 flex flex-col items-center text-center">
-                        <div className="p-4 bg-purple-50 text-purple-600 rounded-full mb-4"><Users size={32}/></div>
-                        <h3 className="font-bold text-slate-700 text-lg">Active Votes</h3>
-                        <div className="text-3xl font-bold text-slate-900 mt-2">{activeVotes.length}</div>
+                    {/* Active Voting Sessions Card */}
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-green-100 flex flex-col items-center text-center">
+                        <div className="p-4 bg-green-50 text-green-600 rounded-full mb-4"><Vote size={32}/></div>
+                        <h3 className="font-bold text-slate-700 text-lg">Active Voting</h3>
+                        <div className="text-3xl font-bold text-slate-900 mt-2">{activeMeetings.length}</div>
                     </div>
 
-                    {/* Pending Sign-off Card */}
+                    {/* Completed Meetings Card */}
                     <div className="bg-white p-8 rounded-2xl shadow-sm border border-indigo-100 flex flex-col items-center text-center">
-                        <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full mb-4"><Gavel size={32}/></div>
-                        <h3 className="font-bold text-slate-700 text-lg">Pending Sign-offs</h3>
+                        <div className="p-4 bg-indigo-50 text-indigo-600 rounded-full mb-4"><CheckCircle size={32}/></div>
+                        <h3 className="font-bold text-slate-700 text-lg">Completed</h3>
                         <div className="text-3xl font-bold text-indigo-600 mt-2">
-                            {approvalQueue.length}
+                            {completedMeetings.length}
                         </div>
                     </div>
 
                     <ShareCapitalCard />
                 </div>
 
-                {/* 2. ✅ SCHEDULED MEETINGS (New Section) */}
+                {/* 2. ✅ SCHEDULED MEETINGS - Ready to Open Voting */}
                 {scheduledMeetings.length > 0 && (
                     <div className="bg-white rounded-2xl shadow-sm border border-blue-200 overflow-hidden">
                         <div className="p-6 border-b border-blue-100 bg-blue-50/50 flex justify-between items-center">
                             <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
-                                <Clock size={20}/> Upcoming Meetings (Action Required)
+                                <Calendar size={20}/> Scheduled Meetings - Ready to Open Voting
                             </h2>
                             <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
                                 {scheduledMeetings.length} Scheduled
                             </span>
                         </div>
                         <div className="divide-y divide-blue-50">
-                            {scheduledMeetings.map(loan => {
-                                const canStart = isMeetingTime(loan.meetingDate);
+                            {scheduledMeetings.map(meeting => {
+                                const canOpen = canOpenVoting(meeting);
+                                const meetingDateTime = new Date(`${meeting.meetingDate}T${meeting.meetingTime}`);
                                 return (
-                                    <div key={loan.id} className="p-6 flex flex-col md:flex-row justify-between items-center hover:bg-slate-50 transition gap-4">
-                                        <div>
-                                            <h3 className="font-bold text-slate-800">{loan.memberName}</h3>
-                                            <p className="text-sm text-slate-500 font-mono">{loan.loanNumber}</p>
-                                            <div className="flex items-center gap-2 mt-1 text-sm font-bold text-blue-600">
-                                                <Calendar size={14}/>
-                                                <span>
-                                                    {new Date(loan.meetingDate).toLocaleString('en-US', {
-                                                        weekday: 'short', month: 'short', day: 'numeric',
-                                                        hour: 'numeric', minute: '2-digit'
-                                                    })}
-                                                </span>
+                                    <div key={meeting.id} className="p-6 hover:bg-slate-50 transition">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <h3 className="font-bold text-slate-800 text-lg">{meeting.title}</h3>
+                                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                        SCHEDULED
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-4 text-sm text-slate-600 mb-2">
+                                                    <div className="flex items-center gap-1">
+                                                        <Calendar size={14}/>
+                                                        {new Date(meeting.meetingDate).toLocaleDateString('en-US', {
+                                                            weekday: 'short',
+                                                            year: 'numeric',
+                                                            month: 'short',
+                                                            day: 'numeric'
+                                                        })}
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <Clock size={14}/>
+                                                        {meeting.meetingTime}
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <MapPin size={14}/>
+                                                        {meeting.venue}
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <Users size={14}/>
+                                                        {meeting.loanCount} loan(s) on agenda
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-slate-400">Meeting #: {meeting.meetingNumber}</p>
                                             </div>
                                         </div>
-
-                                        <button
-                                            onClick={() => handleStartVoting(loan)}
-                                            disabled={!canStart}
-                                            className={`flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition shadow-md
-                                                ${canStart
-                                                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-900/20'
-                                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                                }`}
-                                        >
-                                            <Gavel size={16}/>
-                                            {canStart ? "Open Voting Floor" : "Wait for Meeting Time"}
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <Link
+                                                to={`/meetings/${meeting.id}/results`}
+                                                className="flex items-center gap-1 px-3 py-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition border border-indigo-200"
+                                            >
+                                                <Eye size={16}/>
+                                                View Details
+                                            </Link>
+                                            {canOpen ? (
+                                                <button
+                                                    onClick={() => handleOpenVoting(meeting.id)}
+                                                    className="flex items-center gap-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition"
+                                                >
+                                                    <PlayCircle size={16}/>
+                                                    Open Voting
+                                                </button>
+                                            ) : (
+                                                <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-500 rounded-lg">
+                                                    <Clock size={16}/>
+                                                    <span className="text-sm">
+                                                        Available at {meetingDateTime.toLocaleTimeString()}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -166,28 +210,42 @@ export default function ChairpersonDashboard() {
                     </div>
                 )}
 
-                {/* 3. ✅ ACTIVE VOTES MONITOR (New Section) */}
-                {activeVotes.length > 0 && (
-                    <div className="bg-purple-50 rounded-2xl border border-purple-100 p-6">
-                        <h2 className="text-lg font-bold text-purple-900 mb-4 flex items-center gap-2">
-                            <Users size={20}/> Voting In Progress
-                        </h2>
+                {/* 3. ✅ ACTIVE VOTING SESSIONS */}
+                {activeMeetings.length > 0 && (
+                    <div className="bg-green-50 rounded-2xl border border-green-100 p-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-bold text-green-900 flex items-center gap-2">
+                                <Vote size={20}/> Active Voting Sessions
+                            </h2>
+                        </div>
                         <div className="grid gap-4">
-                            {activeVotes.map(loan => (
-                                <div key={loan.id} className="bg-white p-4 rounded-xl border border-purple-100 flex justify-between items-center shadow-sm">
-                                    <div>
-                                        <p className="font-bold text-slate-800">{loan.memberName}</p>
-                                        <p className="text-xs text-slate-500 font-mono">{loan.loanNumber}</p>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="text-xs text-slate-500">
-                                            <span className="font-bold text-green-600">{loan.votesYes || 0} YES</span>
-                                            <span className="mx-2">/</span>
-                                            <span className="font-bold text-red-600">{loan.votesNo || 0} NO</span>
+                            {activeMeetings.map(meeting => (
+                                <div key={meeting.id} className="bg-white p-4 rounded-xl border border-green-100 shadow-sm">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex-1">
+                                            <p className="font-bold text-slate-800">{meeting.title}</p>
+                                            <p className="text-xs text-slate-500">Meeting #: {meeting.meetingNumber}</p>
+                                            <p className="text-xs text-slate-600 mt-1">{meeting.loanCount} loans • {meeting.venue}</p>
                                         </div>
-                                        <span className="text-xs font-bold bg-purple-100 text-purple-700 px-3 py-1 rounded-full animate-pulse">
-                                            Voting Open
-                                        </span>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xs font-bold bg-green-100 text-green-700 px-3 py-1 rounded-full animate-pulse">
+                                                Voting Open
+                                            </span>
+                                            <Link
+                                                to={`/meetings/${meeting.id}/results`}
+                                                className="flex items-center gap-1 px-3 py-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition border border-indigo-200"
+                                            >
+                                                <Eye size={16}/>
+                                                View Votes
+                                            </Link>
+                                            <button
+                                                onClick={() => handleCloseVoting(meeting.id)}
+                                                className="flex items-center gap-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition text-sm"
+                                            >
+                                                <XCircle size={16}/>
+                                                Close Voting
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -195,59 +253,56 @@ export default function ChairpersonDashboard() {
                     </div>
                 )}
 
-                {/* 4. FINAL APPROVAL TABLE (Existing) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <CheckCircle size={20} className="text-indigo-600"/> Executive Sign-Off Required
-                        </h2>
-                        <span className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-bold">
-                            {approvalQueue.length} Pending
-                        </span>
-                    </div>
-
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 uppercase text-xs">
-                            <tr>
-                                <th className="p-4">Ref</th>
-                                <th className="p-4">Applicant</th>
-                                <th className="p-4 text-right">Amount</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4 text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
+                {/* 4. COMPLETED MEETINGS */}
+                {completedMeetings.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <CheckCircle size={20} className="text-indigo-600"/> Completed Meetings
+                            </h2>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-bold">
+                                {completedMeetings.length} Completed
+                            </span>
+                        </div>
+                        <div className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan="5" className="p-12 text-center"><BrandedSpinner size="medium"/></td></tr>
-                            ) : approvalQueue.length === 0 ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No final approvals pending.</td></tr>
-                            ) : approvalQueue.map(loan => (
-                                <tr key={loan.id} className="hover:bg-slate-50 transition">
-                                    <td className="p-4 font-mono text-slate-500 text-xs">{loan.loanNumber}</td>
-                                    <td className="p-4">
-                                        <p className="font-bold text-slate-700">{loan.memberName}</p>
-                                    </td>
-                                    <td className="p-4 text-right font-mono font-bold text-slate-700">
-                                        KES {Number(loan.principalAmount).toLocaleString()}
-                                    </td>
-                                    <td className="p-4 text-xs">
-                                        <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold border border-emerald-100">
-                                            Passed Vote
-                                        </span>
-                                    </td>
-                                    <td className="p-4 flex justify-center">
-                                        <button
-                                            onClick={() => handleFinalApproval(loan)}
-                                            className="flex items-center gap-2 px-6 py-2 bg-indigo-900 text-white rounded-lg text-xs font-bold hover:bg-indigo-800 transition shadow-lg shadow-indigo-900/20"
+                                <div className="p-12 text-center"><BrandedSpinner size="medium"/></div>
+                            ) : completedMeetings.map(meeting => (
+                                <div key={meeting.id} className="p-6 hover:bg-slate-50 transition">
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <h3 className="font-bold text-slate-800">{meeting.title}</h3>
+                                            <p className="text-xs text-slate-500 font-mono">{meeting.meetingNumber}</p>
+                                            <p className="text-xs text-slate-600 mt-1">
+                                                {meeting.loanCount} loans • {new Date(meeting.meetingDate).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            to={`/meetings/${meeting.id}/results`}
+                                            className="flex items-center gap-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition text-sm"
                                         >
-                                            <Gavel size={14}/> Grant Final Approval
-                                        </button>
-                                    </td>
-                                </tr>
+                                            <Eye size={16}/>
+                                            View Results
+                                        </Link>
+                                    </div>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Empty State */}
+                {!loading && scheduledMeetings.length === 0 && activeMeetings.length === 0 && completedMeetings.length === 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
+                        <Calendar className="mx-auto h-16 w-16 text-slate-300 mb-4" />
+                        <h3 className="text-xl font-semibold text-slate-700 mb-2">No Meetings</h3>
+                        <p className="text-slate-500">
+                            There are no committee meetings scheduled at this time.
+                            <br />
+                            The secretary will schedule meetings when loans are ready for review.
+                        </p>
+                    </div>
+                )}
             </main>
         </div>
     );

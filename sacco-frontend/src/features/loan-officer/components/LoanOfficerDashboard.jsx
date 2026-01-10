@@ -13,7 +13,8 @@ import {
     AlertCircle,
     Eye,
     LayoutDashboard,
-    History
+    History,
+    RefreshCw
 } from 'lucide-react';
 
 export default function LoanOfficerDashboard() {
@@ -25,6 +26,7 @@ export default function LoanOfficerDashboard() {
     const [allLoans, setAllLoans] = useState([]);
     const [selectedLoan, setSelectedLoan] = useState(null);
     const [showReviewModal, setShowReviewModal] = useState(false);
+    const [lastRefresh, setLastRefresh] = useState(null);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sacco_user');
@@ -51,11 +53,12 @@ export default function LoanOfficerDashboard() {
         try {
             const [statsRes, loansRes] = await Promise.all([
                 api.get('/api/loan-officer/statistics'),
-                api.get('/api/loan-officer/pending-loans')
+                api.get('/api/loan-officer/all-loans')  // ✅ Changed from /pending-loans to /all-loans
             ]);
 
             setStats(statsRes.data.data);
             setAllLoans(loansRes.data.data);
+            setLastRefresh(new Date());
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         } finally {
@@ -64,13 +67,27 @@ export default function LoanOfficerDashboard() {
     };
 
     const handleReviewClick = async (loanId) => {
+        console.log('🔍 Review button clicked for loan ID:', loanId);
         try {
+            console.log('📡 Fetching loan details from API...');
             const res = await api.get(`/api/loan-officer/loans/${loanId}`);
-            setSelectedLoan(res.data.data);
-            setShowReviewModal(true);
+            console.log('✅ API Response:', res.data);
+
+            // Backend returns { data: {...} } directly, not { success: true, data: {...} }
+            const loanData = res.data.data || res.data;
+
+            if (loanData && loanData.id) {
+                setSelectedLoan(loanData);
+                setShowReviewModal(true);
+                console.log('✅ Modal should open now with loan:', loanData.loanNumber);
+            } else {
+                console.error('❌ Invalid loan data:', res.data);
+                alert('Invalid response from server - no loan data found');
+            }
         } catch (error) {
-            console.error('Failed to load loan:', error);
-            alert('Failed to load loan details');
+            console.error('❌ Failed to load loan:', error);
+            console.error('❌ Error details:', error.response?.data);
+            alert(`Failed to load loan details: ${error.response?.data?.message || error.message}`);
         }
     };
 
@@ -145,6 +162,26 @@ export default function LoanOfficerDashboard() {
             <DashboardHeader user={user} title="Loan Officer Portal" />
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
+                {/* Header with Refresh */}
+                <div className="mb-6 flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-800">Loan Applications Review</h1>
+                        {lastRefresh && (
+                            <p className="text-sm text-slate-500 mt-1">
+                                Last updated: {lastRefresh.toLocaleTimeString()}
+                            </p>
+                        )}
+                    </div>
+                    <button
+                        onClick={() => loadDashboard()}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        <span className="text-sm font-medium">Refresh</span>
+                    </button>
+                </div>
+
                 {/* Tabs */}
                 <div className="mb-8 overflow-x-auto pb-2 scrollbar-hide">
                     <div className="flex gap-1 w-max">
@@ -300,15 +337,20 @@ export default function LoanOfficerDashboard() {
 
             {/* Review Modal */}
             {showReviewModal && selectedLoan && (
-                <LoanOfficerReviewModal
-                    loan={selectedLoan}
-                    onClose={() => {
-                        setShowReviewModal(false);
-                        setSelectedLoan(null);
-                    }}
-                    onAction={handleReviewAction}
-                />
+                <>
+                    {console.log('🎭 Rendering modal with loan:', selectedLoan)}
+                    <LoanOfficerReviewModal
+                        loan={selectedLoan}
+                        onClose={() => {
+                            console.log('🚪 Modal closing...');
+                            setShowReviewModal(false);
+                            setSelectedLoan(null);
+                        }}
+                        onAction={handleReviewAction}
+                    />
+                </>
             )}
+            {!showReviewModal && console.log('❌ Modal not showing - showReviewModal:', showReviewModal, 'selectedLoan:', selectedLoan)}
         </div>
     );
 }

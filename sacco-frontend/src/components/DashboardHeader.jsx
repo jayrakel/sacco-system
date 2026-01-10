@@ -86,12 +86,13 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
     const respondToRequest = async (requestId, accepted) => {
         const action = accepted ? "accept" : "decline";
-        const status = accepted ? "ACCEPTED" : "DECLINED";
 
         if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
         try {
-            await api.post(`/api/loans/guarantors/${requestId}/respond`, { status });
-            // ✅ FIX: Filter by 'id' to match Backend DTO
+            // ✅ FIX: Backend expects { approved: Boolean }, not { status: String }
+            await api.post(`/api/loans/guarantors/${requestId}/respond`, { approved: accepted });
+
+            // Remove from local state
             setRequests(prev => prev.filter(r => r.id !== requestId));
             alert(`Request ${action}ed successfully.`);
         } catch (err) {
@@ -167,15 +168,32 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                                 <div className="max-h-64 overflow-y-auto custom-scrollbar">
                                     {requests.length === 0 ? <div className="p-6 text-center text-slate-400 text-xs italic">No pending requests.</div> : requests.map(r => (
                                         <div key={r.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
-                                                {/* Display Loan Number if available */}
+                                            {/* Applicant Info */}
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-800">{r.applicantName}</p>
+                                                </div>
                                                 <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{r.loanNumber}</span>
                                             </div>
-                                            <p className="text-xs text-slate-500 mb-2">Requesting: <span className="font-bold text-slate-700">KES {Number(r.guaranteeAmount).toLocaleString()}</span></p>
 
+                                            {/* Loan Details */}
+                                            <div className="bg-amber-50 rounded-lg p-2 mb-2 space-y-1">
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-600">Loan Product:</span>
+                                                    <span className="font-semibold text-slate-800">{r.loanProduct}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-600">Total Loan:</span>
+                                                    <span className="font-semibold text-slate-800">KES {Number(r.loanAmount || 0).toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs border-t border-amber-200 pt-1">
+                                                    <span className="text-amber-800 font-medium">Your Guarantee:</span>
+                                                    <span className="font-bold text-amber-900">KES {Number(r.guaranteeAmount || 0).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Action Buttons */}
                                             <div className="flex gap-2 mt-2">
-                                                {/* ✅ FIX: Use r.id here */}
                                                 <button onClick={() => respondToRequest(r.id, true)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 rounded font-bold transition">Accept</button>
                                                 <button onClick={() => respondToRequest(r.id, false)} className="flex-1 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-xs py-1.5 rounded font-bold transition">Decline</button>
                                             </div>

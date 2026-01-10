@@ -273,21 +273,62 @@ public class LoanApplicationService {
                 .build();
         guarantorRepository.save(guarantor);
 
-        // ✅ SEND EMAIL TO GUARANTOR
+        // ✅ SEND EMAIL TO GUARANTOR WITH COMPREHENSIVE DETAILS
         try {
-            String subject = "Action Required: Guarantorship Request";
+            String subject = "🔔 Guarantorship Request from " + loan.getMember().getFirstName() + " " + loan.getMember().getLastName();
+
             String message = String.format(
-                    "Hello %s,\n\n" +
-                            "%s %s has requested you to guarantee their loan.\n" +
-                            "Loan Amount: %s %s\n" +
-                            "Requested Guarantee: %s %s\n\n" +
-                            "Please log in to your dashboard to Approve or Reject this request.",
+                    "Dear %s,\n\n" +
+                            "You have received a guarantorship request from:\n\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "APPLICANT DETAILS\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "Name: %s %s\n" +
+                            "Member No: %s\n\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "LOAN DETAILS\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "Loan Product: %s\n" +
+                            "Loan Number: %s\n" +
+                            "Total Amount: %s %,.2f\n" +
+                            "Duration: %d weeks (%d months)\n" +
+                            "Interest Rate: %.2f%% per annum\n" +
+                            "Application Date: %s\n\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "YOUR GUARANTEE AMOUNT\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+                            "Requested Amount: %s %,.2f\n" +
+                            "Your Free Margin: %s %,.2f\n\n" +
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+                            "⚠️ IMPORTANT:\n" +
+                            "As a guarantor, you are agreeing to cover this amount if the borrower defaults.\n" +
+                            "Please review the loan details carefully before making your decision.\n\n" +
+                            "ACTION REQUIRED:\n" +
+                            "Please log in to your dashboard to APPROVE or REJECT this request.\n\n" +
+                            "🔗 Login: https://your-sacco-url.com/login\n\n" +
+                            "If you have any questions, please contact the loan applicant directly.\n\n" +
+                            "Best regards,\n" +
+                            "SACCO Loan Department",
                     guarantorMember.getFirstName(),
-                    loan.getMember().getFirstName(), loan.getMember().getLastName(),
-                    loan.getCurrencyCode(), loan.getPrincipalAmount(),
-                    loan.getCurrencyCode(), amount
+                    loan.getMember().getFirstName(),
+                    loan.getMember().getLastName(),
+                    loan.getMember().getMemberNumber(),
+                    loan.getProduct().getProductName(),
+                    loan.getLoanNumber(),
+                    loan.getCurrencyCode(),
+                    loan.getPrincipalAmount(),
+                    loan.getDurationWeeks(),
+                    loan.getDurationWeeks() / 4,
+                    loan.getInterestRate(),
+                    loan.getApplicationDate(),
+                    loan.getCurrencyCode(),
+                    amount,
+                    loan.getCurrencyCode(),
+                    freeMargin
             );
+
             emailService.sendEmail(guarantorMember.getEmail(), subject, message);
+            log.info("✉️ Guarantor notification sent to: {} for loan: {}", guarantorMember.getEmail(), loan.getLoanNumber());
         } catch (Exception e) {
             log.error("Failed to send guarantor email", e);
         }
