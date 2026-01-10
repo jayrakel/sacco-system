@@ -32,34 +32,45 @@ export default function LoanFeePaymentModal({ isOpen, onClose, onSuccess, loan }
     };
 
     const handlePay = async (e) => {
-        e.preventDefault();
+            e.preventDefault();
 
-        // ✅ Safety Check: Ensure we have a draft to pay for
-        if (!loan || !loan.id) {
-            setPaymentStatus('failed');
-            setStatusMessage("Application not initialized. Please try refreshing.");
-            return;
-        }
-
-        setStep(2);
-        setPaymentStatus('processing');
-        setStatusMessage('Sending M-Pesa request...');
-
-        try {
-            const res = await api.post('/api/payments/mpesa/pay-loan-fee', { phoneNumber: phone });
-
-            if (res.data.success) {
-                setStatusMessage('Check your phone to enter PIN...');
-                startPolling(res.data.data.checkoutRequestId);
-            } else {
+            if (!loan || !loan.id) {
                 setPaymentStatus('failed');
-                setStatusMessage(res.data.message || 'Failed to initiate payment');
+                setStatusMessage("Application not initialized.");
+                return;
             }
-        } catch (e) {
-            setPaymentStatus('failed');
-            setStatusMessage('Network connection failed.');
-        }
-    };
+
+            setStep(2);
+            setPaymentStatus('processing');
+            setStatusMessage('Sending M-Pesa request...');
+
+            try {
+                // ✅ UPDATED PAYLOAD: Sending draftId
+                const payload = {
+                    phoneNumber: phone,
+                    draftId: loan.id
+                };
+
+                const res = await api.post('/api/payments/mpesa/pay-loan-fee', payload);
+
+                if (res.data.success) {
+                    // If the backend returns "Payment already completed", jump to success
+                    if (res.data.data.status === 'COMPLETED') {
+                         confirmLoanFee(res.data.data.checkoutRequestId);
+                         return;
+                    }
+
+                    setStatusMessage('Check your phone to enter PIN...');
+                    startPolling(res.data.data.checkoutRequestId);
+                } else {
+                    setPaymentStatus('failed');
+                    setStatusMessage(res.data.message || 'Failed to initiate payment');
+                }
+            } catch (e) {
+                setPaymentStatus('failed');
+                setStatusMessage('Network connection failed.');
+            }
+        };
 
     const startPolling = (reqId) => {
         const interval = setInterval(async () => {

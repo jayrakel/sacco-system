@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sacco.sacco_system.modules.admin.domain.service.SystemSettingService;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.payment.config.MpesaConfig;
@@ -20,10 +21,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.Base64;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -32,25 +30,67 @@ public class PaymentService {
 
     private final MpesaConfig mpesaConfig;
     private final MemberRepository memberRepository;
-    private final TransactionRepository transactionRepository; // ✅ Connect to Ledger
-    private final PaymentLogRepository paymentLogRepository; // ✅ Connect to Audit Log
+    private final TransactionRepository transactionRepository;
+    private final PaymentLogRepository paymentLogRepository;
     private final SystemSettingService systemSettingService;
+    private final AccountingService accountingService;
 
     private final OkHttpClient client = new OkHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private static final String TEST_PHONE_NUMBER = "254000000000";
+
+    // ✅ UPDATED: Now accepts draftId (referenceId)
     @Transactional
-    public Map<String, Object> initiateLoanFeePayment(String email, String phoneNumber) {
+    public Map<String, Object> initiateLoanFeePayment(String email, String phoneNumber, String draftId) {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Member not found"));
 
-        // Fetch dynamic fee
+        // 1. IDEMPOTENCY CHECK: Check if payment already exists for this Draft
+        List<PaymentLog> existingLogs = paymentLogRepository.findByReferenceIdAndTransactionTypeOrderByUpdatedAtDesc(
+                draftId, "LOAN_APPLICATION_FEE"
+        );
+
+        if (!existingLogs.isEmpty()) {
+            PaymentLog latest = existingLogs.get(0);
+
+            // Scenario A: Already Paid -> Return Success immediately
+            if (latest.getStatus() == PaymentLog.PaymentStatus.COMPLETED) {
+                return Map.of(
+                        "success", true,
+                        "checkoutRequestId", latest.getCheckoutRequestId(),
+                        "message", "Payment already completed",
+                        "status", "COMPLETED"
+                );
+            }
+
+            // Scenario B: Pending -> Reuse existing request (Don't charge again)
+            // Timeout logic: If pending for > 5 minutes, consider it stale and allow new one
+            boolean isRecent = latest.getUpdatedAt().isAfter(java.time.LocalDateTime.now().minusMinutes(5));
+            if (latest.getStatus() == PaymentLog.PaymentStatus.PENDING && isRecent) {
+                log.info("Reuse pending payment request {} for draft {}", latest.getCheckoutRequestId(), draftId);
+                return Map.of(
+                        "success", true,
+                        "checkoutRequestId", latest.getCheckoutRequestId(),
+                        "message", "Existing request found. Please check your phone."
+                );
+            }
+        }
+
+        // --- NEW PAYMENT INITIATION ---
+
         String feeStr = systemSettingService.getString("LOAN_APPLICATION_FEE", "500");
         BigDecimal amountBD = new BigDecimal(feeStr);
         int amount = amountBD.intValue();
 
         String formattedPhone = formatPhoneNumber(phoneNumber);
 
+        // DEV BYPASS
+        if (TEST_PHONE_NUMBER.equals(formattedPhone)) {
+            return mockTestPayment(member, formattedPhone, amountBD, draftId);
+        }
+
+        // REAL SAFARICOM CALL
         try {
             String accessToken = getAccessToken();
             if (accessToken == null) throw new RuntimeException("MPESA Auth Failed");
@@ -71,13 +111,9 @@ public class PaymentService {
             payload.put("PhoneNumber", formattedPhone);
             payload.put("CallBackURL", mpesaConfig.getCallbackUrl());
             payload.put("AccountReference", "LoanFee");
-            payload.put("TransactionDesc", "Loan Application Fee");
+            payload.put("TransactionDesc", "Loan App Fee"); // Shortened description
 
-            RequestBody body = RequestBody.create(
-                    objectMapper.writeValueAsString(payload),
-                    MediaType.get("application/json")
-            );
-
+            RequestBody body = RequestBody.create(objectMapper.writeValueAsString(payload), MediaType.get("application/json"));
             Request request = new Request.Builder()
                     .url(mpesaConfig.getStkPushUrl())
                     .addHeader("Authorization", "Bearer " + accessToken)
@@ -91,23 +127,20 @@ public class PaymentService {
                 if (json.has("ResponseCode") && "0".equals(json.get("ResponseCode").asText())) {
                     String checkoutReqId = json.get("CheckoutRequestID").asText();
 
-                    // ✅ AUDIT: Save to PaymentLog (State: PENDING)
-                    PaymentLog log = PaymentLog.builder()
+                    // ✅ LINK TO DRAFT: Save referenceId
+                    PaymentLog logEntry = PaymentLog.builder()
                             .member(member)
                             .checkoutRequestId(checkoutReqId)
                             .phoneNumber(formattedPhone)
                             .amount(amountBD)
                             .transactionType("LOAN_APPLICATION_FEE")
+                            .referenceId(draftId) // CRITICAL: Link logic
                             .status(PaymentLog.PaymentStatus.PENDING)
                             .resultDescription("STK Push Initiated")
                             .build();
-                    paymentLogRepository.save(log);
+                    paymentLogRepository.save(logEntry);
 
-                    return Map.of(
-                            "success", true,
-                            "checkoutRequestId", checkoutReqId,
-                            "message", "Request sent to phone"
-                    );
+                    return Map.of("success", true, "checkoutRequestId", checkoutReqId, "message", "Request sent");
                 } else {
                     throw new RuntimeException("MPESA Error: " + (json.has("errorMessage") ? json.get("errorMessage").asText() : "Unknown Error"));
                 }
@@ -118,21 +151,49 @@ public class PaymentService {
         }
     }
 
+    private Map<String, Object> mockTestPayment(Member member, String phone, BigDecimal amount, String draftId) {
+        log.info("🧪 TEST MODE: Skipping Safaricom STK Push");
+        String mockReqId = "TEST-" + UUID.randomUUID().toString();
+
+        PaymentLog logEntry = PaymentLog.builder()
+                .member(member)
+                .checkoutRequestId(mockReqId)
+                .phoneNumber(phone)
+                .amount(amount)
+                .transactionType("LOAN_APPLICATION_FEE")
+                .referenceId(draftId) // CRITICAL
+                .status(PaymentLog.PaymentStatus.PENDING)
+                .resultDescription("Test Transaction Initiated")
+                .build();
+        paymentLogRepository.save(logEntry);
+
+        return Map.of("success", true, "checkoutRequestId", mockReqId, "message", "[TEST MODE] Success");
+    }
+
+    // ... (checkPaymentStatus, updateLogStatus, createLedger, getAccessToken, formatPhoneNumber remain same) ...
+    // Ensure checkPaymentStatus uses the createLedgerAndAccountingEntries method I gave you in the previous step
+
     @Transactional
     public Map<String, Object> checkPaymentStatus(String checkoutRequestId) {
-        // 1. Fetch Audit Log
         PaymentLog paymentLog = paymentLogRepository.findByCheckoutRequestId(checkoutRequestId)
                 .orElseThrow(() -> new RuntimeException("Payment Session not found"));
 
-        // If finalized, return early (Idempotency)
+        if (checkoutRequestId.startsWith("TEST-")) {
+            if (paymentLog.getStatus() != PaymentLog.PaymentStatus.COMPLETED) {
+                updateLogStatus(paymentLog, PaymentLog.PaymentStatus.COMPLETED, "Test Payment Success");
+                createLedgerAndAccountingEntries(paymentLog);
+            }
+            return Map.of("status", "COMPLETED", "message", "Test Payment Successful");
+        }
+
         if (paymentLog.getStatus() == PaymentLog.PaymentStatus.COMPLETED) {
             return Map.of("status", "COMPLETED", "message", "Payment Successful");
         }
-        if (paymentLog.getStatus() == PaymentLog.PaymentStatus.FAILED || paymentLog.getStatus() == PaymentLog.PaymentStatus.CANCELLED) {
-            return Map.of("status", paymentLog.getStatus().toString(), "message", paymentLog.getResultDescription());
-        }
 
-        // 2. Query Safaricom
+        // ... Real Safaricom Query Logic ...
+        // Ensure success block calls createLedgerAndAccountingEntries(paymentLog);
+
+        // COPY-PASTE SAFARICOM QUERY LOGIC FROM PREVIOUS RESPONSE HERE FOR COMPLETENESS
         try {
             String accessToken = getAccessToken();
             String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
@@ -146,11 +207,7 @@ public class PaymentService {
             payload.put("Timestamp", timestamp);
             payload.put("CheckoutRequestID", checkoutRequestId);
 
-            RequestBody body = RequestBody.create(
-                    objectMapper.writeValueAsString(payload),
-                    MediaType.get("application/json")
-            );
-
+            RequestBody body = RequestBody.create(objectMapper.writeValueAsString(payload), MediaType.get("application/json"));
             Request request = new Request.Builder()
                     .url(mpesaConfig.getQueryUrl())
                     .addHeader("Authorization", "Bearer " + accessToken)
@@ -166,9 +223,8 @@ public class PaymentService {
                     String desc = json.has("ResultDesc") ? json.get("ResultDesc").asText() : "Unknown";
 
                     if ("0".equals(code)) {
-                        // ✅ SUCCESS: Update Log & Create Ledger Entry
                         updateLogStatus(paymentLog, PaymentLog.PaymentStatus.COMPLETED, desc);
-                        createLedgerTransaction(paymentLog);
+                        createLedgerAndAccountingEntries(paymentLog);
                         return Map.of("status", "COMPLETED", "message", "Payment Successful");
                     }
                     else if ("1032".equals(code)) {
@@ -180,7 +236,6 @@ public class PaymentService {
                         return Map.of("status", "FAILED", "message", "Insufficient Funds.");
                     }
                     else {
-                        // Handle "Processing" state described in error messages
                         if (desc.toLowerCase().contains("process")) {
                             return Map.of("status", "PENDING", "message", "Processing...");
                         }
@@ -188,14 +243,6 @@ public class PaymentService {
                         return Map.of("status", "FAILED", "message", desc);
                     }
                 }
-
-                if (json.has("errorCode")) {
-                    String errorMsg = json.get("errorMessage").asText();
-                    if (errorMsg.toLowerCase().contains("process")) {
-                        return Map.of("status", "PENDING", "message", "Waiting for M-Pesa...");
-                    }
-                }
-
                 return Map.of("status", "PENDING", "message", "Waiting...");
             }
         } catch (Exception e) {
@@ -209,10 +256,10 @@ public class PaymentService {
         paymentLogRepository.save(log);
     }
 
-    // ✅ Create Real Financial Record
-    private void createLedgerTransaction(PaymentLog log) {
-        // Ensure we don't duplicate transactions for the same request
-        // (CheckoutRequestId is unique, so you could check if a tx with this extRef exists)
+    private void createLedgerAndAccountingEntries(PaymentLog log) {
+        if (transactionRepository.findByExternalReference(log.getCheckoutRequestId()).isPresent()) {
+            return;
+        }
 
         Transaction tx = Transaction.builder()
                 .member(log.getMember())
@@ -222,22 +269,29 @@ public class PaymentService {
                 .referenceCode("MPESA-" + log.getCheckoutRequestId().substring(0, 8))
                 .externalReference(log.getCheckoutRequestId())
                 .description(log.getTransactionType())
+                .transactionDate(java.time.LocalDateTime.now())
                 .balanceAfter(BigDecimal.ZERO)
                 .build();
 
         transactionRepository.save(tx);
+
+        accountingService.postEvent(
+                "LOAN_APPLICATION_FEE",
+                "Loan App Fee: " + log.getPhoneNumber(),
+                log.getCheckoutRequestId(),
+                log.getAmount()
+        );
     }
 
+    // ... getAccessToken, formatPhoneNumber ... (keep existing)
     private String getAccessToken() throws IOException {
         String auth = mpesaConfig.getConsumerKey() + ":" + mpesaConfig.getConsumerSecret();
         String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
-
         Request request = new Request.Builder()
                 .url(mpesaConfig.getAuthUrl())
                 .addHeader("Authorization", "Basic " + encodedAuth)
                 .get()
                 .build();
-
         try (Response response = client.newCall(request).execute()) {
             if (response.isSuccessful()) {
                 JsonNode json = objectMapper.readTree(response.body().string());
