@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
 import com.sacco.sacco_system.modules.core.exception.ApiException;
+import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository; // ✅ Added Import
 import com.sacco.sacco_system.modules.finance.domain.service.TransactionService;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanRequestDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
@@ -35,6 +36,7 @@ public class LoanApplicationService {
     private final MemberRepository memberRepository;
     private final LoanEligibilityService eligibilityService;
     private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository; // ✅ Injected to check duplicates
 
     // --- READ CURRENT DRAFT ---
     public Optional<LoanApplicationDraft> getCurrentDraft(String email) {
@@ -48,7 +50,7 @@ public class LoanApplicationService {
         return draftRepository.findFirstByMemberIdAndStatusIn(member.getId(), activeStatuses);
     }
 
-    // --- STEP 1: START DRAFT (With Checks) ---
+    // --- STEP 1: START DRAFT ---
     @Transactional
     public LoanApplicationDraft startApplication(String email) {
         Member member = memberRepository.findByEmail(email)
@@ -58,13 +60,12 @@ public class LoanApplicationService {
             throw new ApiException("Only active members can apply for loans", 400);
         }
 
-        // ✅ CRITICAL FIX: Enforce Eligibility Check BEFORE creating draft
+        // Eligibility Check
         Map<String, Object> eligibility = eligibilityService.checkEligibility(email);
         if (!(boolean) eligibility.get("eligible")) {
             throw new ApiException("Cannot start application: " + eligibility.get("reasons"), 400);
         }
 
-        // Resume existing active draft
         return getCurrentDraft(email).orElseGet(() -> {
             log.info("Creating NEW Draft for {}", member.getMemberNumber());
             LoanApplicationDraft draft = LoanApplicationDraft.builder()
@@ -77,7 +78,7 @@ public class LoanApplicationService {
         });
     }
 
-    // --- STEP 2: CONFIRM FEE ---
+    // --- STEP 2: CONFIRM FEE (Fixed Duplicate Transaction Bug) ---
     @Transactional
     public LoanApplicationDraft confirmDraftFee(UUID draftId, String paymentReference) {
         LoanApplicationDraft draft = draftRepository.findById(draftId)
@@ -85,12 +86,20 @@ public class LoanApplicationService {
 
         if (draft.isFeePaid()) return draft;
 
-        transactionService.recordProcessingFee(
-                draft.getMember(),
-                new BigDecimal("500"),
-                paymentReference,
-                "4000"
-        );
+        // ✅ CRITICAL FIX: Check if PaymentService already created the transaction
+        boolean transactionExists = transactionRepository.findByExternalReference(paymentReference).isPresent();
+
+        if (!transactionExists) {
+            // Only record if PaymentService didn't catch it
+            transactionService.recordProcessingFee(
+                    draft.getMember(),
+                    new BigDecimal("500"),
+                    paymentReference,
+                    "4000"
+            );
+        } else {
+            log.info("Transaction {} already exists. Skipping ledger recording.", paymentReference);
+        }
 
         draft.setFeePaid(true);
         draft.setStatus(LoanApplicationDraft.DraftStatus.FEE_PAID);

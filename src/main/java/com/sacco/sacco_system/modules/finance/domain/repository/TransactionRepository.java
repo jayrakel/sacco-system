@@ -36,4 +36,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     // 7. For Dashboard Stats
     @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.type = ?1")
     BigDecimal getTotalAmountByType(Transaction.TransactionType type);
+
+    // ✅ 8. NEW: Find by External Reference (Essential for MPESA Idempotency)
+    Optional<Transaction> findByExternalReference(String externalReference);
+
+
 }
