@@ -4,11 +4,12 @@ import com.sacco.sacco_system.modules.core.dto.ApiResponse;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanRequestDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanApplicationDraft;
-import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanApplicationService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanEligibilityService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanProductService;
 import com.sacco.sacco_system.modules.loan.domain.service.LoanReadService;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -31,10 +32,11 @@ public class LoanController {
     private final LoanReadService readService;
     private final LoanProductService productService;
     private final UserService userService;
+    private final MemberRepository memberRepository; // ✅ Added to fetch Member for limits
 
     // --- DRAFT PROCESS ---
 
-    // ✅ NEW: Read-Only check. Does NOT create a draft.
+    // ✅ Read-Only check.
     @GetMapping("/draft")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> getCurrentDraft(@AuthenticationPrincipal UserDetails userDetails) {
         return applicationService.getCurrentDraft(userDetails.getUsername())
@@ -42,7 +44,7 @@ public class LoanController {
                 .orElse(ResponseEntity.ok(new ApiResponse<>(true, "No Active Draft", null)));
     }
 
-    // ✅ EXISTING: Creates draft (Start Button Logic)
+    // ✅ Creates draft (Start Button Logic)
     @PostMapping("/start")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> startApplication(@AuthenticationPrincipal UserDetails userDetails) {
         User user = userService.findByEmail(userDetails.getUsername()).orElseThrow();
@@ -50,6 +52,7 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Application Started", draft));
     }
 
+    // ✅ Pay Fee
     @PostMapping("/drafts/{draftId}/pay-fee")
     public ResponseEntity<ApiResponse<LoanApplicationDraft>> confirmDraftFee(
             @PathVariable UUID draftId,
@@ -59,15 +62,31 @@ public class LoanController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Fee Confirmed", draft));
     }
 
-    @PostMapping("/drafts/{draftId}/convert")
-    public ResponseEntity<ApiResponse<Loan>> convertDraft(
+    // ✅ NEW: Fetch Member Limits (For UI Guardrails)
+    @GetMapping("/limits")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMemberLimits(@AuthenticationPrincipal UserDetails userDetails) {
+        Member member = memberRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("Member not found"));
+
+        // Calculates Savings * Multiplier
+        BigDecimal maxAmount = eligibilityService.calculateMaxLoanLimit(member);
+
+        return ResponseEntity.ok(new ApiResponse<>(true, "Limits Calculated", Map.of(
+                "maxEligibleAmount", maxAmount,
+                "currency", "KES"
+        )));
+    }
+
+    // ✅ NEW: Submit Details (Product, Amount, Duration) -> Creates Loan
+    // Replaces 'convertDraft' with a more descriptive name, though logic is similar
+    @PostMapping("/drafts/{draftId}/submit-details")
+    public ResponseEntity<ApiResponse<Loan>> submitLoanDetails(
             @PathVariable UUID draftId,
             @RequestBody LoanRequestDTO request) {
         Loan loan = applicationService.createLoanFromDraft(draftId, request);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Loan Created", loan));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Loan Details Submitted", loan));
     }
 
-    // ... (Keep existing endpoints for guarantors, submit, dashboard, etc.) ...
     // --- 4. REAL LOAN PROCESS ---
     @PostMapping("/{loanId}/guarantors")
     public ResponseEntity<ApiResponse<Object>> addGuarantor(@PathVariable UUID loanId, @RequestBody Map<String, Object> body) {

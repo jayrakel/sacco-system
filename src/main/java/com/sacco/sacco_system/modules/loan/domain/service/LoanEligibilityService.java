@@ -28,34 +28,42 @@ public class LoanEligibilityService {
     private final LoanRepository loanRepository;
     private final SystemSettingService systemSettingService;
 
-    public Map<String, Object> checkEligibility(String email) {
+    /**
+     * ✅ DOMAIN LOGIC: Calculate Max Loan Limit
+     * Rule: Limit = Total Savings * Global Multiplier (from System Settings)
+     * This applies to ALL members regardless of employment status.
+     */
+    public BigDecimal calculateMaxLoanLimit(Member member) {
+        // 1. Get Total Savings (Share Capital + Deposits)
+        BigDecimal totalSavings = savingsAccountRepository.getTotalSavings(member.getId());
 
+        // 2. Fetch Global Multiplier (Default to 3 if not set)
+        String multiplierStr = systemSettingService.getString("LOAN_LIMIT_MULTIPLIER", "3");
+        BigDecimal multiplier = new BigDecimal(multiplierStr);
+
+        // 3. Calculate Limit
+        return totalSavings.multiply(multiplier);
+    }
+
+    public Map<String, Object> checkEligibility(String email) {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member profile not found", 400));
 
-        // --- 1. FETCH SETTINGS ---
+        // --- Fetch Guardrail Settings ---
         BigDecimal minSavings = new BigDecimal(systemSettingService.getString("MIN_SAVINGS_FOR_LOAN", "5000"));
         int maxActiveLoans = Integer.parseInt(systemSettingService.getString("MAX_ACTIVE_LOANS", "1"));
         int minMembershipMonths = Integer.parseInt(systemSettingService.getString("MIN_MONTHS_MEMBERSHIP", "3"));
 
-        // --- 2. FETCH DATA ---
+        // --- Fetch Member Data ---
         BigDecimal currentSavings = savingsAccountRepository.getTotalSavings(member.getId());
         long activeLoans = loanRepository.countActiveLoans(member.getId());
 
-        // ✅ FIX: Handle LocalDateTime to LocalDate conversion safely
-        LocalDate joinDate;
-        if (member.getMembershipDate() != null) {
-            joinDate = member.getMembershipDate().toLocalDate();
-        } else if (member.getCreatedAt() != null) {
-            joinDate = member.getCreatedAt().toLocalDate();
-        } else {
-            // Fallback if data is missing/migrated poorly
-            joinDate = LocalDate.now();
-        }
-
+        LocalDate joinDate = (member.getMembershipDate() != null)
+                ? member.getMembershipDate().toLocalDate()
+                : (member.getCreatedAt() != null ? member.getCreatedAt().toLocalDate() : LocalDate.now());
         long monthsMember = ChronoUnit.MONTHS.between(joinDate, LocalDate.now());
 
-        // --- 3. EVALUATE LOGIC ---
+        // --- Eligibility Logic ---
         boolean isEligible = true;
         List<String> reasons = new ArrayList<>();
 
@@ -63,27 +71,24 @@ public class LoanEligibilityService {
             isEligible = false;
             reasons.add("Insufficient Savings (Min: " + minSavings + ")");
         }
-
         if (activeLoans >= maxActiveLoans) {
             isEligible = false;
             reasons.add("Max active loans reached");
         }
-
         if (monthsMember < minMembershipMonths) {
             isEligible = false;
             reasons.add("Membership duration too short (" + monthsMember + "/" + minMembershipMonths + " months)");
         }
 
-        // --- 4. BUILD RESPONSE ---
+        // --- Calculate Limit ---
+        BigDecimal maxLoanLimit = calculateMaxLoanLimit(member);
+
         Map<String, Object> response = new HashMap<>();
         response.put("eligible", isEligible);
         response.put("reasons", reasons);
         response.put("currentSavings", currentSavings);
-        response.put("requiredSavings", minSavings);
-        response.put("currentActiveLoans", activeLoans);
-        response.put("maxActiveLoans", maxActiveLoans);
-        response.put("membershipMonths", monthsMember);
-        response.put("requiredMonths", minMembershipMonths);
+        response.put("maxLoanLimit", maxLoanLimit); // Frontend will use this for the slider
+        response.put("currency", "KES");
 
         return response;
     }

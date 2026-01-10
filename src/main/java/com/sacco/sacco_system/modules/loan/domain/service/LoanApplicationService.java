@@ -1,7 +1,8 @@
 package com.sacco.sacco_system.modules.loan.domain.service;
 
 import com.sacco.sacco_system.modules.core.exception.ApiException;
-import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository; // ✅ Added Import
+import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
 import com.sacco.sacco_system.modules.finance.domain.service.TransactionService;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanRequestDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
@@ -10,6 +11,7 @@ import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanApplicationDraftRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
+import com.sacco.sacco_system.modules.member.domain.entity.EmploymentDetails; // ✅ Import
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode; // ✅ Import
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
@@ -36,7 +39,8 @@ public class LoanApplicationService {
     private final MemberRepository memberRepository;
     private final LoanEligibilityService eligibilityService;
     private final TransactionService transactionService;
-    private final TransactionRepository transactionRepository; // ✅ Injected to check duplicates
+    private final TransactionRepository transactionRepository;
+    private final AccountingService accountingService;
 
     // --- READ CURRENT DRAFT ---
     public Optional<LoanApplicationDraft> getCurrentDraft(String email) {
@@ -78,7 +82,7 @@ public class LoanApplicationService {
         });
     }
 
-    // --- STEP 2: CONFIRM FEE (Fixed Duplicate Transaction Bug) ---
+    // --- STEP 2: CONFIRM FEE ---
     @Transactional
     public LoanApplicationDraft confirmDraftFee(UUID draftId, String paymentReference) {
         LoanApplicationDraft draft = draftRepository.findById(draftId)
@@ -86,28 +90,23 @@ public class LoanApplicationService {
 
         if (draft.isFeePaid()) return draft;
 
-        // ✅ CRITICAL FIX: Check if PaymentService already created the transaction
         boolean transactionExists = transactionRepository.findByExternalReference(paymentReference).isPresent();
 
         if (!transactionExists) {
-            // Only record if PaymentService didn't catch it
             transactionService.recordProcessingFee(
                     draft.getMember(),
                     new BigDecimal("500"),
                     paymentReference,
                     "4000"
             );
-        } else {
-            log.info("Transaction {} already exists. Skipping ledger recording.", paymentReference);
         }
 
         draft.setFeePaid(true);
         draft.setStatus(LoanApplicationDraft.DraftStatus.FEE_PAID);
-
         return draftRepository.save(draft);
     }
 
-    // --- STEP 3: CONVERT TO LOAN ---
+    // --- STEP 3: CONVERT TO LOAN (WITH ALL GUARDRAILS) ---
     @Transactional
     public Loan createLoanFromDraft(UUID draftId, LoanRequestDTO request) {
         LoanApplicationDraft draft = draftRepository.findById(draftId)
@@ -120,12 +119,41 @@ public class LoanApplicationService {
         LoanProduct product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new ApiException("Product not found", 404));
 
-        if (request.getAmount().compareTo(product.getMinAmount()) < 0 ||
-                request.getAmount().compareTo(product.getMaxAmount()) > 0) {
-            throw new ApiException("Amount is outside product limits", 400);
+        // 1. Validate Product Min/Max Amount
+        if (request.getAmount().compareTo(product.getMinAmount()) < 0) {
+            throw new ApiException("Amount is below the minimum allowed for this product (" + product.getMinAmount() + ")", 400);
+        }
+        if (request.getAmount().compareTo(product.getMaxAmount()) > 0) {
+            throw new ApiException("Amount exceeds the maximum allowed for this product (" + product.getMaxAmount() + ")", 400);
         }
 
+        // 2. Validate Duration
+        if (request.getDurationWeeks() > product.getMaxDurationWeeks()) {
+            throw new ApiException("Duration exceeds the maximum allowed (" + product.getMaxDurationWeeks() + " weeks)", 400);
+        }
+
+        // 3. Validate Global Limit (Savings * Multiplier)
+        BigDecimal memberLimit = eligibilityService.calculateMaxLoanLimit(draft.getMember());
+        if (request.getAmount().compareTo(memberLimit) > 0) {
+            throw new ApiException("Amount exceeds your eligible limit based on savings (KES " + memberLimit + ")", 400);
+        }
+
+        // 4. ✅ NEW GUARDRAIL: The 1/3rd Rule (Ability to Pay)
+        validateAbilityToPay(draft.getMember(), request.getAmount(), request.getDurationWeeks(), product);
+
         String loanNumber = "LN-" + (100000 + (long)(Math.random() * 900000));
+
+        // 5. ✅ NEW GUARDRAIL: Sacco Liquidity Check (Source of Truth)
+        // Checks strictly against GL Balances minus Statutory Reserve
+        BigDecimal lendableLiquidity = accountingService.calculateLendableLiquidity();
+
+        if (request.getAmount().compareTo(lendableLiquidity) > 0) {
+            log.warn("Loan Rejected: Liquidity Constraint. Req: {}, Lendable: {}", request.getAmount(), lendableLiquidity);
+            throw new ApiException(
+                    "The Sacco currently has insufficient lendable funds (Reserve Protection Active). Please try a smaller amount.",
+                    400
+            );
+        }
 
         Loan loan = Loan.builder()
                 .member(draft.getMember())
@@ -146,6 +174,60 @@ public class LoanApplicationService {
         draftRepository.save(draft);
 
         return savedLoan;
+
+    }
+
+    /**
+     * ✅ Calculates estimated monthly installment and checks against 2/3 of Net Income.
+     */
+    private void validateAbilityToPay(Member member, BigDecimal amount, int durationWeeks, LoanProduct product) {
+        EmploymentDetails employment = member.getEmploymentDetails();
+        BigDecimal netIncome = (employment != null) ? employment.getNetMonthlyIncome() : BigDecimal.ZERO;
+
+        // If income is not set, they fail this check (unless you want a bypass for Self-Guaranteed loans)
+        if (netIncome == null || netIncome.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException("Valid employment income is required to assess ability to repay. Please update your profile.", 400);
+        }
+
+        // Convert Weeks to Months (Approximate: Weeks / 4)
+        BigDecimal months = BigDecimal.valueOf(durationWeeks).divide(BigDecimal.valueOf(4), 2, RoundingMode.HALF_UP);
+        if (months.compareTo(BigDecimal.ZERO) == 0) months = BigDecimal.ONE;
+
+        // Determine Monthly Installment
+        BigDecimal installment;
+        BigDecimal rate = product.getInterestRate().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+
+        if (product.getInterestType() == LoanProduct.InterestType.FLAT) {
+            // Flat Rate: (P + (P * R * T)) / T
+            BigDecimal totalInterest = amount.multiply(rate).multiply(months);
+            BigDecimal totalPayable = amount.add(totalInterest);
+            installment = totalPayable.divide(months, 2, RoundingMode.HALF_UP);
+        } else {
+            // Reducing Balance (Amortization)
+            // PMT = P * ( r(1+r)^n ) / ( (1+r)^n - 1 )
+            double r = rate.doubleValue(); // Monthly rate
+            double n = months.doubleValue();
+
+            if (r == 0) {
+                installment = amount.divide(months, 2, RoundingMode.HALF_UP);
+            } else {
+                double numerator = r * Math.pow(1 + r, n);
+                double denominator = Math.pow(1 + r, n) - 1;
+                BigDecimal factor = BigDecimal.valueOf(numerator / denominator);
+                installment = amount.multiply(factor);
+            }
+        }
+
+        // The 1/3 Rule: Installment must not exceed 2/3 (66.67%) of Net Income
+        BigDecimal maxAllowableInstallment = netIncome.multiply(new BigDecimal("0.6667"));
+
+        if (installment.compareTo(maxAllowableInstallment) > 0) {
+            throw new ApiException(String.format(
+                    "Ability to Pay Check Failed: Estimated monthly installment (KES %s) exceeds 2/3 of your net income (KES %s). Please increase the duration or reduce the amount.",
+                    installment.setScale(2, RoundingMode.HALF_UP),
+                    maxAllowableInstallment.setScale(2, RoundingMode.HALF_UP)
+            ), 400);
+        }
     }
 
     // --- EXTRAS ---

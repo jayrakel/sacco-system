@@ -15,6 +15,7 @@ import com.sacco.sacco_system.modules.finance.domain.repository.JournalLineRepos
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -48,6 +49,7 @@ public class AccountingService {
     private final GlMappingRepository glMappingRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final JournalLineRepository journalLineRepository;
+    private final SavingsAccountRepository savingsAccountRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -73,6 +75,35 @@ public class AccountingService {
         private String accountCode;
         private BigDecimal debit = BigDecimal.ZERO;
         private BigDecimal credit = BigDecimal.ZERO;
+    }
+
+    /**
+     * ✅ SOURCE OF TRUTH: Calculate "True Lendable Liquidity"
+     * Logic:
+     * 1. Sum balances of all "10xxx" accounts (Cash, Bank, M-Pesa).
+     * 2. Subtract 15% of Total Member Savings (Statutory Reserve).
+     */
+    public BigDecimal calculateLendableLiquidity() {
+        // 1. Get Total Liquid Assets (The actual money you have)
+        List<GLAccount> liquidAccounts = glAccountRepository.findByCodeStartingWith("10");
+        BigDecimal totalCash = liquidAccounts.stream()
+                .filter(GLAccount::isActive)
+                .map(GLAccount::getBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 2. Get Total Member Savings (What you owe members)
+        BigDecimal totalMemberSavings = savingsAccountRepository.getTotalActiveAccountsBalance();
+        if (totalMemberSavings == null) totalMemberSavings = BigDecimal.ZERO;
+
+        // 3. Calculate Statutory Reserve (15% MUST stay in bank)
+        BigDecimal statutoryReserve = totalMemberSavings.multiply(new BigDecimal("0.15"));
+
+        // 4. Calculate Lendable Amount
+        BigDecimal lendable = totalCash.subtract(statutoryReserve);
+
+        log.info("Liquidity Check: Total Cash: {}, Reserve: {}, Lendable: {}", totalCash, statutoryReserve, lendable);
+
+        return lendable.compareTo(BigDecimal.ZERO) > 0 ? lendable : BigDecimal.ZERO;
     }
 
     /**
@@ -105,6 +136,7 @@ public class AccountingService {
     public void postEvent(String eventName, String description, String referenceNo, BigDecimal amount) {
         postEvent(eventName, description, referenceNo, amount, null, null);
     }
+
 
     /**
      * Core double-entry posting method
@@ -139,6 +171,7 @@ public class AccountingService {
 
         entry.setLines(List.of(debitLine, creditLine));
 
+        // This is where the "Source of Truth" is updated
         updateBalance(debitAcct, amount, true);
         updateBalance(creditAcct, amount, false);
 
@@ -192,6 +225,7 @@ public class AccountingService {
         journalEntryRepository.save(entry);
         log.info("Posted manual journal entry: {}", request.getDescription());
     }
+
 
     /**
      * Update GL account balance based on account type and debit/credit
