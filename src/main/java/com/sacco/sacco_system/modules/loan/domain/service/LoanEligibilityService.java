@@ -29,13 +29,13 @@ public class LoanEligibilityService {
     private final SystemSettingService systemSettingService;
 
     /**
-     * ✅ DOMAIN LOGIC: Calculate Max Loan Limit
+     * ✅ DOMAIN LOGIC: Calculate Gross Loan Limit
      * Rule: Limit = Total Savings * Global Multiplier (from System Settings)
-     * This applies to ALL members regardless of employment status.
      */
     public BigDecimal calculateMaxLoanLimit(Member member) {
         // 1. Get Total Savings (Share Capital + Deposits)
         BigDecimal totalSavings = savingsAccountRepository.getTotalSavings(member.getId());
+        if (totalSavings == null) totalSavings = BigDecimal.ZERO;
 
         // 2. Fetch Global Multiplier (Default to 3 if not set)
         String multiplierStr = systemSettingService.getString("LOAN_LIMIT_MULTIPLIER", "3");
@@ -45,6 +45,43 @@ public class LoanEligibilityService {
         return totalSavings.multiply(multiplier);
     }
 
+    /**
+     * ✅ NEW: Detailed Limits for Dashboard & Guarantor Manager
+     * Used by GET /api/loans/limits to populate the "Self-Guarantee" bar correctly.
+     */
+    public Map<String, Object> getLoanLimits(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new ApiException("Member not found", 404));
+
+        // 1. Total Savings (The Actual Money you have)
+        // This is what the frontend needs to stop "guessing"
+        BigDecimal totalDeposits = savingsAccountRepository.getTotalSavings(member.getId());
+        if (totalDeposits == null) totalDeposits = BigDecimal.ZERO;
+
+        // 2. Gross Limit (e.g. 3x Savings)
+        BigDecimal grossLimit = calculateMaxLoanLimit(member);
+
+        // 3. Current Liabilities (Active Loans that eat into your limit)
+        BigDecimal currentLiability = loanRepository.getTotalOutstandingBalance(member.getId());
+        if (currentLiability == null) currentLiability = BigDecimal.ZERO;
+
+        // 4. Net Eligible (Gross - Liability)
+        BigDecimal netEligible = grossLimit.subtract(currentLiability);
+        if (netEligible.compareTo(BigDecimal.ZERO) < 0) netEligible = BigDecimal.ZERO;
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("maxEligibleAmount", netEligible); // What you can borrow NOW
+        response.put("grossLimit", grossLimit);         // Your theoretical max (3x Savings)
+        response.put("totalDeposits", totalDeposits);   // ✅ The Fix: Your actual savings
+        response.put("currentLiability", currentLiability);
+        response.put("currency", "KES");
+
+        return response;
+    }
+
+    /**
+     * General Eligibility Check (Min Savings, Membership Duration, etc.)
+     */
     public Map<String, Object> checkEligibility(String email) {
         Member member = memberRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Member profile not found", 400));
@@ -56,6 +93,8 @@ public class LoanEligibilityService {
 
         // --- Fetch Member Data ---
         BigDecimal currentSavings = savingsAccountRepository.getTotalSavings(member.getId());
+        if (currentSavings == null) currentSavings = BigDecimal.ZERO;
+
         long activeLoans = loanRepository.countActiveLoans(member.getId());
 
         LocalDate joinDate = (member.getMembershipDate() != null)
@@ -71,6 +110,7 @@ public class LoanEligibilityService {
             isEligible = false;
             reasons.add("Insufficient Savings (Min: " + minSavings + ")");
         }
+        // Note: We might allow multiple loans if within limit, but keeping config check for now
         if (activeLoans >= maxActiveLoans) {
             isEligible = false;
             reasons.add("Max active loans reached");
@@ -81,13 +121,15 @@ public class LoanEligibilityService {
         }
 
         // --- Calculate Limit ---
-        BigDecimal maxLoanLimit = calculateMaxLoanLimit(member);
+        // We reuse the getLoanLimits logic to return consistent data
+        Map<String, Object> limits = getLoanLimits(email);
 
         Map<String, Object> response = new HashMap<>();
         response.put("eligible", isEligible);
         response.put("reasons", reasons);
         response.put("currentSavings", currentSavings);
-        response.put("maxLoanLimit", maxLoanLimit); // Frontend will use this for the slider
+        response.put("maxLoanLimit", limits.get("maxEligibleAmount"));
+        response.put("totalDeposits", limits.get("totalDeposits")); // Ensure consistency
         response.put("currency", "KES");
 
         return response;

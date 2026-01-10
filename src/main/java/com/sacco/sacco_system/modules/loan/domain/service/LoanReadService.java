@@ -5,7 +5,9 @@ import com.sacco.sacco_system.modules.loan.api.dto.LoanDashboardDTO;
 import com.sacco.sacco_system.modules.loan.api.dto.LoanResponseDTO;
 import com.sacco.sacco_system.modules.loan.domain.entity.Guarantor;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.entity.LoanApplicationDraft;
 import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanApplicationDraftRepository; // ✅ Import
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
@@ -15,10 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.time.LocalDate;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,6 +30,7 @@ public class LoanReadService {
     private final MemberRepository memberRepository;
     private final GuarantorRepository guarantorRepository;
     private final LoanEligibilityService eligibilityService;
+    private final LoanApplicationDraftRepository draftRepository; // ✅ Injected
 
     @Transactional(readOnly = true)
     public LoanDashboardDTO getMemberDashboard(String email) {
@@ -37,52 +38,54 @@ public class LoanReadService {
 
         Optional<Member> memberOpt = memberRepository.findByEmail(email);
 
-        // ✅ FIXED: Handle non-member Users gracefully instead of throwing 400
+        // Handle non-member Users gracefully
         if (memberOpt.isEmpty()) {
             return LoanDashboardDTO.builder()
-                    .canApply(false)
-                    .eligibilityMessage("Please complete your Member Profile to access loan services.")
-                    .eligibilityDetails(Map.of("eligible", false, "reason", "No Member Profile"))
                     .activeLoans(Collections.emptyList())
-                    .activeLoansCount(0)
-                    .totalOutstandingBalance(0.0)
+                    .pendingApplications(Collections.emptyList())
+                    .loansInProgress(Collections.emptyList())
+                    .currentDraft(null)
                     .build();
         }
 
         Member member = memberOpt.get();
 
-        // 1. Check Eligibility
-        Map<String, Object> eligibility = eligibilityService.checkEligibility(email);
-        boolean isEligible = (boolean) eligibility.get("eligible");
+        // 1. Fetch all loans for the member
+        List<Loan> allLoans = loanRepository.findByMemberId(member.getId());
 
-        // 2. Fetch Loans
-        List<Loan> loans = loanRepository.findByMemberId(member.getId());
-
-        // 3. Convert to DTOs
-        List<LoanResponseDTO> loanDTOs = loans.stream()
-                .map(this::mapToDTO)
+        // 2. Filter: Active Loans (Running or In Arrears)
+        List<Loan> activeLoans = allLoans.stream()
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.ACTIVE || l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS)
                 .collect(Collectors.toList());
 
-        BigDecimal totalBalance = loans.stream()
-                .map(Loan::getTotalOutstandingAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // 3. Filter: Pending Applications (Submitted for approval)
+        List<Loan> pendingApplications = allLoans.stream()
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED || l.getLoanStatus() == Loan.LoanStatus.APPROVED)
+                .collect(Collectors.toList());
+
+        // 4. ✅ NEW: Loans In Progress (Stuck at Guarantors Step)
+        // These need a "Resume" button on the dashboard
+        List<Loan> loansInProgress = allLoans.stream()
+                .filter(l -> l.getLoanStatus() == Loan.LoanStatus.PENDING_GUARANTORS)
+                .collect(Collectors.toList());
+
+        // 5. ✅ NEW: Fetch Current Draft (Stuck at Fee Payment or Details)
+        Optional<LoanApplicationDraft> currentDraft = draftRepository.findFirstByMemberIdAndStatusIn(
+                member.getId(),
+                Arrays.asList(LoanApplicationDraft.DraftStatus.PENDING_FEE, LoanApplicationDraft.DraftStatus.FEE_PAID)
+        );
 
         return LoanDashboardDTO.builder()
-                .canApply(isEligible)
-                .eligibilityMessage(isEligible
-                        ? "You are eligible to apply for a new loan."
-                        : "You are currently not eligible for a new loan.")
-                .eligibilityDetails(eligibility)
-                .activeLoans(loanDTOs)
-                .activeLoansCount(loans.size())
-                .totalOutstandingBalance(totalBalance.doubleValue())
+                .activeLoans(activeLoans)
+                .pendingApplications(pendingApplications)
+                .loansInProgress(loansInProgress) // ✅ Added
+                .currentDraft(currentDraft.orElse(null)) // ✅ Added
                 .build();
     }
 
     public List<LoanResponseDTO> getMemberLoans(String email) {
         Optional<Member> memberOpt = memberRepository.findByEmail(email);
 
-        // ✅ FIXED: Return empty list if User is not a Member
         if (memberOpt.isEmpty()) {
             return Collections.emptyList();
         }
@@ -98,7 +101,6 @@ public class LoanReadService {
     public List<Map<String, Object>> getGuarantorRequests(String email) {
         Optional<Member> memberOpt = memberRepository.findByEmail(email);
 
-        // ✅ FIXED: Return empty list if User is not a Member (cannot be a guarantor yet)
         if (memberOpt.isEmpty()) {
             return Collections.emptyList();
         }
@@ -110,7 +112,7 @@ public class LoanReadService {
                 "borrowerName", g.getLoan().getMember().getFirstName() + " " + g.getLoan().getMember().getLastName(),
                 "amount", g.getGuaranteedAmount() != null ? g.getGuaranteedAmount() : BigDecimal.ZERO,
                 "loanType", g.getLoan().getProduct().getProductName(),
-                "dateRequested", g.getLoan().getApplicationDate()
+                "dateRequested", g.getLoan().getApplicationDate() != null ? g.getLoan().getApplicationDate() : LocalDate.now()
         )).collect(Collectors.toList());
     }
 
@@ -118,7 +120,6 @@ public class LoanReadService {
      * Returns loans awaiting approval (SUBMITTED status).
      */
     public List<Map<String, Object>> getPendingVotes(String email) {
-        // In real apps, verify user role here (e.g., Committee Member)
         List<Loan> loans = loanRepository.findByLoanStatus(Loan.LoanStatus.SUBMITTED);
 
         return loans.stream().map(l -> Map.<String, Object>of(

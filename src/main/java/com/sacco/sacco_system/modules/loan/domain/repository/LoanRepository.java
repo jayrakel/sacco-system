@@ -39,30 +39,41 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
     // Simple single-status fetch (Global)
     List<Loan> findByLoanStatus(LoanStatus status);
 
-    // ✅ NEW: Find loans for a member with specific statuses (Used for Draft Resumption)
-    // Returns List because a member *might* theoretically have multiple closed drafts (though logic prevents it)
+    // ✅ Find loans for a member with specific statuses (Used for Draft Resumption)
     List<Loan> findByMemberIdAndLoanStatusIn(UUID memberId, Collection<LoanStatus> statuses);
 
-    // ✅ NEW: Find a specific loan by Member and Status (Used for Duplicate Checks)
+    // ✅ Find a specific loan by Member and Status (Used for Duplicate Checks)
     Optional<Loan> findByMemberAndLoanStatus(Member member, LoanStatus status);
 
     // --- 3. DASHBOARD METRICS ---
 
     /**
-     * Calculates total volume of money disbursed historically.
+     * Calculates total volume of money disbursed historically (Global).
      */
     @Query("SELECT COALESCE(SUM(l.principalAmount), 0) FROM Loan l WHERE l.loanStatus IN ('ACTIVE', 'DISBURSED', 'IN_ARREARS', 'CLOSED')")
     BigDecimal getTotalDisbursedLoans();
 
     /**
-     * Calculates total money currently owed (Outstanding Balance).
+     * Calculates total money currently owed (Global Outstanding Balance).
      */
     @Query("SELECT COALESCE(SUM(l.totalOutstandingAmount), 0) FROM Loan l WHERE l.loanStatus IN ('ACTIVE', 'DISBURSED', 'IN_ARREARS')")
     BigDecimal getTotalOutstandingLoans();
 
     /**
-     * Custom count for Eligibility Service (Alternative to method name query)
+     * Custom count for Eligibility Service
      */
     @Query("SELECT COUNT(l) FROM Loan l WHERE l.member.id = :memberId AND l.loanStatus IN ('ACTIVE', 'IN_ARREARS')")
     long countActiveLoans(@Param("memberId") UUID memberId);
+
+    // --- 4. FINANCIAL GUARDRAILS ---
+
+    /**
+     * ✅ NEW: Calculate a SPECIFIC MEMBER'S total loan burden.
+     * Used for Solvency Checks when they try to guarantee someone else.
+     * Formula: Own Loans + Guarantees must not exceed Deposits.
+     */
+    @Query("SELECT COALESCE(SUM(l.totalOutstandingAmount), 0) FROM Loan l " +
+            "WHERE l.member.id = :memberId " +
+            "AND l.loanStatus IN ('ACTIVE', 'IN_ARREARS')")
+    BigDecimal getTotalOutstandingBalance(@Param("memberId") UUID memberId);
 }
