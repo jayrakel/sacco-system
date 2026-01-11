@@ -266,6 +266,7 @@ public class MeetingService {
                     data.put("meetingTime", meeting.getMeetingTime());
                     data.put("venue", meeting.getVenue());
                     data.put("status", meeting.getStatus().name());
+                    data.put("minutes", meeting.getMinutes()); // ✅ Include minutes
 
                     // Get loan count for this meeting
                     List<MeetingLoanAgenda> agendas = agendaRepository.findByMeetingOrderByAgendaOrderAsc(meeting);
@@ -361,6 +362,21 @@ public class MeetingService {
         meetingRepository.save(meeting);
 
         log.info("✅ Meeting {} updated by {}", meeting.getMeetingNumber(), updatedBy);
+    }
+
+    /**
+     * Update meeting minutes (can be called by secretary to edit auto-generated or write custom minutes)
+     */
+    @Transactional
+    public void updateMinutes(UUID meetingId, String minutes, String updatedBy) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new ApiException("Meeting not found", 404));
+
+        meeting.setMinutes(minutes);
+        meeting.setUpdatedBy(updatedBy);
+        meetingRepository.save(meeting);
+
+        log.info("✅ Minutes updated for meeting {} by {}", meeting.getMeetingNumber(), updatedBy);
     }
 
     /**

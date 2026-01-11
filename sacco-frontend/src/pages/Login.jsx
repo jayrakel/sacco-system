@@ -41,7 +41,7 @@ export default function Login() {
         switch (userData.role) {
           case 'ADMIN': navigate('/admin-dashboard'); break;
           case 'LOAN_OFFICER': navigate('/loans-dashboard'); break;
-          case 'TREASURER': navigate('/finance-dashboard'); break;
+          case 'TREASURER': navigate('/treasurer-dashboard'); break;
           case 'CHAIRPERSON':
           case 'ASSISTANT_CHAIRPERSON': navigate('/chairperson-dashboard'); break;
           case 'SECRETARY':

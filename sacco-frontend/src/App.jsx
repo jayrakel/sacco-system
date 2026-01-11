@@ -18,8 +18,10 @@ import LoansDashboard from './pages/LoansDashboard';
 import FinanceDashboard from './pages/FinanceDashboard';
 import ChairpersonDashboard from './pages/ChairpersonDashboard';
 import SecretaryDashboard from './pages/SecretaryDashboard';
+import TreasurerDashboard from './pages/TreasurerDashboard';
 import CommitteeVotingPage from './pages/CommitteeVotingPage';
 import MeetingResultsPage from './pages/MeetingResultsPage';
+import MeetingMinutesPage from './pages/MeetingMinutesPage';
 
 
 // Error Pages
@@ -65,12 +67,14 @@ function App() {
           {/* Role Dashboards */}
           <Route path="/loans-dashboard" element={<LoansDashboard />} />
           <Route path="/finance-dashboard" element={<FinanceDashboard />} />
+          <Route path="/treasurer-dashboard" element={<TreasurerDashboard />} />
           <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
           <Route path="/secretary-dashboard" element={<SecretaryDashboard />} />
 
           {/* Voting & Meetings */}
           <Route path="/committee/voting" element={<CommitteeVotingPage />} />
           <Route path="/meetings/:meetingId/results" element={<MeetingResultsPage />} />
+          <Route path="/meetings/:meetingId/minutes" element={<MeetingMinutesPage />} />
 
           {/* Admin Tools */}
           <Route path="/add-member" element={<AddMember />} />

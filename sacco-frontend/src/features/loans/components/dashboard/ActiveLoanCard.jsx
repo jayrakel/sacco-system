@@ -12,6 +12,12 @@ export default function ActiveLoanCard({ loan }) {
 
     const daysRemaining = getDaysRemaining(loan.nextPaymentDate);
 
+    // Use domain directory fields
+    const outstandingBalance = loan.totalOutstandingAmount || 0;
+    const weeklyPayment = loan.weeklyRepaymentAmount || 0;
+    const arrears = loan.totalArrears || 0;
+    const prepaid = loan.totalPrepaid || 0;
+
     return (
         <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
@@ -22,10 +28,10 @@ export default function ActiveLoanCard({ loan }) {
                     <div>
                         <div className="flex items-center gap-2 mb-1 opacity-80">
                             <span className="text-xs font-bold uppercase tracking-widest text-indigo-300">Total Outstanding Balance</span>
-                            {loan.totalArrears > 0 && <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold border border-red-500/30">IN ARREARS</span>}
+                            {arrears > 0 && <span className="bg-red-500/20 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold border border-red-500/30">IN ARREARS</span>}
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black tracking-tight">
-                            KES {Number(loan.loanBalance).toLocaleString()}
+                            KES {Number(outstandingBalance).toLocaleString()}
                         </h1>
                     </div>
 
@@ -34,14 +40,14 @@ export default function ActiveLoanCard({ loan }) {
                             <div className="flex items-center gap-2 mb-2 text-indigo-200">
                                 <Calendar size={16}/> <span className="text-xs font-bold">Weekly Due</span>
                             </div>
-                            <p className="text-xl font-bold">KES {Number(loan.weeklyRepaymentAmount).toLocaleString()}</p>
+                            <p className="text-xl font-bold">KES {Number(weeklyPayment).toLocaleString()}</p>
                         </div>
-                        <div className={`p-4 rounded-2xl backdrop-blur-sm border ${loan.totalArrears > 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
-                            <div className={`flex items-center gap-2 mb-2 ${loan.totalArrears > 0 ? 'text-red-300' : 'text-emerald-300'}`}>
-                                {loan.totalArrears > 0 ? <AlertTriangle size={16}/> : <Wallet size={16}/>}
-                                <span className="text-xs font-bold">{loan.totalArrears > 0 ? "Arrears" : "Prepaid"}</span>
+                        <div className={`p-4 rounded-2xl backdrop-blur-sm border ${arrears > 0 ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
+                            <div className={`flex items-center gap-2 mb-2 ${arrears > 0 ? 'text-red-300' : 'text-emerald-300'}`}>
+                                {arrears > 0 ? <AlertTriangle size={16}/> : <Wallet size={16}/>}
+                                <span className="text-xs font-bold">{arrears > 0 ? "Arrears" : "Prepaid"}</span>
                             </div>
-                            <p className="text-xl font-bold">KES {Number(loan.totalArrears > 0 ? loan.totalArrears : loan.totalPrepaid).toLocaleString()}</p>
+                            <p className="text-xl font-bold">KES {Number(arrears > 0 ? arrears : prepaid).toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
@@ -68,7 +74,7 @@ export default function ActiveLoanCard({ loan }) {
                             <div className="text-center py-6 opacity-60"><p className="text-sm">Schedule Generated</p></div>
                         )}
                     </div>
-                    <button onClick={() => alert(`Pay KES ${loan.weeklyRepaymentAmount} to Paybill: 123456\nAccount: ${loan.loanNumber}`)}
+                    <button onClick={() => alert(`Pay KES ${weeklyPayment} to Paybill: 123456\nAccount: ${loan.loanNumber}`)}
                         className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
                         <CreditCard size={18}/> Make Repayment
                     </button>

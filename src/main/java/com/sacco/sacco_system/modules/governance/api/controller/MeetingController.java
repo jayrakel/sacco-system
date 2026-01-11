@@ -130,6 +130,21 @@ public class MeetingController {
     }
 
     /**
+     * Update meeting minutes
+     */
+    @PatchMapping("/{meetingId}/minutes")
+    public ResponseEntity<ApiResponse<Object>> updateMinutes(
+            @PathVariable UUID meetingId,
+            @RequestBody Map<String, String> payload,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        String minutes = payload.get("minutes");
+        meetingService.updateMinutes(meetingId, minutes, userDetails.getUsername());
+
+        return ResponseEntity.ok(new ApiResponse<>(true, "Minutes updated successfully"));
+    }
+
+    /**
      * Update meeting status
      */
     @PatchMapping("/{meetingId}/status")

@@ -20,12 +20,9 @@ export default function MemberOverview({ user }) {
                 const notifRes = await api.get('/api/notifications');
                 if (notifRes.data.success) setNotifications(notifRes.data.data.slice(0, 5));
 
-                // 3. Get Loans (Requires Id - typically attached to User or fetched separately)
-                // Assuming user object has Id, or we rely on the backend finding it via context
-                if (user?.Id) {
-                    const loanRes = await api.get(`/api/loans/member/${user.Id}`);
-                    if (loanRes.data.success) setLoans(loanRes.data.data);
-                }
+                // 3. Get Loans - Use the my-loans endpoint
+                const loanRes = await api.get('/api/loans/my-loans');
+                if (loanRes.data.success) setLoans(loanRes.data.data);
 
                 setLoading(false);
             } catch (e) {
@@ -36,9 +33,13 @@ export default function MemberOverview({ user }) {
         loadData();
     }, [user]);
 
-    // Calculate Loan Totals
-    const totalLoanBalance = loans.reduce((acc, loan) => acc + (loan.loanBalance || 0), 0);
-    const activeLoansCount = loans.filter(l => l.status === 'DISBURSED' || l.status === 'APPROVED').length;
+    // Calculate Loan Totals - Use domain directory fields
+    const totalLoanBalance = loans.reduce((acc, loan) =>
+        acc + (loan.totalOutstandingAmount || 0), 0
+    );
+    const activeLoansCount = loans.filter(l =>
+        l.loanStatus === 'DISBURSED' || l.loanStatus === 'ACTIVE'
+    ).length;
 
     if (loading) return <div className="p-8 text-center text-slate-400">Loading your dashboard...</div>;
 

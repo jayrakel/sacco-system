@@ -28,6 +28,7 @@ export default function SecretaryDashboard() {
     const [scheduledMeetings, setScheduledMeetings] = useState([]);
     const [activeMeetings, setActiveMeetings] = useState([]);
     const [votingClosedMeetings, setVotingClosedMeetings] = useState([]);
+    const [completedMeetings, setCompletedMeetings] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [meetingToEdit, setMeetingToEdit] = useState(null);
@@ -50,6 +51,7 @@ export default function SecretaryDashboard() {
             setScheduledMeetings(allMeetings.filter(m => m.status === 'SCHEDULED'));
             setActiveMeetings(allMeetings.filter(m => m.status === 'IN_PROGRESS'));
             setVotingClosedMeetings(allMeetings.filter(m => m.status === 'VOTING_CLOSED'));
+            setCompletedMeetings(allMeetings.filter(m => m.status === 'COMPLETED'));
 
             setLastRefresh(new Date());
         } catch (error) {
@@ -150,6 +152,7 @@ export default function SecretaryDashboard() {
                         <TabButton id="awaiting" label="Loans Awaiting Meeting" icon={AlertCircle} />
                         <TabButton id="meetings" label="Scheduled Meetings" icon={Calendar} />
                         <TabButton id="active" label="Active Voting" icon={Vote} />
+                        <TabButton id="minutes" label="Meeting Minutes" icon={FileText} />
                         <TabButton id="history" label="Meeting History" icon={History} />
                     </div>
                 </div>
@@ -178,11 +181,11 @@ export default function SecretaryDashboard() {
                         textColor="text-green-900"
                     />
                     <StatCard
-                        icon={<XCircle className="text-orange-600" size={24} />}
-                        label="Awaiting Finalization"
-                        value={votingClosedMeetings.length}
-                        bgColor="bg-orange-50"
-                        textColor="text-orange-900"
+                        icon={<FileText className="text-purple-600" size={24} />}
+                        label="Completed Minutes"
+                        value={completedMeetings.filter(m => m.minutes).length}
+                        bgColor="bg-purple-50"
+                        textColor="text-purple-900"
                     />
                 </div>
 
@@ -207,6 +210,10 @@ export default function SecretaryDashboard() {
                         meetings={[...activeMeetings, ...votingClosedMeetings]}
                         onFinalize={handleFinalizeVoting}
                     />
+                )}
+
+                {activeTab === 'minutes' && (
+                    <MinutesListSection meetings={completedMeetings} />
                 )}
 
                 {activeTab === 'history' && (
@@ -401,6 +408,139 @@ function MeetingCard({ meeting }) {
                     View
                 </Link>
             </div>
+        </div>
+    );
+}
+
+// Minutes List Section Component
+function MinutesListSection({ meetings }) {
+    const meetingsWithMinutes = meetings.filter(m => m.minutes);
+
+    return (
+        <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                    <FileText size={20} />
+                    Meeting Minutes Archive
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                    View and manage all meeting minutes
+                </p>
+            </div>
+
+            {meetingsWithMinutes.length === 0 ? (
+                <div className="p-8 text-center">
+                    <FileText className="mx-auto h-12 w-12 text-slate-400 mb-4" />
+                    <p className="text-slate-500">No minutes available yet</p>
+                    <p className="text-sm text-slate-400 mt-1">
+                        Minutes will appear here after meetings are completed and finalized
+                    </p>
+                </div>
+            ) : (
+                <div className="p-6">
+                    <div className="space-y-4">
+                        {meetingsWithMinutes
+                            .sort((a, b) => new Date(b.meetingDate) - new Date(a.meetingDate))
+                            .map((meeting) => (
+                                <div
+                                    key={meeting.id}
+                                    className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition bg-gradient-to-r from-white to-slate-50"
+                                >
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1">
+                                            <div className="flex items-start gap-3 mb-3">
+                                                <div className="flex-shrink-0 mt-1">
+                                                    <div className="h-10 w-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                                                        <FileText className="text-purple-600" size={20} />
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h3 className="text-lg font-bold text-slate-800 mb-1">
+                                                        {meeting.title}
+                                                    </h3>
+                                                    <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                                                        <div className="flex items-center gap-1">
+                                                            <Calendar size={14} />
+                                                            {new Date(meeting.meetingDate).toLocaleDateString('en-US', {
+                                                                weekday: 'short',
+                                                                year: 'numeric',
+                                                                month: 'short',
+                                                                day: 'numeric'
+                                                            })}
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <Clock size={14} />
+                                                            {meeting.meetingTime}
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <MapPin size={14} />
+                                                            {meeting.venue}
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <Users size={14} />
+                                                            {meeting.loanCount} loan(s) reviewed
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <span className="text-xs text-slate-400">
+                                                            Meeting #: {meeting.meetingNumber}
+                                                        </span>
+                                                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                                            COMPLETED
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Minutes Preview */}
+                                            <div className="ml-13 mt-3 p-3 bg-white border border-slate-200 rounded-lg">
+                                                <p className="text-xs font-semibold text-slate-600 mb-2">Minutes Preview:</p>
+                                                <pre className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3 font-mono">
+                                                    {meeting.minutes}
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-2 mt-4 ml-13">
+                                        <Link
+                                            to={`/meetings/${meeting.id}/minutes`}
+                                            className="flex items-center gap-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition text-sm"
+                                        >
+                                            <Eye size={16} />
+                                            View Full Minutes
+                                        </Link>
+                                        <Link
+                                            to={`/meetings/${meeting.id}/results`}
+                                            className="flex items-center gap-1 px-3 py-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition border border-indigo-200"
+                                        >
+                                            <Vote size={16} />
+                                            Voting Results
+                                        </Link>
+                                        <button
+                                            onClick={() => {
+                                                const blob = new Blob([meeting.minutes], { type: 'text/plain' });
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `Minutes_${meeting.meetingNumber}.txt`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                URL.revokeObjectURL(url);
+                                            }}
+                                            className="flex items-center gap-1 px-3 py-2 text-sm font-semibold text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition border border-green-200"
+                                        >
+                                            <FileText size={16} />
+                                            Download
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -634,6 +774,16 @@ function ActiveVotingSection({ meetings, onFinalize }) {
                                         <Eye size={16} />
                                         {isVotingOpen ? 'View Live Results' : 'View Results'}
                                     </Link>
+
+                                    {(isVotingClosed || meeting.status === 'COMPLETED') && (
+                                        <Link
+                                            to={`/meetings/${meeting.id}/minutes`}
+                                            className="flex items-center gap-1 px-3 py-2 text-sm font-semibold text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition border border-green-200"
+                                        >
+                                            <FileText size={16} />
+                                            View Minutes
+                                        </Link>
+                                    )}
 
                                     {isVotingClosed && (
                                         <button
