@@ -1,8 +1,20 @@
 package com.sacco.sacco_system.modules.savings.domain.service;
 
-import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
-import com.sacco.sacco_system.modules.savings.api.dto.SavingsAccountDTO;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
+import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
+import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
+import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
+import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
+import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
+import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
+import com.sacco.sacco_system.modules.savings.api.dto.SavingsAccountDTO;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
+import com.sacco.sacco_system.modules.savings.domain.entity.Withdrawal;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,18 +26,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
-import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
-import com.sacco.sacco_system.modules.finance.domain.service.ReferenceCodeService;
-import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
-import com.sacco.sacco_system.modules.loan.domain.repository.GuarantorRepository;
-import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
-import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
-import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
-import com.sacco.sacco_system.modules.savings.domain.repository.SavingsProductRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -38,7 +38,7 @@ public class SavingsService {
     private final SavingsProductRepository savingsProductRepository;
     private final AccountingService accountingService;
     private final ReferenceCodeService referenceCodeService;
-    
+
     // ✅ ADDED: Dependencies to check liabilities
     private final LoanRepository loanRepository;
     private final GuarantorRepository guarantorRepository;
@@ -157,11 +157,11 @@ public class SavingsService {
 
         // ✅ POST TO ACCOUNTING with Source Account Override
         accountingService.postEvent(
-            "SAVINGS_DEPOSIT",
-            description != null ? description : "Savings Deposit - " + member.getMemberNumber(),
-            "DEP-" + savedAccount.getId(), 
-            amount,
-            sourceAccountCode 
+                "SAVINGS_DEPOSIT",
+                description != null ? description : "Savings Deposit - " + member.getMemberNumber(),
+                "DEP-" + savedAccount.getId(),
+                amount,
+                sourceAccountCode
         );
 
         return convertToDTO(savedAccount);
@@ -179,9 +179,9 @@ public class SavingsService {
         boolean hasActiveLoans = loanRepository.existsByMemberIdAndLoanStatusIn(
                 memberId,
                 List.of(
-                    Loan.LoanStatus.ACTIVE,
-                    Loan.LoanStatus.IN_ARREARS,
-                    Loan.LoanStatus.DISBURSED
+                        Loan.LoanStatus.ACTIVE,
+                        Loan.LoanStatus.IN_ARREARS,
+                        Loan.LoanStatus.DISBURSED
                 )
         );
 
@@ -193,9 +193,9 @@ public class SavingsService {
         boolean isActiveGuarantor = guarantorRepository.existsByMemberIdAndLoanLoanStatusIn(
                 memberId,
                 List.of(
-                    Loan.LoanStatus.ACTIVE,
-                    Loan.LoanStatus.IN_ARREARS,
-                    Loan.LoanStatus.DISBURSED
+                        Loan.LoanStatus.ACTIVE,
+                        Loan.LoanStatus.IN_ARREARS,
+                        Loan.LoanStatus.DISBURSED
                 )
         );
 
@@ -224,7 +224,7 @@ public class SavingsService {
         }
 
         member.setTotalSavings(BigDecimal.ZERO);
-        member.setMemberStatus(Member.MemberStatus.EXITED);  // ✅ Changed from setStatus to setMemberStatus
+        member.setMemberStatus(Member.MemberStatus.EXITED);
         memberRepository.save(member);
 
         Transaction tx = Transaction.builder()
@@ -255,27 +255,38 @@ public class SavingsService {
         throw new RuntimeException("Regular withdrawals are not allowed. Members can only withdraw when exiting the SACCO.");
     }
 
-    // ========================================================================
-    // 3. INTEREST CALCULATION
-    // ========================================================================
+    // ------------------------------------------------------------------------
+    // WEEKLY INTEREST LOGIC
+    // ------------------------------------------------------------------------
 
-    public void applyMonthlyInterest() {
+    public void applyWeeklyInterest() {
         List<SavingsAccount> accounts = savingsAccountRepository.findAll();
+
         for (SavingsAccount acc : accounts) {
-            if (acc.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0 && acc.getAccountStatus() == SavingsAccount.AccountStatus.ACTIVE) {
+            // 1. Basic Eligibility Checks
+            if (acc.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0
+                    && acc.getAccountStatus() == SavingsAccount.AccountStatus.ACTIVE) {
+
                 if (acc.getProduct() == null || acc.getProduct().getInterestRate() == null) continue;
 
                 BigDecimal annualRate = acc.getProduct().getInterestRate();
-                BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), 8, RoundingMode.HALF_UP);
-                BigDecimal interest = acc.getBalanceAmount().multiply(monthlyRate).setScale(2, RoundingMode.HALF_UP);
+
+                // ✅ UPDATED MATH: Annual Rate / 52 Weeks / 100 (Percentage)
+                // divisor = 5200
+                BigDecimal weeklyRate = annualRate.divide(BigDecimal.valueOf(5200), 10, RoundingMode.HALF_UP);
+
+                // Calculate Interest: Balance * WeeklyRate
+                BigDecimal interest = acc.getBalanceAmount().multiply(weeklyRate).setScale(2, RoundingMode.HALF_UP);
 
                 if (interest.compareTo(BigDecimal.ZERO) > 0) {
+                    // Update Balance
                     acc.setBalanceAmount(acc.getBalanceAmount().add(interest));
                     if(acc.getAccruedInterest() != null) {
                         acc.setAccruedInterest(acc.getAccruedInterest().add(interest));
                     }
                     savingsAccountRepository.save(acc);
 
+                    // Record Transaction
                     Transaction tx = Transaction.builder()
                             .member(acc.getMember())
                             .savingsAccount(acc)
@@ -283,21 +294,24 @@ public class SavingsService {
                             .amount(interest)
                             .paymentMethod(Transaction.PaymentMethod.SYSTEM)
                             .referenceCode(referenceCodeService.generateReferenceCode())
-                            .description("Monthly Interest - " + acc.getAccountNumber())
+                            .description("Weekly Interest - " + acc.getAccountNumber())
                             .balanceAfter(acc.getBalanceAmount())
+                            .transactionDate(LocalDateTime.now())
                             .build();
                     transactionRepository.save(tx);
 
+                    // Post to Accounting (Expense vs Liability)
                     try {
                         accountingService.postDoubleEntry(
-                            "Interest " + acc.getAccountNumber(),
-                            null,
-                            "5006",
-                            "2001",
-                            interest
+                                "Weekly Interest " + acc.getAccountNumber(),
+                                null,
+                                "5006", // Interest Expense
+                                "2001", // Savings Liability
+                                interest
                         );
                     } catch (Exception e) {
-                        // Log error but don't fail the interest calculation
+                        // Log error but allow process to continue for other accounts
+                        System.err.println("Accounting post failed for " + acc.getAccountNumber());
                     }
                 }
             }
@@ -317,10 +331,10 @@ public class SavingsService {
                 .accountNumber(account.getAccountNumber())
                 .memberId(account.getMember().getId())
                 .memberName(account.getMember().getFirstName() + " " + account.getMember().getLastName())
-                .balanceAmount(account.getBalanceAmount())  // ✅ Changed from balance to balanceAmount
+                .balanceAmount(account.getBalanceAmount())
                 .totalDeposits(account.getTotalDeposits())
                 .totalWithdrawals(account.getTotalWithdrawals())
-                .accountStatus(account.getAccountStatus().toString())  // ✅ Changed from status to accountStatus
+                .accountStatus(account.getAccountStatus().toString())
                 .productName(productName)
                 .interestRate(rate)
                 .maturityDate(account.getMaturityDate())

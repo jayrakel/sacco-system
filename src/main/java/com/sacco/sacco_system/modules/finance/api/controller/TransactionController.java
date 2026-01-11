@@ -69,7 +69,7 @@ public class TransactionController {
 
     @PostMapping("/interest")
     public ResponseEntity<?> applyInterest() {
-        savingsService.applyMonthlyInterest();
+        savingsService.applyWeeklyInterest();
         return ResponseEntity.ok(Map.of("success", true, "message", "Monthly Interest applied based on Product Rates"));
     }
 

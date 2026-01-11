@@ -1,6 +1,7 @@
 package com.sacco.sacco_system.modules.savings.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.sacco.sacco_system.modules.member.domain.entity.Member;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,7 +13,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
-import com.sacco.sacco_system.modules.member.domain.entity.Member;
 
 @Entity
 @Table(name = "savings_accounts")
@@ -34,7 +34,6 @@ public class SavingsAccount {
     @JsonIgnoreProperties("savingsAccounts")
     private Member member;
 
-    // âœ… NEW: Link to Product (Defines the rules)
     @ManyToOne
     @JoinColumn(name = "product_id")
     private SavingsProduct product;
@@ -42,9 +41,13 @@ public class SavingsAccount {
     @Builder.Default
     private BigDecimal balanceAmount = BigDecimal.ZERO;
 
+    // ✅ NEW: Tracks funds locked as guarantees for other members
+    @Builder.Default
+    private BigDecimal lockedAmount = BigDecimal.ZERO;
+
     @Column(nullable = false)
     @Builder.Default
-    private String currencyCode = "KES"; // ISO 4217 currency code
+    private String currencyCode = "KES";
 
     @Builder.Default
     private BigDecimal totalDeposits = BigDecimal.ZERO;
@@ -55,7 +58,6 @@ public class SavingsAccount {
     @Builder.Default
     private BigDecimal accruedInterest = BigDecimal.ZERO;
 
-    // âœ… NEW: For Fixed/Restricted Accounts
     private LocalDate maturityDate;
 
     @Enumerated(EnumType.STRING)
@@ -64,7 +66,6 @@ public class SavingsAccount {
 
     private LocalDateTime accountOpenDate;
 
-    // Global Audit & Identity fields (Phase A requirement)
     @Builder.Default
     private Boolean active = true;
 
@@ -83,6 +84,7 @@ public class SavingsAccount {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (balanceAmount == null) balanceAmount = BigDecimal.ZERO;
+        if (lockedAmount == null) lockedAmount = BigDecimal.ZERO;
     }
 
     @PreUpdate
@@ -90,10 +92,14 @@ public class SavingsAccount {
         updatedAt = LocalDateTime.now();
     }
 
+    /**
+     * ✅ Helper to check withdrawable balance
+     */
+    public BigDecimal getAvailableBalance() {
+        return balanceAmount.subtract(lockedAmount);
+    }
+
     public enum AccountStatus {
         ACTIVE, DORMANT, CLOSED, FROZEN, MATURED
     }
 }
-
-
-

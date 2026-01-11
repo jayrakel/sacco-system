@@ -3,6 +3,8 @@ package com.sacco.sacco_system.modules.finance.domain.service;
 import com.sacco.sacco_system.modules.core.exception.ApiException;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
+import com.sacco.sacco_system.modules.loan.domain.service.LoanAmortizationService; // ✅ IMPORT ADDED
+import com.sacco.sacco_system.modules.loan.domain.service.GuarantorService;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,8 @@ public class DisbursementService {
     private final LoanRepository loanRepository;
     private final TransactionRepository transactionRepository;
     private final AccountingService accountingService;
+    private final LoanAmortizationService loanAmortizationService; // ✅ INJECTED SERVICE
+    private final GuarantorService guarantorService;
 
     /**
      * Get loans awaiting disbursement (APPROVED_BY_COMMITTEE status)
@@ -174,6 +178,12 @@ public class DisbursementService {
 
         loanRepository.save(loan);
 
+        // ✅ NEW: Generate Amortization Schedule (Installments)
+        // This ensures the LoanDailyProcessor can track arrears properly
+        loanAmortizationService.generateSchedule(loan);
+
+        guarantorService.lockGuarantorFunds(loan);
+
         // Create disbursement transaction
         Transaction transaction = new Transaction();
         transaction.setTransactionId("TXN" + System.currentTimeMillis());
@@ -260,11 +270,11 @@ public class DisbursementService {
         for (Loan loan : disbursedLoans) {
             // Check if loan needs recalculation
             if (loan.getTotalOutstandingAmount() == null ||
-                loan.getTotalOutstandingAmount().compareTo(BigDecimal.ZERO) == 0 ||
-                loan.getWeeklyRepaymentAmount() == null) {
+                    loan.getTotalOutstandingAmount().compareTo(BigDecimal.ZERO) == 0 ||
+                    loan.getWeeklyRepaymentAmount() == null) {
 
                 BigDecimal principal = loan.getDisbursedAmount() != null ?
-                    loan.getDisbursedAmount() : loan.getApprovedAmount();
+                        loan.getDisbursedAmount() : loan.getApprovedAmount();
                 BigDecimal interestRate = loan.getInterestRate();
                 Integer durationWeeks = loan.getDurationWeeks();
 
@@ -308,4 +318,3 @@ public class DisbursementService {
         return result;
     }
 }
-
