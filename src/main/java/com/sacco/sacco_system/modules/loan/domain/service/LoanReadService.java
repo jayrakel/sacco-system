@@ -170,12 +170,34 @@ public class LoanReadService {
     }
 
     private LoanResponseDTO mapToDTO(Loan loan) {
+        // ✅ Ensure totalOutstandingAmount is never null for active/disbursed loans
+        BigDecimal outstandingAmount = loan.getTotalOutstandingAmount();
+
+        // If loan is DISBURSED or ACTIVE but totalOutstandingAmount is null/zero, calculate it
+        if ((loan.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
+             loan.getLoanStatus() == Loan.LoanStatus.ACTIVE) &&
+            (outstandingAmount == null || outstandingAmount.compareTo(BigDecimal.ZERO) == 0)) {
+
+            // Calculate from principal + interest
+            BigDecimal principal = loan.getOutstandingPrincipal() != null ?
+                loan.getOutstandingPrincipal() : loan.getDisbursedAmount();
+            BigDecimal interest = loan.getOutstandingInterest() != null ?
+                loan.getOutstandingInterest() : BigDecimal.ZERO;
+
+            outstandingAmount = principal != null ? principal.add(interest) : BigDecimal.ZERO;
+        }
+
+        // For non-disbursed loans, outstanding amount should be 0
+        if (outstandingAmount == null) {
+            outstandingAmount = BigDecimal.ZERO;
+        }
+
         return LoanResponseDTO.builder()
                 .id(loan.getId())
                 .loanNumber(loan.getLoanNumber())
                 .productName(loan.getProduct().getProductName())
                 .principalAmount(loan.getPrincipalAmount())
-                .totalOutstandingAmount(loan.getTotalOutstandingAmount())
+                .totalOutstandingAmount(outstandingAmount)
                 .loanStatus(loan.getLoanStatus().name())
                 .applicationDate(loan.getApplicationDate())
                 .feePaid(loan.isFeePaid())

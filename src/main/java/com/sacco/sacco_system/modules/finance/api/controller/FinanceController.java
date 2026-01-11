@@ -66,5 +66,17 @@ public class FinanceController {
 
         return ResponseEntity.ok(new ApiResponse<>(true, "Loan disbursed successfully"));
     }
+
+    /**
+     * ✅ MIGRATION ENDPOINT: Recalculate outstanding amounts for existing loans
+     * This fixes loans disbursed before calculation logic was added
+     */
+    @PostMapping("/loans/recalculate-outstanding")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> recalculateOutstandingAmounts() {
+        log.info("🔧 Starting loan recalculation...");
+        Map<String, Object> result = disbursementService.recalculateExistingLoans();
+        log.info("✅ Loan recalculation complete: {}", result);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Recalculation complete", result));
+    }
 }
 

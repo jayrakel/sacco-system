@@ -9,9 +9,7 @@ import java.util.Optional;
 
 @Repository
 public interface GLAccountRepository extends JpaRepository<GLAccount, String> {
-
     Optional<GLAccount> findByCode(String code);
-
-    // ✅ NEW: Efficiently fetch all Liquid Asset accounts (e.g., "10%")
     List<GLAccount> findByCodeStartingWith(String prefix);
 }
+

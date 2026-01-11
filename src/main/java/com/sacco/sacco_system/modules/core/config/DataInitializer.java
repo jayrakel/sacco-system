@@ -3,6 +3,7 @@ package com.sacco.sacco_system.modules.core.config;
 import com.sacco.sacco_system.modules.users.domain.entity.User;
 import com.sacco.sacco_system.modules.users.domain.service.UserService;
 import com.sacco.sacco_system.modules.finance.domain.service.AccountingService;
+import com.sacco.sacco_system.modules.finance.domain.service.DisbursementService;
 // Removed SystemSettingRepository import as it's no longer used directly here
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
+
 @Configuration
 @RequiredArgsConstructor
 @Slf4j
@@ -19,6 +22,7 @@ public class DataInitializer {
 
     private final UserService userService;
     private final AccountingService accountingService;
+    private final DisbursementService disbursementService;
     // Removed systemSettingRepository
 
     @Value("${app.default-admin.email}")
@@ -48,6 +52,11 @@ public class DataInitializer {
                 // 3. Initialize GL Accounts and Mappings
                 accountingService.initChartOfAccounts();
                 accountingService.initDefaultMappings();
+
+                // 4. Recalculate existing loan outstanding amounts (migration helper)
+                log.info("🔧 Recalculating existing loan balances...");
+                Map<String, Object> recalcResult = disbursementService.recalculateExistingLoans();
+                log.info("✅ Loan recalculation result: {}", recalcResult);
 
                 log.info("✅ System initialization completed successfully!");
             } catch (Exception e) {

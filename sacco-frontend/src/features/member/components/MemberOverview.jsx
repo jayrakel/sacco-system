@@ -33,12 +33,15 @@ export default function MemberOverview({ user }) {
         loadData();
     }, [user]);
 
-    // Calculate Loan Totals - Use domain directory fields
+    // Calculate Loan Totals - Use domain directory fields (Section 17 & 29)
     const totalLoanBalance = loans.reduce((acc, loan) =>
         acc + (loan.totalOutstandingAmount || 0), 0
     );
+
+    // FIX: Adjusted to comply with Domain Dictionary Section 18
+    // Loans in ARREARS or DEFAULTED are still active liabilities.
     const activeLoansCount = loans.filter(l =>
-        l.loanStatus === 'DISBURSED' || l.loanStatus === 'ACTIVE'
+        !['CLOSED', 'WRITTEN_OFF'].includes(l.loanStatus)
     ).length;
 
     if (loading) return <div className="p-8 text-center text-slate-400">Loading your dashboard...</div>;
@@ -69,6 +72,7 @@ export default function MemberOverview({ user }) {
                     <p className="text-xs text-slate-500">Active Savings Accounts</p>
                 </div>
 
+                {/* Loan Balance Card - Verified against Section 17 & 18 */}
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-purple-100 text-purple-600 rounded-lg"><CreditCard size={20} /></div>

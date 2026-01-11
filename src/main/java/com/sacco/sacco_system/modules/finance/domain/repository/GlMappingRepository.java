@@ -8,6 +8,6 @@ import java.util.Optional;
 
 @Repository
 public interface GlMappingRepository extends JpaRepository<GlMapping, String> {
-    // Find GL mapping by event name (e.g., "LOAN_DISBURSEMENT", "SAVINGS_DEPOSIT")
     Optional<GlMapping> findByEventName(String eventName);
 }
+

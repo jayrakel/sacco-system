@@ -1,6 +1,5 @@
 package com.sacco.sacco_system.modules.finance.domain.service;
 
-import com.sacco.sacco_system.modules.accounting.domain.service.GeneralLedgerService;
 import com.sacco.sacco_system.modules.core.exception.ApiException;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
@@ -27,7 +26,7 @@ public class DisbursementService {
 
     private final LoanRepository loanRepository;
     private final TransactionRepository transactionRepository;
-    private final GeneralLedgerService generalLedgerService;
+    private final AccountingService accountingService;
 
     /**
      * Get loans awaiting disbursement (APPROVED_BY_COMMITTEE status)
@@ -202,24 +201,22 @@ public class DisbursementService {
 
         // ✅ POST TO GENERAL LEDGER (Double-Entry Accounting)
         try {
-            generalLedgerService.postLoanDisbursement(
-                    loan.getId(),
-                    principal,
-                    disbursementMethod,
-                    transaction.getTransactionId(),
-                    transaction,
-                    disbursedBy
-            );
+            // Map payment method to GL account code (source of funds)
+            String sourceAccount = mapPaymentMethodToGLAccount(disbursementMethod);
 
-            // Verify the GL entries balance
-            boolean balanced = generalLedgerService.verifyBalance(transaction.getTransactionId());
-            if (!balanced) {
-                log.error("⚠️ GL entries for loan {} do NOT balance!", loan.getLoanNumber());
-            }
+            // Post loan disbursement to GL
+            // This creates:
+            // DR: 1200 (Loans Receivable) - Asset increases
+            // CR: 1002/1001/1010 (Cash/M-Pesa/Bank) - Asset decreases
+            accountingService.postLoanDisbursement(loan, sourceAccount);
+
+            log.info("✅ GL Entry Posted: Loan {} disbursement from account {}",
+                    loan.getLoanNumber(), sourceAccount);
         } catch (Exception e) {
-            log.error("❌ Failed to post loan disbursement to GL: {}", e.getMessage());
-            // Note: Transaction is already saved, GL posting failure is logged but doesn't rollback
-            // In production, you might want to rollback the entire transaction
+            log.error("❌ Failed to post GL entry for loan {}: {}",
+                    loan.getLoanNumber(), e.getMessage(), e);
+            // Note: Transaction is already saved, GL posting failure is logged
+            // Can be corrected manually or via migration script
         }
 
         log.info("✅ Loan {} disbursed: {} to {} via {}. Principal: {}, Interest: {}, Total: {}, Weekly: {}, Maturity: {}",
@@ -232,6 +229,83 @@ public class DisbursementService {
                 totalRepayable,
                 weeklyRepayment,
                 maturityDate);
+    }
+
+    /**
+     * Map payment method to GL account code
+     * Used to determine which account to credit when disbursing loans
+     */
+    private String mapPaymentMethodToGLAccount(String paymentMethod) {
+        return switch (paymentMethod.toUpperCase()) {
+            case "MPESA" -> "1002";  // M-Pesa Account
+            case "CASH" -> "1001";   // Cash Account
+            case "BANK" -> "1010";   // Bank Account
+            default -> "1002";       // Default to M-Pesa
+        };
+    }
+
+    /**
+     * ✅ MIGRATION HELPER: Recalculate outstanding amounts for existing disbursed loans
+     * This fixes loans that were disbursed before the calculation logic was added
+     */
+    @Transactional
+    public Map<String, Object> recalculateExistingLoans() {
+        List<Loan> disbursedLoans = loanRepository.findByLoanStatusIn(
+                List.of(Loan.LoanStatus.DISBURSED, Loan.LoanStatus.ACTIVE)
+        );
+
+        int updated = 0;
+        int skipped = 0;
+
+        for (Loan loan : disbursedLoans) {
+            // Check if loan needs recalculation
+            if (loan.getTotalOutstandingAmount() == null ||
+                loan.getTotalOutstandingAmount().compareTo(BigDecimal.ZERO) == 0 ||
+                loan.getWeeklyRepaymentAmount() == null) {
+
+                BigDecimal principal = loan.getDisbursedAmount() != null ?
+                    loan.getDisbursedAmount() : loan.getApprovedAmount();
+                BigDecimal interestRate = loan.getInterestRate();
+                Integer durationWeeks = loan.getDurationWeeks();
+
+                // Calculate total interest (same formula as disbursement)
+                BigDecimal totalInterest = principal
+                        .multiply(interestRate)
+                        .multiply(BigDecimal.valueOf(durationWeeks))
+                        .divide(BigDecimal.valueOf(5200), 2, BigDecimal.ROUND_HALF_UP);
+
+                BigDecimal totalRepayable = principal.add(totalInterest);
+                BigDecimal weeklyRepayment = totalRepayable
+                        .divide(BigDecimal.valueOf(durationWeeks), 2, BigDecimal.ROUND_HALF_UP);
+
+                // Update loan
+                loan.setOutstandingPrincipal(principal);
+                loan.setOutstandingInterest(totalInterest);
+                loan.setTotalOutstandingAmount(totalRepayable);
+                loan.setWeeklyRepaymentAmount(weeklyRepayment);
+
+                // Set maturity date if missing
+                if (loan.getMaturityDate() == null && loan.getDisbursementDate() != null) {
+                    loan.setMaturityDate(loan.getDisbursementDate().plusWeeks(durationWeeks));
+                }
+
+                loanRepository.save(loan);
+                updated++;
+
+                log.info("✅ Recalculated loan {}: Principal={}, Interest={}, Total={}, Weekly={}",
+                        loan.getLoanNumber(), principal, totalInterest, totalRepayable, weeklyRepayment);
+            } else {
+                skipped++;
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalLoans", disbursedLoans.size());
+        result.put("updated", updated);
+        result.put("skipped", skipped);
+        result.put("message", String.format("Updated %d loans, skipped %d loans", updated, skipped));
+
+        return result;
     }
 }
 
