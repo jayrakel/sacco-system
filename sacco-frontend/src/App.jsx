@@ -1,9 +1,10 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { SystemBranding, useSettings } from './context/SettingsContext';
 import BrandedSpinner from './components/BrandedSpinner';
 
 // Pages
 import Login from './pages/Login';
+import Dashboard from './pages/Dashboard'; // ✅ The Main Role Dispatcher
 import MemberDashboard from './pages/MemberDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ChangePassword from './pages/ChangePassword';
@@ -23,6 +24,8 @@ import CommitteeVotingPage from './pages/CommitteeVotingPage';
 import MeetingResultsPage from './pages/MeetingResultsPage';
 import MeetingMinutesPage from './pages/MeetingMinutesPage';
 
+// Features
+import ReportsDashboard from './features/reports/ReportsDashboard'; // ✅ NEW: Reporting Module
 
 // Error Pages
 import NotFound from './pages/errors/NotFound';
@@ -34,14 +37,18 @@ import BadRequest from './pages/errors/BadRequest';
 
 function App() {
   const { loading, settings, getImageUrl } = useSettings();
-  const iconUrl = getImageUrl(settings.SACCO_FAVICON);
+
+  // ✅ FIX: Safe access to settings to prevent White Screen Crash
+  const safeSettings = settings || {};
+  const appName = safeSettings.SACCO_NAME || 'Sacco System';
+  const iconUrl = getImageUrl ? getImageUrl(safeSettings.SACCO_FAVICON) : null;
 
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-6 animate-in fade-in duration-700">
         <BrandedSpinner iconUrl={iconUrl} size="xl" />
         <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{settings.SACCO_NAME}</h2>
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{appName}</h2>
             <p className="text-slate-400 text-sm font-medium animate-pulse">Initializing Secure System...</p>
         </div>
       </div>
@@ -54,14 +61,20 @@ function App() {
 
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
+          {/* Public Routes */}
           <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} /> {/* ✅ ADDED: Required for Logout Redirects */}
+
           <Route path="/change-password" element={<ChangePassword />} />
           <Route path="/system-setup" element={<SystemSetup />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Dashboards */}
-          <Route path="/dashboard" element={<MemberDashboard />} />
+          {/* ✅ MAIN DASHBOARD ROUTER (Redirects based on Role) */}
+          <Route path="/dashboard" element={<Dashboard />} />
+
+          {/* Specific Dashboards (Can be accessed directly if auth permits) */}
+          <Route path="/member-dashboard" element={<MemberDashboard />} />
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
 
           {/* Role Dashboards */}
@@ -70,6 +83,9 @@ function App() {
           <Route path="/treasurer-dashboard" element={<TreasurerDashboard />} />
           <Route path="/chairperson-dashboard" element={<ChairpersonDashboard />} />
           <Route path="/secretary-dashboard" element={<SecretaryDashboard />} />
+
+          {/* Modules */}
+          <Route path="/reports" element={<ReportsDashboard />} /> {/* ✅ ADDED */}
 
           {/* Voting & Meetings */}
           <Route path="/committee/voting" element={<CommitteeVotingPage />} />
@@ -88,6 +104,7 @@ function App() {
           <Route path="/session-expired" element={<SessionExpired />} />
           <Route path="/404" element={<NotFound />} />
 
+          {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>

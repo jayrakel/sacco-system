@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loginUser } from '../features/auth/services/authService';
+import authService from '../features/auth/services/authService'; // ✅ Default Import
 import api from '../api';
 import { ShieldCheck, Lock, Mail, ChevronRight, AlertTriangle, RefreshCw, X, ArrowRight } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
-import BrandedSpinner from '../components/BrandedSpinner'; // ✅ Import New Component
+import BrandedSpinner from '../components/BrandedSpinner';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -18,7 +18,7 @@ export default function Login() {
   const [resendStatus, setResendStatus] = useState('');
   const navigate = useNavigate();
 
-  const { settings, getImageUrl, loading: brandingLoading } = useSettings();
+  const { settings, getImageUrl } = useSettings();
   const logoUrl = getImageUrl(settings.SACCO_LOGO);
   const iconUrl = getImageUrl(settings.SACCO_FAVICON);
 
@@ -29,16 +29,19 @@ export default function Login() {
       setShowResend(false);
 
       try {
-        const userData = await loginUser({ email, password });
+        // ✅ ORIGINAL LOGIC: Send simple object. Backend maps 'email' to User lookup.
+        const response = await authService.login({ email, password });
 
-        if (!userData.token) throw new Error("No token");
-        localStorage.setItem('sacco_token', userData.token);
-        localStorage.setItem('sacco_user', JSON.stringify(userData));
+        if (!response.success) {
+            throw new Error(response.message || 'Login failed');
+        }
 
-        if (userData.systemSetupRequired) { navigate('/system-setup'); return; }
-        if (userData.mustChangePassword) { navigate('/change-password'); return; }
+        const userData = authService.getCurrentUser();
 
-        switch (userData.role) {
+        if (userData?.systemSetupRequired) { navigate('/system-setup'); return; }
+        if (userData?.mustChangePassword) { navigate('/change-password'); return; }
+
+        switch (userData?.role) {
           case 'ADMIN': navigate('/admin-dashboard'); break;
           case 'LOAN_OFFICER': navigate('/loans-dashboard'); break;
           case 'TREASURER': navigate('/treasurer-dashboard'); break;
@@ -51,7 +54,7 @@ export default function Login() {
 
       } catch (err) {
         console.error("Login Error:", err);
-        const msg = err.response?.data?.message || "Connection failed.";
+        const msg = err.message || "Connection failed.";
         setError(msg);
         if (msg.includes("verify your email")) setShowResend(true);
       }
@@ -61,13 +64,12 @@ export default function Login() {
   const handleForgotPassword = async (e) => {
       e.preventDefault();
       setForgotStatus({ type: 'loading', msg: 'Processing...' });
-      
+
       try {
-          await api.post('/api/auth/forgot-password', { email: forgotEmail });
+          await api.post('/auth/forgot-password', { email: forgotEmail });
           setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
-          setForgotEmail(''); // Clear input
+          setForgotEmail('');
       } catch (err) {
-          // Even if it fails, we usually show success for security, unless it's a network error
           setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
       }
   };
@@ -76,15 +78,13 @@ export default function Login() {
         if (!email) return;
         setResendStatus('Sending...');
         try {
-            await api.post('/api/auth/resend-verification', { email });
+            await api.post('/auth/resend-verification', { email });
             setResendStatus('Sent! Check your inbox.');
             setShowResend(false);
         } catch (err) {
             setResendStatus('Failed to send.');
         }
     };
-
-
 
   return (
     <div className="min-h-screen flex bg-slate-50 font-sans">
@@ -166,7 +166,7 @@ export default function Login() {
               </div>
               {/* Forgot Password Link - Add this above the button */}
               <div className="flex justify-end">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setShowForgotModal(true)}
                     className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 hover:underline"
@@ -179,11 +179,7 @@ export default function Login() {
                 className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl transition flex justify-center gap-2 items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {localLoading ? (
-                    // ✅ 2. BUTTON SPINNER (Small)
                     <div className="flex items-center gap-2">
-                        {/* - Removed 'iconUrl={iconUrl}' (Spinner gets it from Context now)
-                           - Added 'showTagline={false}' (Critical for buttons)
-                        */}
                         <BrandedSpinner size="small" color="white" showTagline={false} />
                         <span>Verifying...</span>
                     </div>
@@ -199,7 +195,7 @@ export default function Login() {
       {showForgotModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200">
-                <button 
+                <button
                     onClick={() => setShowForgotModal(false)}
                     className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 bg-slate-50 rounded-full"
                 >
@@ -224,8 +220,8 @@ export default function Login() {
                 <form onSubmit={handleForgotPassword} className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
-                        <input 
-                            type="email" 
+                        <input
+                            type="email"
                             required
                             className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                             value={forgotEmail}
@@ -233,7 +229,7 @@ export default function Login() {
                             placeholder="name@example.com"
                         />
                     </div>
-                    <button 
+                    <button
                         type="submit"
                         disabled={forgotStatus.type === 'loading'}
                         className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition flex justify-center items-center gap-2"

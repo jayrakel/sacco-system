@@ -13,20 +13,20 @@ export const SettingsProvider = ({ children }) => {
         SACCO_TAGLINE: 'Empowering Your Future',
         SACCO_LOGO: '',
         SACCO_FAVICON: '',
-        BRAND_COLOR_PRIMARY: '#059669',   
-        BRAND_COLOR_SECONDARY: '#0f172a'  
+        BRAND_COLOR_PRIMARY: '#059669',
+        BRAND_COLOR_SECONDARY: '#0f172a'
       };
   });
   const [loading, setLoading] = useState(true);
 
-  // ✅ FIXED: Smart Image URL Generator
+  // ✅ Smart Image URL Generator
   const getImageUrl = (filename) => {
     if (!filename) return null;
-    
+
     // If it's a full URL (e.g. external link), return as is
     if (filename.startsWith('http')) return filename;
 
-    // Base URL for uploads
+    // Base URL for uploads (Direct server access, bypassing /api prefix)
     const baseUrl = 'http://localhost:8082/uploads';
 
     // If the filename already includes a folder (e.g., "profiles/pic.jpg"), use it directly
@@ -38,36 +38,35 @@ export const SettingsProvider = ({ children }) => {
     return `${baseUrl}/settings/${filename}`;
   };
 
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        // We add a small artificial delay to prevent flickering if api is too fast
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 500));
-        const apiCall = api.get('/api/settings');
-        const [response] = await Promise.all([apiCall, minLoadTime]);
+  const fetchSettings = async () => {
+    try {
+      // ✅ FIX: Removed '/api' prefix.
+      // api.js adds '/api', so we just request '/settings' to get '/api/settings'
+      const response = await api.get('/settings');
 
-        if (response.data.success) {
-          const settingsMap = response.data.data.reduce((acc, curr) => {
-            acc[curr.key] = curr.value;
-            return acc;
-          }, {});
+      if (response.data.success) {
+        const settingsMap = response.data.data.reduce((acc, curr) => {
+          acc[curr.key] = curr.value;
+          return acc;
+        }, {});
 
-          const newSettings = { ...settings, ...settingsMap };
-          setSettings(newSettings);
-          localStorage.setItem('sacco_settings', JSON.stringify(newSettings));
-        }
-      } catch (error) {
-        console.error("Failed to load settings:", error);
-      } finally {
-        setLoading(false);
+        const newSettings = { ...settings, ...settingsMap };
+        setSettings(newSettings);
+        localStorage.setItem('sacco_settings', JSON.stringify(newSettings));
       }
-    };
+    } catch (error) {
+      console.error("Failed to load settings:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchSettings();
   }, []);
 
   return (
-    <SettingsContext.Provider value={{ settings, getImageUrl, loading }}>
+    <SettingsContext.Provider value={{ settings, getImageUrl, loading, fetchSettings }}>
       {children}
     </SettingsContext.Provider>
   );

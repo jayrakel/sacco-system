@@ -1,23 +1,48 @@
 import api from '../../../api';
 
-export const loginUser = async (credentials) => {
-    // Java expects { "username": "...", "password": "..." }
-    // We map the email field from the form to "username" here
-    const payload = {
-        username: credentials.email,
-        password: credentials.password
-    };
+const login = async (credentials) => {
+    try {
+        const response = await api.post('/auth/login', credentials);
 
-    const { data } = await api.post('/api/auth/login', payload);
-    return data;
+        // Backend returns: { success: true, message: "...", data: { token: "...", ... } }
+        if (response.data.success && response.data.data) {
+            // ✅ We save only the inner 'data' object which contains the token and user info
+            localStorage.setItem('user', JSON.stringify(response.data.data));
+        }
+        return response.data;
+    } catch (error) {
+        throw error.response ? error.response.data : { message: "Network Error" };
+    }
 };
 
-export const registerUser = async (userData) => {
-    const { data } = await api.post('/api/auth/register', userData);
-    return data;
+const register = async (userData) => {
+    try {
+        const response = await api.post('/auth/register', userData);
+        return response.data;
+    } catch (error) {
+        throw error.response ? error.response.data : { message: "Registration Failed" };
+    }
 };
 
-export const logoutUser = () => {
-    localStorage.removeItem('sacco_user');
-    localStorage.removeItem('sacco_token');
+const logout = () => {
+    localStorage.removeItem('user');
+    window.location.href = '/login';
 };
+
+const getCurrentUser = () => {
+    try {
+        const userStr = localStorage.getItem('user');
+        return userStr ? JSON.parse(userStr) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
+const authService = {
+    login,
+    register,
+    logout,
+    getCurrentUser
+};
+
+export default authService;

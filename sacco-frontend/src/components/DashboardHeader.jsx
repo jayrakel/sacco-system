@@ -4,7 +4,7 @@ import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Shield, Check, X, Use
 import { useNavigate, Link } from 'react-router-dom';
 import BrandedSpinner from './BrandedSpinner';
 import { useSettings } from '../context/SettingsContext';
-import { logoutUser } from '../features/auth/services/authService';
+import authService from '../features/auth/services/authService'; // ✅ FIXED IMPORT
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     // --- STATE MANAGEMENT ---
@@ -29,7 +29,8 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     const onLogout = () => {
         setIsLoggingOut(true);
         setTimeout(() => {
-            logoutUser();
+            // ✅ FIX: Use default export method
+            authService.logout();
             navigate('/');
         }, 1500);
     };
@@ -50,26 +51,30 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         const fetchData = async () => {
             try {
                 // 1. Notifications
-                const notifRes = await api.get('/api/notifications').catch(() => ({ data: { data: [] } }));
+                const notifRes = await api.get('/notifications').catch(() => ({ data: { data: [] } }));
                 const rawNotifs = Array.isArray(notifRes.data.data) ? notifRes.data.data : [];
                 const unread = rawNotifs.filter(n => !n.read);
                 const history = rawNotifs.filter(n => n.read);
                 setNotifications({ unread, history, archive: [] });
 
                 // 2. Guarantor Requests
-                const reqRes = await api.get('/api/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
+                const reqRes = await api.get('/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
                 setRequests(reqRes.data.data || []);
 
                 // 3. Logo (System Settings)
-                const settingRes = await api.get('/api/settings').catch(() => ({ data: { data: [] } }));
+                // Assuming settings are already loaded via Context, but fetching if needed
+                const settingRes = await api.get('/admin/settings').catch(() => ({ data: { data: [] } }));
                 const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
                 if (logoSetting && logoSetting.value) setLogo(getImageUrl(logoSetting.value));
 
             } catch (err) { console.error("Fetch error", err); }
         };
-        fetchData();
-        const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
+
+        if (user) {
+            fetchData();
+            const interval = setInterval(fetchData, 30000);
+            return () => clearInterval(interval);
+        }
     }, [user, getImageUrl]);
 
     // --- ACTIONS ---
@@ -81,7 +86,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
             unread: prev.unread.filter(n => n.id !== id),
             history: [{ ...noteToMove, read: true }, ...prev.history]
         }));
-        await api.patch(`/api/notifications/${id}/read`);
+        await api.patch(`/notifications/${id}/read`);
     };
 
     const respondToRequest = async (requestId, accepted) => {
@@ -90,7 +95,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
         try {
             // ✅ FIX: Backend expects { approved: Boolean }, not { status: String }
-            await api.post(`/api/loans/guarantors/${requestId}/respond`, { approved: accepted });
+            await api.post(`/loans/guarantors/${requestId}/respond`, { approved: accepted });
 
             // Remove from local state
             setRequests(prev => prev.filter(r => r.id !== requestId));
@@ -266,15 +271,15 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                                 </div>
 
                                 <div className="p-2">
-                                    <Link 
-                                        to="/dashboard?tab=profile" 
+                                    <Link
+                                        to="/dashboard?tab=profile"
                                         onClick={() => setShowProfileDropdown(false)}
                                         className="flex items-center gap-3 w-full p-2.5 rounded-lg text-sm font-bold text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 transition"
                                     >
                                         <User size={18}/> My Profile
                                     </Link>
-                                    
-                                    <button 
+
+                                    <button
                                         onClick={onLogout}
                                         className="flex items-center gap-3 w-full p-2.5 rounded-lg text-sm font-bold text-rose-600 hover:bg-rose-50 transition mt-1"
                                     >

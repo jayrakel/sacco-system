@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { loanService } from '../api';
+import loanService from '../features/loans/services/loanService'; // ✅ FIXED IMPORT (Default import from correct path)
+import authService from '../features/auth/services/authService'; // ✅ Use authService for user data
 import LoanManager from '../features/loans/components/LoanManager';
 import LoanOfficerDashboard from '../features/loan-officer/components/LoanOfficerDashboard';
 import BrandedSpinner from '../components/BrandedSpinner';
@@ -16,11 +17,16 @@ const LoansDashboard = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('sacco_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    // ✅ FIX: Use consistent authService to get the logged-in user
+    const currentUser = authService.getCurrentUser();
+    setUser(currentUser);
+
+    // Only fetch member dashboard data if NOT a loan officer/admin
+    if (currentUser && currentUser.role !== 'LOAN_OFFICER' && currentUser.role !== 'ADMIN') {
+        fetchDashboard();
+    } else {
+        setLoading(false); // Stop loading if we are showing the officer dashboard
     }
-    fetchDashboard();
   }, []);
 
   const fetchDashboard = async () => {
@@ -33,32 +39,45 @@ const LoansDashboard = () => {
         setError(response.message);
       }
     } catch (err) {
-      setError("Failed to load loan dashboard.");
       console.error(err);
+      setError("Failed to load loan dashboard.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Show loan officer dashboard for LOAN_OFFICER and ADMIN roles
+  // 1. Show Loan Officer Dashboard
   if (user?.role === 'LOAN_OFFICER' || user?.role === 'ADMIN') {
     return <LoanOfficerDashboard />;
   }
 
-  // Member view (existing functionality)
-  if (loading) return <BrandedSpinner />;
-  if (error) return <div className="text-red-500 text-center p-8">{error}</div>;
+  // 2. Show Loading
+  if (loading) return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+        <BrandedSpinner />
+    </div>
+  );
 
+  // 3. Show Error
+  if (error) return (
+    <div className="p-8 text-center">
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg inline-block border border-red-100">
+            {error}
+        </div>
+    </div>
+  );
+
+  // 4. Show Member View
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-800">My Loans</h1>
 
       {dashboardData && (
         <LoanManager
           canApply={dashboardData.canApply}
           eligibilityMessage={dashboardData.eligibilityMessage}
-          activeLoans={dashboardData.activeLoans}
-          totalBalance={dashboardData.totalOutstandingBalance}
+          activeLoans={dashboardData.activeLoans || []}
+          totalBalance={dashboardData.totalOutstandingBalance || 0}
           onRefresh={fetchDashboard}
         />
       )}
