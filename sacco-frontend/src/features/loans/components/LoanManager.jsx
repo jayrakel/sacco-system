@@ -12,8 +12,8 @@ export default function LoanManager({ currentUser }) {
 
     const fetchLoans = async () => {
         try {
-            // This endpoint must exist in LoanController (GET /api/loans)
-            const res = await api.get('/api/loans');
+            // ✅ Use /dashboard endpoint which exists in LoanController
+            const res = await api.get('/api/loans/dashboard');
             if (res.data.success) {
                 setLoans(res.data.data);
             }
@@ -151,16 +151,32 @@ export default function LoanManager({ currentUser }) {
                                 </td>
                             </tr>
                         )) : (
-                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">No loans found.</td></tr>
+                            <tr>
+                                <td colSpan="6" className="p-12 text-center">
+                                    <div className="inline-block">
+                                        <div className="bg-slate-50 text-slate-400 p-6 rounded-xl mb-4">
+                                            <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="font-bold text-slate-700 mb-2">No Loan Applications</h3>
+                                        <p className="text-slate-500 text-sm mb-4">
+                                            No loan applications have been submitted yet.<br/>
+                                            Members can apply for loans through the Member Portal.
+                                        </p>
+                                        <button
+                                            onClick={fetchLoans}
+                                            className="text-indigo-600 hover:text-indigo-700 text-sm font-semibold"
+                                        >
+                                            Refresh
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
                         )}
                     </tbody>
                 </table>
             </div>
-            <style jsx>{`
-                .btn-action {
-                    @apply px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 mx-auto hover:brightness-95;
-                }
-            `}</style>
         </div>
     );
 }

@@ -21,7 +21,7 @@ const loanService = {
    * Submits a new loan application
    */
   applyForLoan: async (loanData) => {
-    const response = await api.post('/loans/apply', loanData);
+    const response = await api.post('/api/loans/apply', loanData);
     return response.data;
   },
 

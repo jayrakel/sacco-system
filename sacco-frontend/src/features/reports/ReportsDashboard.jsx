@@ -196,7 +196,7 @@ const ReportsDashboard = () => {
   const handleForceGenerate = async () => {
     setRefreshing(true);
     try {
-      await api.post('/api/reports/generate');
+      await api.post('/reports/generate');
       await fetchExecutiveData();
     } catch (error) { console.error(error); }
     finally { setRefreshing(false); }

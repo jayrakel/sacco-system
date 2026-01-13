@@ -2,22 +2,29 @@ import api from '../../../api';
 
 const login = async (credentials) => {
     try {
-        const response = await api.post('/auth/login', credentials);
+        const response = await api.post('/api/auth/login', credentials);
 
-        // Backend returns: { success: true, message: "...", data: { token: "...", ... } }
-        if (response.data.success && response.data.data) {
-            // ✅ We save only the inner 'data' object which contains the token and user info
-            localStorage.setItem('user', JSON.stringify(response.data.data));
+        if (response.data && response.data.token) {
+            const userData = response.data;
+            localStorage.setItem('sacco_user', JSON.stringify(userData));
+            localStorage.setItem('sacco_token', userData.token);
+
+            return { success: true, data: userData };
+        } else {
+            return { success: false, message: "Invalid response from server" };
         }
-        return response.data;
     } catch (error) {
-        throw error.response ? error.response.data : { message: "Network Error" };
+        if (error.response?.data) {
+            return error.response.data;
+        }
+
+        return { success: false, message: "Network Error" };
     }
 };
 
 const register = async (userData) => {
     try {
-        const response = await api.post('/auth/register', userData);
+        const response = await api.post('/api/auth/register', userData);
         return response.data;
     } catch (error) {
         throw error.response ? error.response.data : { message: "Registration Failed" };
@@ -25,13 +32,14 @@ const register = async (userData) => {
 };
 
 const logout = () => {
-    localStorage.removeItem('user');
+    localStorage.removeItem('sacco_user');
+    localStorage.removeItem('sacco_token');
     window.location.href = '/login';
 };
 
 const getCurrentUser = () => {
     try {
-        const userStr = localStorage.getItem('user');
+        const userStr = localStorage.getItem('sacco_user');
         return userStr ? JSON.parse(userStr) : null;
     } catch (e) {
         return null;

@@ -29,7 +29,6 @@ export default function Login() {
       setShowResend(false);
 
       try {
-        // ✅ ORIGINAL LOGIC: Send simple object. Backend maps 'email' to User lookup.
         const response = await authService.login({ email, password });
 
         if (!response.success) {
@@ -66,7 +65,7 @@ export default function Login() {
       setForgotStatus({ type: 'loading', msg: 'Processing...' });
 
       try {
-          await api.post('/auth/forgot-password', { email: forgotEmail });
+          await api.post('/api/auth/forgot-password', { email: forgotEmail });
           setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
           setForgotEmail('');
       } catch (err) {
@@ -78,7 +77,7 @@ export default function Login() {
         if (!email) return;
         setResendStatus('Sending...');
         try {
-            await api.post('/auth/resend-verification', { email });
+            await api.post('/api/auth/resend-verification', { email });
             setResendStatus('Sent! Check your inbox.');
             setShowResend(false);
         } catch (err) {

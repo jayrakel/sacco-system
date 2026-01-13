@@ -7,9 +7,9 @@ import api from '../api';
 import {
     LayoutDashboard, Users, Wallet, Settings, LogOut,
     TrendingUp, CreditCard, UserPlus, FileText,
-    Download, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownLeft,
-    PieChart, Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
-    Briefcase, Calendar, Filter, UserCog, Key
+    Download, ChevronLeft, ChevronRight, ArrowDownLeft,
+    Activity, AlertCircle, PiggyBank, FileBarChart, ShieldCheck,
+    Briefcase, Filter, UserCog, Key
 } from 'lucide-react';
 
 // Components
@@ -73,7 +73,7 @@ export default function AdminDashboard() {
             case 'assets': return <AssetManager />;
             case 'reports': return <ReportsDashboard />;
             case 'members': return <MembersTab />;
-            case 'users': return <SystemUsersTab />; // ✅ NEW USERS TAB
+            case 'users': return <SystemUsersTab />;
             case 'register':
                 return (
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-1 animate-in zoom-in-95">
@@ -106,7 +106,7 @@ export default function AdminDashboard() {
                         <TabButton id="reports" label="Reports" icon={FileBarChart} />
                         <TabButton id="members" label="Sacco Members" icon={Users} />
                         <div className="w-px bg-slate-300 mx-1 h-6 self-center"></div>
-                        <TabButton id="users" label="System Users" icon={UserCog} /> {/* ✅ NEW BUTTON */}
+                        <TabButton id="users" label="System Users" icon={UserCog} />
                         <TabButton id="register" label="Register New" icon={UserPlus} />
                         <TabButton id="settings" label="Configuration" icon={Settings} />
                         <TabButton id="audit" label="Audit & Security" icon={ShieldCheck} />
@@ -138,24 +138,36 @@ function OverviewTab() {
 
     const loadDashboard = async () => {
         try {
-            // ✅ FIXED: Updated endpoint to match ReportingController change
+            // ✅ Correct: Includes /api because api.js base is just the host
             const todayRes = await api.get('/api/reports/dashboard-stats');
             if (todayRes.data.success) setStats(todayRes.data.data);
             fetchChartData();
             setLoading(false);
-        } catch (e) { setLoading(false); }
+        } catch (e) {
+            console.error("Failed to load dashboard stats:", e);
+            setLoading(false);
+        }
     };
 
     const fetchChartData = async () => {
         try {
             const chartRes = await api.get(`/api/reports/chart?startDate=${dateRange.start}&endDate=${dateRange.end}`);
             if (chartRes.data.success) setChartData(chartRes.data.data);
-        } catch (e) {}
+        } catch (e) {
+            console.error("Failed to load chart data:", e);
+        }
     };
 
     const handleGenerateReport = async () => {
         if(!window.confirm("Generate End-of-Day Financial Report?")) return;
-        try { await api.post('/api/reports/generate'); alert("✅ Report Generated!"); navigate('?tab=reports'); } catch (e) {}
+        try {
+            // ✅ FIX: Added /api prefix
+            await api.post('/api/reports/generate');
+            alert("✅ Report Generated!");
+            navigate('?tab=reports');
+        } catch (e) {
+            console.error("Failed to generate report:", e);
+        }
     };
 
     const handleSystemDiag = () => { alert("System Status: Operational\nDatabase: Connected\nEmail Service: Active"); };
@@ -190,7 +202,7 @@ function OverviewTab() {
             </div>
 
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
                     <div className="flex flex-col xl:flex-row justify-between items-center mb-6 gap-4">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                             <Activity size={20} className="text-emerald-600"/> Performance
@@ -202,22 +214,36 @@ function OverviewTab() {
                             <button onClick={fetchChartData} className="bg-slate-900 text-white p-1.5 rounded-md hover:bg-slate-800 transition"><Filter size={14} /></button>
                         </div>
                     </div>
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#059669" stopOpacity={0.1}/>
-                                        <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                                <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                                <Tooltip />
-                                <Area type="monotone" dataKey="income" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+
+                    {/* ✅ Chart: Income vs Expenses - Following ReportsDashboard pattern */}
+                    <div className="h-80 w-full">
+                        {chartData && chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                                        </linearGradient>
+                                        <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                                    <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val/1000}k`} />
+                                    <Tooltip formatter={(value) => `KES ${Number(value).toLocaleString()}`} />
+                                    <Legend iconType="circle" />
+                                    <Area type="monotone" dataKey="income" stroke="#10B981" fill="url(#colorIncome)" strokeWidth={2} name="Income" />
+                                    <Area type="monotone" dataKey="expense" stroke="#EF4444" fill="url(#colorExpense)" strokeWidth={2} name="Expenses" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 text-sm">
+                                {loading ? 'Loading chart data...' : 'No data available for selected date range'}
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -283,7 +309,7 @@ function FinanceTab() {
     };
 
     const handleDownload = () => {
-        window.location.href = 'http://localhost:8080/api/transactions/download';
+        window.location.href = 'http://localhost:8082/api/transactions/download';
     };
 
     const lastIndex = currentPage * itemsPerPage;
@@ -397,14 +423,12 @@ function MembersTab() {
     useEffect(() => {
         api.get('/api/members')
             .then(res => {
-                console.log('Members API Response:', res.data);
                 if(res.data.success) {
                     setMembers(res.data.data);
                 }
                 setLoading(false);
             })
             .catch(err => {
-                console.error('Error fetching members:', err);
                 setError(err.response?.data?.message || 'Failed to load members');
                 setLoading(false);
             });
@@ -512,7 +536,7 @@ function SystemUsersTab() {
             if(newPass) alert("Password must be at least 6 characters.");
             return;
         }
-        
+
         try {
             await api.post(`/api/users/${userId}/reset-password`, { password: newPass });
             alert(`Password reset successfully to: ${newPass}`);
@@ -532,7 +556,7 @@ function SystemUsersTab() {
                 </div>
                 <button onClick={fetchUsers} className="text-xs font-bold text-indigo-600 hover:underline">Refresh List</button>
             </div>
-            
+
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-xs tracking-wider border-b border-slate-100">
@@ -569,7 +593,7 @@ function SystemUsersTab() {
                                 </td>
                                 <td className="p-4 text-center flex justify-center gap-2">
                                     {!u.emailVerified && (
-                                        <button 
+                                        <button
                                             onClick={() => handleVerify(u.id)}
                                             className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition"
                                             title="Force Verify Email"
@@ -577,7 +601,7 @@ function SystemUsersTab() {
                                             <ShieldCheck size={16}/>
                                         </button>
                                     )}
-                                    <button 
+                                    <button
                                         onClick={() => handleResetPassword(u.id)}
                                         className="p-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition"
                                         title="Reset Password"

@@ -51,19 +51,19 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
         const fetchData = async () => {
             try {
                 // 1. Notifications
-                const notifRes = await api.get('/notifications').catch(() => ({ data: { data: [] } }));
+                const notifRes = await api.get('/api/notifications').catch(() => ({ data: { data: [] } }));
                 const rawNotifs = Array.isArray(notifRes.data.data) ? notifRes.data.data : [];
                 const unread = rawNotifs.filter(n => !n.read);
                 const history = rawNotifs.filter(n => n.read);
                 setNotifications({ unread, history, archive: [] });
 
                 // 2. Guarantor Requests
-                const reqRes = await api.get('/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
+                const reqRes = await api.get('/api/loans/guarantors/requests').catch(() => ({ data: { data: [] } }));
                 setRequests(reqRes.data.data || []);
 
                 // 3. Logo (System Settings)
                 // Assuming settings are already loaded via Context, but fetching if needed
-                const settingRes = await api.get('/admin/settings').catch(() => ({ data: { data: [] } }));
+                const settingRes = await api.get('/api/settings').catch(() => ({ data: { data: [] } }));
                 const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
                 if (logoSetting && logoSetting.value) setLogo(getImageUrl(logoSetting.value));
 
@@ -86,7 +86,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
             unread: prev.unread.filter(n => n.id !== id),
             history: [{ ...noteToMove, read: true }, ...prev.history]
         }));
-        await api.patch(`/notifications/${id}/read`);
+        await api.patch(`/api/notifications/${id}/read`);
     };
 
     const respondToRequest = async (requestId, accepted) => {

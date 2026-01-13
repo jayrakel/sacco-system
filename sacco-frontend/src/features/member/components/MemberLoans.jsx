@@ -45,10 +45,10 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         setError(null);
         try {
             const [loansRes, eligRes, votesRes, draftRes] = await Promise.all([
-                api.get('/api/loans/my-loans').catch(e => ({ error: e })),
-                api.get('/api/loans/eligibility/check').catch(e => ({ error: e })),
-                api.get('/api/loans/voting/active').catch(e => ({ error: e })),
-                api.get('/api/loans/draft').catch(e => ({ error: e }))
+                api.get('/loans/my-loans').catch(e => ({ error: e })),
+                api.get('/loans/eligibility/check').catch(e => ({ error: e })),
+                api.get('/loans/voting/active').catch(e => ({ error: e })),
+                api.get('/loans/draft').catch(e => ({ error: e }))
             ]);
 
             if (loansRes.data?.success) setLoans(loansRes.data.data);
@@ -67,7 +67,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
     const handleCastVote = async (loanId, voteYes) => {
         if(!window.confirm(`Confirm Vote: ${voteYes ? "YES (Approve)" : "NO (Reject)"}?`)) return;
         try {
-            await api.post(`/api/loans/${loanId}/vote`, { vote: voteYes });
+            await api.post(`/loans/${loanId}/vote`, { vote: voteYes });
             alert("Vote Cast Successfully!");
             setActiveVotes(prev => prev.filter(l => l.id !== loanId));
             if(onVoteCast) onVoteCast();
@@ -80,7 +80,7 @@ export default function MemberLoans({ user, onUpdate, onVoteCast }) {
         setResumeLoan(null); // Clear resume state
         setSelectedHistoryLoan(null);
         try {
-            const res = await api.post('/api/loans/start');
+            const res = await api.post('/loans/start');
             if (res.data.success) {
                 const newDraft = res.data.data;
                 setActiveDraft(newDraft);

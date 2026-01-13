@@ -38,7 +38,7 @@ export default function ChairpersonDashboard() {
         setLoading(true);
         try {
             // ✅ Use /all endpoint to get meetings of all statuses
-            const res = await api.get('/api/meetings/all');
+            const res = await api.get('/meetings/all');
             const meetings = res.data.data || [];
 
             // Separate by status

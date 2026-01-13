@@ -42,7 +42,7 @@ export const SettingsProvider = ({ children }) => {
     try {
       // ✅ FIX: Removed '/api' prefix.
       // api.js adds '/api', so we just request '/settings' to get '/api/settings'
-      const response = await api.get('/settings');
+      const response = await api.get('/api/settings');
 
       if (response.data.success) {
         const settingsMap = response.data.data.reduce((acc, curr) => {

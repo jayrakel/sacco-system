@@ -41,8 +41,8 @@ export default function SecretaryDashboard() {
         setLoading(true);
         try {
             const [loansRes, meetingsRes] = await Promise.all([
-                api.get('/api/meetings/loans/awaiting'),
-                api.get('/api/meetings/all') // ✅ Get ALL meetings, not just scheduled
+                api.get('/meetings/loans/awaiting'),
+                api.get('/meetings/all') // ✅ Get ALL meetings, not just scheduled
             ]);
 
             setLoansAwaitingMeeting(loansRes.data.data || []);

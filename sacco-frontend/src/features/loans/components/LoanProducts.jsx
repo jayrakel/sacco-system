@@ -35,17 +35,15 @@ export default function LoanProducts() {
 
     const fetchData = async () => {
         try {
-            const [prodRes, memRes, brandingRes] = await Promise.all([
+            const [prodRes, memRes] = await Promise.all([
                 api.get('/api/loans/products'),
-                api.get('/api/members/active'),
-                api.get('/api/settings/branding').catch(() => ({ data: { success: false } }))
+                api.get('/api/members/active')
             ]);
             if (prodRes.data.success) setProducts(prodRes.data.data);
             if (memRes.data.success) setMembers(memRes.data.data);
-            if (brandingRes.data.success && brandingRes.data.data) {
-                setBranding(brandingRes.data.data);
-            }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("Failed to load loan products:", e);
+        }
     };
 
     const handleCreateProduct = async (e) => {

@@ -6,8 +6,8 @@ export default function SessionExpired() {
     const navigate = useNavigate();
 
     const handleLogin = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        localStorage.removeItem('sacco_token');
+        localStorage.removeItem('sacco_user');
         navigate('/login', { state: { from: window.location.pathname } });
     };
 
