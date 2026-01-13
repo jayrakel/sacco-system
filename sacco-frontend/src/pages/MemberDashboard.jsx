@@ -31,7 +31,7 @@ export default function MemberDashboard() {
 
     const fetchUserProfile = async () => {
         try {
-            const res = await api.get('/members/me');
+            const res = await api.get('/api/members/me');
             if (res.data.success) {
                 setUser(res.data.data);
                 localStorage.setItem('sacco_user', JSON.stringify(res.data.data));

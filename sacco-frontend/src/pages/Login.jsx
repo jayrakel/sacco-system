@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import authService from '../features/auth/services/authService'; // ✅ Default Import
+import authService from '../features/auth/services/authService';
 import api from '../api';
 import { ShieldCheck, Lock, Mail, ChevronRight, AlertTriangle, RefreshCw, X, ArrowRight } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
@@ -37,18 +37,36 @@ export default function Login() {
 
         const userData = authService.getCurrentUser();
 
+        // Redirect Logic
         if (userData?.systemSetupRequired) { navigate('/system-setup'); return; }
         if (userData?.mustChangePassword) { navigate('/change-password'); return; }
 
+        // ✅ FIX: Direct Routing to prevent "Flash" (Double Redirect)
         switch (userData?.role) {
-          case 'ADMIN': navigate('/admin-dashboard'); break;
-          case 'LOAN_OFFICER': navigate('/loans-dashboard'); break;
-          case 'TREASURER': navigate('/treasurer-dashboard'); break;
+          case 'ADMIN':
+              navigate('/admin-dashboard');
+              break;
+          case 'LOAN_OFFICER':
+              navigate('/loans-dashboard');
+              break;
+          case 'TREASURER':
+              navigate('/treasurer-dashboard');
+              break;
           case 'CHAIRPERSON':
-          case 'ASSISTANT_CHAIRPERSON': navigate('/chairperson-dashboard'); break;
+          case 'ASSISTANT_CHAIRPERSON':
+              navigate('/chairperson-dashboard');
+              break;
           case 'SECRETARY':
-          case 'ASSISTANT_SECRETARY': navigate('/secretary-dashboard'); break;
-          default: navigate('/dashboard'); break;
+          case 'ASSISTANT_SECRETARY':
+              navigate('/secretary-dashboard');
+              break;
+          case 'MEMBER':
+              navigate('/member-dashboard');
+              break;
+          default:
+              // Fallback for unknown roles (safer than generic dashboard)
+              navigate('/member-dashboard');
+              break;
         }
 
       } catch (err) {
@@ -65,7 +83,7 @@ export default function Login() {
       setForgotStatus({ type: 'loading', msg: 'Processing...' });
 
       try {
-          await api.post('/api/auth/forgot-password', { email: forgotEmail });
+          await api.post('/auth/forgot-password', { email: forgotEmail });
           setForgotStatus({ type: 'success', msg: 'Check your email for the reset link!' });
           setForgotEmail('');
       } catch (err) {
@@ -77,7 +95,7 @@ export default function Login() {
         if (!email) return;
         setResendStatus('Sending...');
         try {
-            await api.post('/api/auth/resend-verification', { email });
+            await api.post('/auth/resend-verification', { email });
             setResendStatus('Sent! Check your inbox.');
             setShowResend(false);
         } catch (err) {
@@ -163,7 +181,7 @@ export default function Login() {
                   <input type="password" required className="w-full border border-slate-300 p-3 pl-10 rounded-xl focus:ring-2 focus:ring-slate-900 outline-none transition" value={password} onChange={e => setPassword(e.target.value)} />
                 </div>
               </div>
-              {/* Forgot Password Link - Add this above the button */}
+
               <div className="flex justify-end">
                   <button
                     type="button"
@@ -173,6 +191,7 @@ export default function Login() {
                     Forgot Password?
                   </button>
               </div>
+
               <button
                 disabled={localLoading}
                 className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl transition flex justify-center gap-2 items-center disabled:opacity-50 disabled:cursor-not-allowed"

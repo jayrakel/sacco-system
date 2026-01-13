@@ -4,7 +4,7 @@ import { Wallet, LogOut, Bell, Archive, XCircle, MailOpen, Shield, Check, X, Use
 import { useNavigate, Link } from 'react-router-dom';
 import BrandedSpinner from './BrandedSpinner';
 import { useSettings } from '../context/SettingsContext';
-import authService from '../features/auth/services/authService'; // ✅ FIXED IMPORT
+import authService from '../features/auth/services/authService';
 
 export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     // --- STATE MANAGEMENT ---
@@ -29,9 +29,10 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
     const onLogout = () => {
         setIsLoggingOut(true);
         setTimeout(() => {
-            // ✅ FIX: Use default export method
+            // ✅ FIX: Removed navigate('/').
+            // authService.logout() already does window.location.href = '/login'
+            // This prevents the "Flash" of the login screen before the refresh.
             authService.logout();
-            navigate('/');
         }, 1500);
     };
 
@@ -62,7 +63,6 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
                 setRequests(reqRes.data.data || []);
 
                 // 3. Logo (System Settings)
-                // Assuming settings are already loaded via Context, but fetching if needed
                 const settingRes = await api.get('/api/settings').catch(() => ({ data: { data: [] } }));
                 const logoSetting = settingRes.data.data ? settingRes.data.data.find(s => s.key === 'SACCO_LOGO') : null;
                 if (logoSetting && logoSetting.value) setLogo(getImageUrl(logoSetting.value));
@@ -94,8 +94,7 @@ export default function DashboardHeader({ user, title = "SaccoPortal" }) {
 
         if(!window.confirm(`Confirm you want to ${action} this request?`)) return;
         try {
-            // ✅ FIX: Backend expects { approved: Boolean }, not { status: String }
-            await api.post(`/loans/guarantors/${requestId}/respond`, { approved: accepted });
+            await api.post(`/api/loans/guarantors/${requestId}/respond`, { approved: accepted });
 
             // Remove from local state
             setRequests(prev => prev.filter(r => r.id !== requestId));

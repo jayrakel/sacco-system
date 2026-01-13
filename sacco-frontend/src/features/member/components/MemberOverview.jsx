@@ -18,7 +18,9 @@ export default function MemberOverview({ user }) {
 
                 // 2. Get Notifications
                 const notifRes = await api.get('/api/notifications');
-                if (notifRes.data.success) setNotifications(notifRes.data.data.slice(0, 5));
+                if (notifRes.data.success && Array.isArray(notifRes.data.data)) {
+                    setNotifications(notifRes.data.data.slice(0, 5));
+                }
 
                 // 3. Get Loans - Use the my-loans endpoint
                 const loanRes = await api.get('/api/loans/my-loans');

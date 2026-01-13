@@ -14,9 +14,8 @@ export default function GuarantorRequestsWidget() {
 
     const fetchRequests = async () => {
         try {
-            // You need to ensure this endpoint exists in LoanReadService
-            // It should return requests WHERE guarantor_id = current_user AND status = PENDING
-            const res = await api.get('/api/loans/guarantor-requests');
+            // ✅ FIX: Corrected URL to match LoanController ('/guarantors/requests')
+            const res = await api.get('/api/loans/guarantors/requests');
             if (res.data.success) setRequests(res.data.data);
         } catch (e) {
             console.error("Failed to load requests", e);
@@ -41,7 +40,7 @@ export default function GuarantorRequestsWidget() {
     };
 
     if (loading) return <div className="h-40 flex items-center justify-center"><BrandedSpinner size="small"/></div>;
-    if (requests.length === 0) return null; // Hide if empty
+    if (!requests || requests.length === 0) return null; // Hide if empty
 
     return (
         <div className="bg-orange-50 border border-orange-100 rounded-3xl p-6 mb-6 animate-in fade-in slide-in-from-top-4">

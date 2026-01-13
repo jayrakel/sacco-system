@@ -37,11 +37,11 @@ public class Loan {
     private BigDecimal principalAmount;
 
     @Column(nullable = false)
-    private BigDecimal interestRate; // Locked at time of application
+    private BigDecimal interestRate;
 
     @Column(nullable = false)
     @Builder.Default
-    private String currencyCode = "KES"; // ISO 4217 currency code
+    private String currencyCode = "KES";
 
     @Builder.Default
     private BigDecimal approvedAmount = BigDecimal.ZERO;
@@ -59,12 +59,27 @@ public class Loan {
     private BigDecimal totalOutstandingAmount = BigDecimal.ZERO;
 
     // --- Terms ---
-    // ✅ FIX: Renamed from 'duration' to 'durationWeeks' to match LoanApplicationService
     private Integer durationWeeks;
 
-    private BigDecimal weeklyRepaymentAmount;
+    @Column(name = "weekly_repayment_amount")
+    private BigDecimal weeklyRepaymentAmount; // This existed, but ensure it's populated in DB
 
     private LocalDate maturityDate;
+
+    // --- ✅ ADDED: Missing Fields for Dashboard Card ---
+
+    @Builder.Default
+    @Column(name = "total_arrears")
+    private BigDecimal totalArrears = BigDecimal.ZERO;
+
+    @Builder.Default
+    @Column(name = "total_prepaid")
+    private BigDecimal totalPrepaid = BigDecimal.ZERO;
+
+    @Column(name = "next_payment_date")
+    private LocalDate nextPaymentDate;
+
+    // ----------------------------------------------------
 
     // --- Status & Dates ---
     @Enumerated(EnumType.STRING)
@@ -72,24 +87,19 @@ public class Loan {
 
     private LocalDate applicationDate;
     private LocalDate approvalDate;
-
-    // ✅ Required by LoanRepaymentService
     private LocalDate disbursementDate;
 
     @Column(nullable = false)
     @Builder.Default
     private boolean feePaid = false;
 
-    // Global Audit & Identity fields (Phase A requirement)
+    // Global Audit
     @Builder.Default
     private Boolean active = true;
 
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
     private String createdBy;
-
     private String updatedBy;
 
     @PrePersist
@@ -108,15 +118,14 @@ public class Loan {
     @Builder.Default
     private List<Guarantor> guarantors = new ArrayList<>();
 
-    // ✅ Statuses required by FineService & Frontend - Aligned with Dictionary Phase B
     public enum LoanStatus {
         DRAFT,
         PENDING_GUARANTORS,
         AWAITING_GUARANTORS,
         SUBMITTED,
         UNDER_REVIEW,
-        APPROVED,                    // Approved by loan officer
-        APPROVED_BY_COMMITTEE,       // Approved by committee, awaiting treasurer disbursement
+        APPROVED,
+        APPROVED_BY_COMMITTEE,
         REJECTED,
         CANCELLED,
         DISBURSED,

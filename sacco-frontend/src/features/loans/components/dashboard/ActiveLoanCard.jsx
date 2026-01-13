@@ -10,13 +10,14 @@ export default function ActiveLoanCard({ loan }) {
         return Math.ceil(diff / (1000 * 60 * 60 * 24));
     };
 
-    const daysRemaining = getDaysRemaining(loan.nextPaymentDate);
-
-    // Use domain directory fields
+    const daysRemaining = loan.nextPaymentDate ? getDaysRemaining(loan.nextPaymentDate) : 0;
     const outstandingBalance = loan.totalOutstandingAmount || 0;
     const weeklyPayment = loan.weeklyRepaymentAmount || 0;
     const arrears = loan.totalArrears || 0;
     const prepaid = loan.totalPrepaid || 0;
+
+    // ✅ LOGIC: Determine the correct label based on installment number
+    const timerLabel = loan.nextInstallmentNumber === 1 ? "Grace Period Ends" : "Next Payment Due";
 
     return (
         <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
@@ -63,7 +64,7 @@ export default function ActiveLoanCard({ loan }) {
                                 <div className="text-center py-6">
                                     <span className="text-5xl font-black text-indigo-300">{daysRemaining}</span>
                                     <p className="text-sm font-bold uppercase tracking-widest opacity-60 mt-1">Days Remaining</p>
-                                    <p className="text-xs text-indigo-200 mt-2">Due on {loan.nextPaymentDate}</p>
+                                    <p className="text-xs text-indigo-200 mt-2">{timerLabel} on {loan.nextPaymentDate}</p>
                                 </div>
                             ) : (
                                 <div className="text-center py-6 bg-red-500/10 rounded-xl border border-red-500/30">

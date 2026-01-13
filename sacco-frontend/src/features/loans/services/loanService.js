@@ -5,7 +5,8 @@ const loanService = {
    * Fetches dashboard data (Active loans, Eligibility)
    */
   getDashboard: async () => {
-    const response = await api.get('/loans/dashboard');
+    // ✅ FIX: Added /api
+    const response = await api.get('/api/loans/dashboard');
     return response.data;
   },
 
@@ -13,7 +14,8 @@ const loanService = {
    * Fetches available loan products
    */
   getProducts: async () => {
-    const response = await api.get('/loans/products');
+    // ✅ FIX: Added /api
+    const response = await api.get('/api/loans/products');
     return response.data;
   },
 
@@ -21,6 +23,7 @@ const loanService = {
    * Submits a new loan application
    */
   applyForLoan: async (loanData) => {
+    // ✅ FIX: Already had /api, kept consistent
     const response = await api.post('/api/loans/apply', loanData);
     return response.data;
   },
@@ -29,7 +32,8 @@ const loanService = {
    * Adds a guarantor to a draft loan
    */
   addGuarantor: async (loanId, guarantorData) => {
-    const response = await api.post(`/loans/${loanId}/guarantors`, guarantorData);
+    // ✅ FIX: Added /api
+    const response = await api.post(`/api/loans/${loanId}/guarantors`, guarantorData);
     return response.data;
   },
 
@@ -37,7 +41,8 @@ const loanService = {
    * Finalizes the application
    */
   submitApplication: async (loanId) => {
-    const response = await api.post(`/loans/${loanId}/submit`);
+    // ✅ FIX: Added /api
+    const response = await api.post(`/api/loans/${loanId}/submit`);
     return response.data;
   }
 };

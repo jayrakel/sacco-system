@@ -12,14 +12,17 @@ public class LoanResponseDTO {
     private String loanNumber;
     private String productName;
     private BigDecimal principalAmount;
-
-    // ✅ Changed from 'balance' to match dictionary
     private BigDecimal totalOutstandingAmount;
-
-    // ✅ Changed from 'status' to match dictionary
     private String loanStatus;
     private LocalDate applicationDate;
-
-    // ✅ ADDED: Fixes "cannot find symbol" error
     private boolean feePaid;
+
+    private BigDecimal weeklyRepaymentAmount;
+    private BigDecimal totalArrears;
+    private BigDecimal totalPrepaid;
+
+    private LocalDate nextPaymentDate;
+
+    // ✅ ADDED: To distinguish "Grace Period" (1) from "Normal Repayment" (>1)
+    private Integer nextInstallmentNumber;
 }

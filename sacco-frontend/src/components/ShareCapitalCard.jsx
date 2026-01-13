@@ -16,11 +16,11 @@ export default function ShareCapitalCard({ memberId = null, showOwnershipPercent
                 // If forCurrentUser is true, fetch current member's ID first
                 if (forCurrentUser && !memberId) {
                     try {
-                        const memberRes = await api.get('/members/me');
+                        const memberRes = await api.get('/api/members/me');
                         if (memberRes.data.success && memberRes.data.data?.id) {
                             setCurrentMemberId(memberRes.data.data.id);
                             // Fetch share data with the retrieved member ID
-                            const res = await api.get(`/shares/member/${memberRes.data.data.id}`);
+                            const res = await api.get(`/api/shares/member/${memberRes.data.data.id}`);
                             if (res.data.success) {
                                 setShareData(res.data.data);
                             }
@@ -30,7 +30,7 @@ export default function ShareCapitalCard({ memberId = null, showOwnershipPercent
                     }
                 } else if (memberId || currentMemberId) {
                     // If memberId is provided, fetch member-specific data
-                    const res = await api.get(`/shares/member/${memberId || currentMemberId}`);
+                    const res = await api.get(`/api/shares/member/${memberId || currentMemberId}`);
                     if (res.data.success) {
                         setShareData(res.data.data);
                     }
