@@ -56,7 +56,9 @@ public class LoanReadService {
         List<Loan> allLoans = loanRepository.findByMemberId(member.getId());
 
         // --- FILTERING ---
+        // ✅ FIX: Added check for 'active' flag. If active=false, it is ignored.
         List<Loan> activeLoans = allLoans.stream()
+                .filter(l -> Boolean.TRUE.equals(l.getActive())) // Check 1: Must be active record
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.ACTIVE ||
                         l.getLoanStatus() == Loan.LoanStatus.IN_ARREARS ||
                         l.getLoanStatus() == Loan.LoanStatus.DISBURSED ||
@@ -64,12 +66,14 @@ public class LoanReadService {
                 .collect(Collectors.toList());
 
         List<Loan> pendingApplications = allLoans.stream()
+                .filter(l -> Boolean.TRUE.equals(l.getActive())) // Check 1: Must be active record
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.SUBMITTED ||
                         l.getLoanStatus() == Loan.LoanStatus.APPROVED ||
                         l.getLoanStatus() == Loan.LoanStatus.AWAITING_GUARANTORS)
                 .collect(Collectors.toList());
 
         List<Loan> loansInProgress = allLoans.stream()
+                .filter(l -> Boolean.TRUE.equals(l.getActive())) // Check 1: Must be active record
                 .filter(l -> l.getLoanStatus() == Loan.LoanStatus.PENDING_GUARANTORS)
                 .collect(Collectors.toList());
 
@@ -101,6 +105,7 @@ public class LoanReadService {
         if (memberOpt.isEmpty()) return Collections.emptyList();
 
         return loanRepository.findByMemberId(memberOpt.get().getId()).stream()
+                .filter(l -> Boolean.TRUE.equals(l.getActive())) // ✅ FIX: Only show active loans in list
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }

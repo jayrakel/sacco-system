@@ -56,19 +56,20 @@ public class LoanOfficerService {
         );
 
         // Notify applicant
-        String memberEmail = loan.getMember().getEmail();
-        String memberPhone = loan.getMember().getPhoneNumber();
+        try {
+            emailService.sendLoanStatusEmail(
+                    loan.getMember().getEmail(),
+                    loan.getLoanNumber(),
+                    "Under Review - Your loan application is now being reviewed by our team."
+            );
 
-        emailService.sendLoanStatusEmail(
-                memberEmail,
-                loan.getLoanNumber(),
-                "Under Review - Your loan application is now being reviewed by our team."
-        );
-
-        smsService.sendSms(
-                memberPhone,
-                "Your loan application " + loan.getLoanNumber() + " is now under review. You will be notified of the decision soon."
-        );
+            smsService.sendSms(
+                    loan.getMember().getPhoneNumber(),
+                    "Your loan application " + loan.getLoanNumber() + " is now under review. You will be notified of the decision soon."
+            );
+        } catch (Exception e) {
+            log.error("Failed to send review notifications", e);
+        }
 
         log.info("✅ Loan {} moved to UNDER_REVIEW by {}", loan.getLoanNumber(), officerEmail);
 
@@ -85,7 +86,7 @@ public class LoanOfficerService {
 
         // Validate status
         if (loan.getLoanStatus() != Loan.LoanStatus.UNDER_REVIEW &&
-            loan.getLoanStatus() != Loan.LoanStatus.SUBMITTED) {
+                loan.getLoanStatus() != Loan.LoanStatus.SUBMITTED) {
             throw new ApiException("Only loans UNDER_REVIEW or SUBMITTED can be approved. Current: " + loan.getLoanStatus(), 400);
         }
 
@@ -119,24 +120,24 @@ public class LoanOfficerService {
         );
 
         // Notify applicant
-        String memberEmail = loan.getMember().getEmail();
-        String memberPhone = loan.getMember().getPhoneNumber();
-        String memberName = loan.getMember().getFirstName();
+        try {
+            emailService.sendLoanApprovalEmail(
+                    loan.getMember().getEmail(),
+                    loan.getMember().getFirstName(),
+                    loan.getLoanNumber(),
+                    approvedAmount,
+                    loan.getProduct().getProductName()
+            );
 
-        emailService.sendLoanApprovalEmail(
-                memberEmail,
-                memberName,
-                loan.getLoanNumber(),
-                approvedAmount,
-                loan.getProduct().getProductName()
-        );
-
-        smsService.sendSms(
-                memberPhone,
-                String.format("🎉 Congratulations! Your loan %s has been APPROVED for KES %s. Awaiting disbursement.",
-                        loan.getLoanNumber(),
-                        approvedAmount.toPlainString())
-        );
+            smsService.sendSms(
+                    loan.getMember().getPhoneNumber(),
+                    String.format("🎉 Congratulations! Your loan %s has been APPROVED for KES %s. Awaiting disbursement.",
+                            loan.getLoanNumber(),
+                            approvedAmount.toPlainString())
+            );
+        } catch (Exception e) {
+            log.error("Failed to send approval notifications", e);
+        }
 
         log.info("✅ Loan {} APPROVED by {} for amount {}", loan.getLoanNumber(), officerEmail, approvedAmount);
 
@@ -153,7 +154,7 @@ public class LoanOfficerService {
 
         // Validate status
         if (loan.getLoanStatus() != Loan.LoanStatus.UNDER_REVIEW &&
-            loan.getLoanStatus() != Loan.LoanStatus.SUBMITTED) {
+                loan.getLoanStatus() != Loan.LoanStatus.SUBMITTED) {
             throw new ApiException("Only loans UNDER_REVIEW or SUBMITTED can be rejected. Current: " + loan.getLoanStatus(), 400);
         }
 
@@ -161,9 +162,15 @@ public class LoanOfficerService {
             throw new ApiException("Rejection reason is required", 400);
         }
 
-        // Update loan
+        // Update loan status
         loan.setLoanStatus(Loan.LoanStatus.REJECTED);
         loan.setUpdatedBy(officerEmail);
+
+        // ✅ CRITICAL FIX: Automatically deactivate the loan and zero balances
+        loan.setActive(false);
+        loan.setTotalOutstandingAmount(BigDecimal.ZERO);
+        loan.setOutstandingPrincipal(BigDecimal.ZERO);
+        loan.setOutstandingInterest(BigDecimal.ZERO);
 
         Loan saved = loanRepository.save(loan);
 
@@ -176,23 +183,23 @@ public class LoanOfficerService {
         );
 
         // Notify applicant
-        String memberEmail = loan.getMember().getEmail();
-        String memberPhone = loan.getMember().getPhoneNumber();
-        String memberName = loan.getMember().getFirstName();
+        try {
+            emailService.sendLoanRejectionEmail(
+                    loan.getMember().getEmail(),
+                    loan.getMember().getFirstName(),
+                    loan.getLoanNumber(),
+                    rejectionReason
+            );
 
-        emailService.sendLoanRejectionEmail(
-                memberEmail,
-                memberName,
-                loan.getLoanNumber(),
-                rejectionReason
-        );
-
-        smsService.sendSms(
-                memberPhone,
-                String.format("Your loan application %s has been declined. Reason: %s. Contact us for more information.",
-                        loan.getLoanNumber(),
-                        rejectionReason.length() > 100 ? rejectionReason.substring(0, 100) + "..." : rejectionReason)
-        );
+            smsService.sendSms(
+                    loan.getMember().getPhoneNumber(),
+                    String.format("Your loan application %s has been declined. Reason: %s. Contact us for more information.",
+                            loan.getLoanNumber(),
+                            rejectionReason.length() > 100 ? rejectionReason.substring(0, 100) + "..." : rejectionReason)
+            );
+        } catch (Exception e) {
+            log.error("Failed to send rejection notifications", e);
+        }
 
         log.warn("❌ Loan {} REJECTED by {}. Reason: {}", loan.getLoanNumber(), officerEmail, rejectionReason);
 
@@ -223,22 +230,23 @@ public class LoanOfficerService {
         );
 
         // Notify applicant
-        String memberEmail = loan.getMember().getEmail();
-        String memberPhone = loan.getMember().getPhoneNumber();
+        try {
+            emailService.sendGenericEmail(
+                    loan.getMember().getEmail(),
+                    "Additional Information Required - " + loan.getLoanNumber(),
+                    String.format("Hello,\n\nWe need additional information for your loan application %s:\n\n%s\n\nPlease contact us or visit our office.\n\nThank you.",
+                            loan.getLoanNumber(),
+                            informationNeeded)
+            );
 
-        emailService.sendGenericEmail(
-                memberEmail,
-                "Additional Information Required - " + loan.getLoanNumber(),
-                String.format("Hello,\n\nWe need additional information for your loan application %s:\n\n%s\n\nPlease contact us or visit our office.\n\nThank you.",
-                        loan.getLoanNumber(),
-                        informationNeeded)
-        );
-
-        smsService.sendSms(
-                memberPhone,
-                String.format("Additional info needed for loan %s. Please check your email or contact us.",
-                        loan.getLoanNumber())
-        );
+            smsService.sendSms(
+                    loan.getMember().getPhoneNumber(),
+                    String.format("Additional info needed for loan %s. Please check your email or contact us.",
+                            loan.getLoanNumber())
+            );
+        } catch (Exception e) {
+            log.error("Failed to send info request notifications", e);
+        }
 
         log.info("📋 Additional info requested for loan {} by {}", loan.getLoanNumber(), officerEmail);
 
@@ -252,9 +260,8 @@ public class LoanOfficerService {
     public LoanReviewDTO getLoanForReview(UUID loanId) {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new ApiException("Loan not found", 404));
-// start of copilot change
+
         // Force load lazy associations to avoid LazyInitializationException
-        // Load member details
         if (loan.getMember() != null) {
             loan.getMember().getFirstName();
             loan.getMember().getLastName();
@@ -265,20 +272,17 @@ public class LoanOfficerService {
             loan.getMember().getCreatedAt();
         }
 
-        // Load product details
         if (loan.getProduct() != null) {
             loan.getProduct().getProductName();
             loan.getProduct().getProductCode();
         }
 
-        // Load guarantors and their member details
         if (loan.getGuarantors() != null && !loan.getGuarantors().isEmpty()) {
             loan.getGuarantors().forEach(guarantor -> {
                 guarantor.getGuaranteedAmount();
                 guarantor.getStatus();
                 guarantor.getId();
 
-                // Load guarantor's member details
                 if (guarantor.getMember() != null) {
                     guarantor.getMember().getFirstName();
                     guarantor.getMember().getLastName();
@@ -292,13 +296,9 @@ public class LoanOfficerService {
                 loan.getLoanNumber(),
                 loan.getGuarantors() != null ? loan.getGuarantors().size() : 0);
 
-        // Convert to DTO to avoid circular references and security issues
         return convertToReviewDTO(loan);
     }
 
-    /**
-     * Convert Loan entity to LoanReviewDTO (prevents circular references and security leaks)
-     */
     private LoanReviewDTO convertToReviewDTO(Loan loan) {
         return LoanReviewDTO.builder()
                 .id(loan.getId())
@@ -349,4 +349,3 @@ public class LoanOfficerService {
                 .build();
     }
 }
-

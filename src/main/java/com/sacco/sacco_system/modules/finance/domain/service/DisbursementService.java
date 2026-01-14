@@ -3,7 +3,7 @@ package com.sacco.sacco_system.modules.finance.domain.service;
 import com.sacco.sacco_system.modules.core.exception.ApiException;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanAmortizationService; // ✅ IMPORT ADDED
+import com.sacco.sacco_system.modules.loan.domain.service.LoanAmortizationService;
 import com.sacco.sacco_system.modules.loan.domain.service.GuarantorService;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
@@ -29,7 +29,7 @@ public class DisbursementService {
     private final LoanRepository loanRepository;
     private final TransactionRepository transactionRepository;
     private final AccountingService accountingService;
-    private final LoanAmortizationService loanAmortizationService; // ✅ INJECTED SERVICE
+    private final LoanAmortizationService loanAmortizationService;
     private final GuarantorService guarantorService;
 
     /**
@@ -139,8 +139,6 @@ public class DisbursementService {
         Integer durationWeeks = loan.getDurationWeeks();
 
         // Calculate total interest (FLAT rate for now - can be extended for REDUCING_BALANCE)
-        // Formula: (Principal × Rate × Duration) / 100
-        // For weekly loans: (Principal × Annual Rate × Weeks) / (100 × 52)
         BigDecimal totalInterest = principal
                 .multiply(interestRate)
                 .multiply(BigDecimal.valueOf(durationWeeks))
@@ -161,7 +159,7 @@ public class DisbursementService {
         loan.setLoanStatus(Loan.LoanStatus.DISBURSED);
         loan.setActive(true);
 
-        // ✅ Set outstanding amounts (initially equals total repayable)
+        // ✅ Set outstanding amounts
         loan.setOutstandingPrincipal(principal);
         loan.setOutstandingInterest(totalInterest);
         loan.setTotalOutstandingAmount(totalRepayable);
@@ -209,24 +207,15 @@ public class DisbursementService {
 
         transactionRepository.save(transaction);
 
-        // ✅ POST TO GENERAL LEDGER (Double-Entry Accounting)
+        // ✅ POST TO GENERAL LEDGER
         try {
-            // Map payment method to GL account code (source of funds)
             String sourceAccount = mapPaymentMethodToGLAccount(disbursementMethod);
-
-            // Post loan disbursement to GL
-            // This creates:
-            // DR: 1200 (Loans Receivable) - Asset increases
-            // CR: 1002/1001/1010 (Cash/M-Pesa/Bank) - Asset decreases
             accountingService.postLoanDisbursement(loan, sourceAccount);
-
             log.info("✅ GL Entry Posted: Loan {} disbursement from account {}",
                     loan.getLoanNumber(), sourceAccount);
         } catch (Exception e) {
             log.error("❌ Failed to post GL entry for loan {}: {}",
                     loan.getLoanNumber(), e.getMessage(), e);
-            // Note: Transaction is already saved, GL posting failure is logged
-            // Can be corrected manually or via migration script
         }
 
         log.info("✅ Loan {} disbursed: {} to {} via {}. Principal: {}, Interest: {}, Total: {}, Weekly: {}, Maturity: {}",
@@ -243,7 +232,6 @@ public class DisbursementService {
 
     /**
      * Map payment method to GL account code
-     * Used to determine which account to credit when disbursing loans
      */
     private String mapPaymentMethodToGLAccount(String paymentMethod) {
         return switch (paymentMethod.toUpperCase()) {
@@ -255,8 +243,7 @@ public class DisbursementService {
     }
 
     /**
-     * ✅ MIGRATION HELPER: Recalculate outstanding amounts for existing disbursed loans
-     * This fixes loans that were disbursed before the calculation logic was added
+     * ✅ MIGRATION HELPER: Recalculate totals AND Generate Schedules for existing loans
      */
     @Transactional
     public Map<String, Object> recalculateExistingLoans() {
@@ -265,10 +252,9 @@ public class DisbursementService {
         );
 
         int updated = 0;
-        int skipped = 0;
 
         for (Loan loan : disbursedLoans) {
-            // Check if loan needs recalculation
+            // 1. Recalculate amounts if missing (Safety check)
             if (loan.getTotalOutstandingAmount() == null ||
                     loan.getTotalOutstandingAmount().compareTo(BigDecimal.ZERO) == 0 ||
                     loan.getWeeklyRepaymentAmount() == null) {
@@ -278,7 +264,6 @@ public class DisbursementService {
                 BigDecimal interestRate = loan.getInterestRate();
                 Integer durationWeeks = loan.getDurationWeeks();
 
-                // Calculate total interest (same formula as disbursement)
                 BigDecimal totalInterest = principal
                         .multiply(interestRate)
                         .multiply(BigDecimal.valueOf(durationWeeks))
@@ -288,32 +273,31 @@ public class DisbursementService {
                 BigDecimal weeklyRepayment = totalRepayable
                         .divide(BigDecimal.valueOf(durationWeeks), 2, BigDecimal.ROUND_HALF_UP);
 
-                // Update loan
                 loan.setOutstandingPrincipal(principal);
                 loan.setOutstandingInterest(totalInterest);
                 loan.setTotalOutstandingAmount(totalRepayable);
                 loan.setWeeklyRepaymentAmount(weeklyRepayment);
 
-                // Set maturity date if missing
                 if (loan.getMaturityDate() == null && loan.getDisbursementDate() != null) {
                     loan.setMaturityDate(loan.getDisbursementDate().plusWeeks(durationWeeks));
                 }
 
                 loanRepository.save(loan);
-                updated++;
-
-                log.info("✅ Recalculated loan {}: Principal={}, Interest={}, Total={}, Weekly={}",
-                        loan.getLoanNumber(), principal, totalInterest, totalRepayable, weeklyRepayment);
-            } else {
-                skipped++;
+                log.info("✅ Recalculated totals for loan {}", loan.getLoanNumber());
             }
+
+            // 2. ✅ FORCE GENERATE SCHEDULE FOR ALL EXISTING LOANS
+            // This is the key fix for "Schedule Generated" issue
+            loanAmortizationService.generateSchedule(loan);
+
+            updated++;
+            log.info("✅ Generated missing schedule for loan {}", loan.getLoanNumber());
         }
 
         Map<String, Object> result = new HashMap<>();
         result.put("totalLoans", disbursedLoans.size());
-        result.put("updated", updated);
-        result.put("skipped", skipped);
-        result.put("message", String.format("Updated %d loans, skipped %d loans", updated, skipped));
+        result.put("fixed", updated);
+        result.put("message", "Successfully recalculated totals and generated schedules for all active loans.");
 
         return result;
     }
