@@ -16,8 +16,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.File;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -39,50 +42,157 @@ public class ReportingService {
     // ✅ Section 31 Compliance: Read-Only Transaction (No Mutation)
     @Transactional(readOnly = true)
     public Map<String, Object> getDashboardStats() {
-        // 1. Total Members
+        // --- 1. Base Totals ---
         long totalMembers = memberRepository.count();
 
-        // 2. Total Savings (Aggregated from Accounts per Section 33)
         BigDecimal totalSavings = savingsAccountRepository.findAll().stream()
                 .map(SavingsAccount::getBalanceAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 3. Total Loans Issued (Aggregated from Loan Principal per Section 17)
         BigDecimal totalLoansIssued = loanRepository.findAll().stream()
                 .map(Loan::getPrincipalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 4. Net Income Calculation (Derived per Section 36 P&L)
-        // Income = Fees (Processing, Registration, Fines)
-        // Expenses = Interest Paid to Members
-
+        // --- 2. Income & Trends Calculation ---
         List<Transaction> allTransactions = transactionRepository.findAll();
+        LocalDate now = LocalDate.now();
+        LocalDate startThisMonth = now.withDayOfMonth(1);
+        LocalDate startLastMonth = now.minusMonths(1).withDayOfMonth(1);
+        LocalDate endLastMonth = startThisMonth.minusDays(1);
 
-        BigDecimal income = allTransactions.stream()
-                .filter(t -> isIncomeType(t.getType()))
-                .map(Transaction::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // A. Net Income (Total)
+        BigDecimal totalIncome = calculateSum(allTransactions, t -> isIncomeType(t.getType()));
+        BigDecimal totalExpenses = calculateSum(allTransactions, t -> t.getType().toString().equals("INTEREST_EARNED"));
+        BigDecimal netIncome = totalIncome.subtract(totalExpenses);
 
-        // Interest Earned by members is an EXPENSE for the Sacco
-        BigDecimal expenses = allTransactions.stream()
-                .filter(t -> t.getType().toString().equals("INTEREST_EARNED"))
-                .map(Transaction::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // B. Income Trend (This Month vs Last Month)
+        BigDecimal incomeThisMonth = calculatePeriodSum(allTransactions, startThisMonth, now, t -> isIncomeType(t.getType()));
+        BigDecimal incomeLastMonth = calculatePeriodSum(allTransactions, startLastMonth, endLastMonth, t -> isIncomeType(t.getType()));
+        String incomeTrend = calculateTrendPercentage(incomeThisMonth, incomeLastMonth);
 
-        BigDecimal netIncome = income.subtract(expenses);
+        // C. Savings Trend (Net Deposits This Month vs Last Month)
+        BigDecimal savingsGrowthThisMonth = calculateNetSavingsChange(allTransactions, startThisMonth, now);
+        BigDecimal savingsGrowthLastMonth = calculateNetSavingsChange(allTransactions, startLastMonth, endLastMonth);
+        String savingsTrend = calculateTrendPercentage(savingsGrowthThisMonth, savingsGrowthLastMonth);
 
+        // D. Pending Loans Count (Fixed: Uses getLoanStatus() and correct Enum values)
+        long pendingLoans = loanRepository.findAll().stream()
+                .filter(l -> {
+                    String status = String.valueOf(l.getLoanStatus());
+                    return "SUBMITTED".equalsIgnoreCase(status) || "UNDER_REVIEW".equalsIgnoreCase(status);
+                })
+                .count();
+
+        // E. New Members (Last 7 Days)
+        long newMembers = memberRepository.findAll().stream()
+                .filter(m -> m.getCreatedAt() != null && m.getCreatedAt().isAfter(LocalDateTime.now().minusDays(7)))
+                .count();
+
+        // --- 3. Construct Response ---
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalMembers", totalMembers);
         stats.put("totalSavings", totalSavings);
         stats.put("totalLoansIssued", totalLoansIssued);
         stats.put("netIncome", netIncome);
 
+        // Dynamic Trends
+        stats.put("incomeTrend", incomeTrend + " vs last month");
+        stats.put("savingsTrend", savingsTrend + " vs last month");
+        stats.put("pendingLoansCount", pendingLoans + " Pending Approval");
+        stats.put("newMembersCount", "+" + newMembers + " New this week");
+
         return stats;
     }
 
-    /**
-     * Helper to classify Income types (Aligned with Phase C/D Accounting logic)
-     */
+    // --- ✅ ADDED: System Diagnostics Method ---
+    public Map<String, Object> getSystemDiagnostics() {
+        Map<String, Object> diagnostics = new HashMap<>();
+
+        // 1. Database Latency Check
+        long start = System.currentTimeMillis();
+        try {
+            systemSettingRepository.count(); // Simple lightweight query
+            long latency = System.currentTimeMillis() - start;
+            diagnostics.put("dbStatus", "Connected");
+            diagnostics.put("dbLatency", latency + "ms");
+        } catch (Exception e) {
+            diagnostics.put("dbStatus", "Disconnected");
+            diagnostics.put("dbLatency", "N/A");
+        }
+
+        // 2. Memory Usage (JVM)
+        Runtime runtime = Runtime.getRuntime();
+        long totalMemory = runtime.totalMemory();
+        long freeMemory = runtime.freeMemory();
+        long usedMemory = totalMemory - freeMemory;
+
+        diagnostics.put("memoryUsed", formatBytes(usedMemory));
+        diagnostics.put("memoryTotal", formatBytes(totalMemory));
+        diagnostics.put("memoryUsagePercent", (totalMemory > 0) ? (usedMemory * 100) / totalMemory : 0);
+
+        // 3. Disk Space
+        File disk = new File(".");
+        long totalSpace = disk.getTotalSpace();
+        long freeSpace = disk.getFreeSpace();
+        long usedSpace = totalSpace - freeSpace;
+
+        diagnostics.put("diskUsed", formatBytes(usedSpace));
+        diagnostics.put("diskTotal", formatBytes(totalSpace));
+        diagnostics.put("diskUsagePercent", (totalSpace > 0) ? (usedSpace * 100) / totalSpace : 0);
+
+        // 4. Services (Mocked for now, but wired for expansion)
+        diagnostics.put("emailService", "Active");
+        diagnostics.put("smsService", "Standby");
+
+        diagnostics.put("timestamp", LocalDateTime.now().toString());
+
+        return diagnostics;
+    }
+
+    private String formatBytes(long bytes) {
+        long limit = 1024 * 1024;
+        long limitGb = 1024 * 1024 * 1024;
+        if (bytes > limitGb) {
+            return String.format("%.2f GB", (double) bytes / limitGb);
+        }
+        return String.format("%d MB", bytes / limit);
+    }
+
+    // --- Helper Methods ---
+
+    private BigDecimal calculateSum(List<Transaction> txs, java.util.function.Predicate<Transaction> filter) {
+        return txs.stream().filter(filter).map(Transaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calculatePeriodSum(List<Transaction> txs, LocalDate start, LocalDate end, java.util.function.Predicate<Transaction> filter) {
+        return txs.stream()
+                .filter(t -> !t.getTransactionDate().toLocalDate().isBefore(start) && !t.getTransactionDate().toLocalDate().isAfter(end))
+                .filter(filter)
+                .map(Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calculateNetSavingsChange(List<Transaction> txs, LocalDate start, LocalDate end) {
+        return txs.stream()
+                .filter(t -> !t.getTransactionDate().toLocalDate().isBefore(start) && !t.getTransactionDate().toLocalDate().isAfter(end))
+                .map(t -> {
+                    if (t.getType() == Transaction.TransactionType.DEPOSIT) return t.getAmount();
+                    if (t.getType() == Transaction.TransactionType.WITHDRAWAL) return t.getAmount().negate();
+                    return BigDecimal.ZERO;
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String calculateTrendPercentage(BigDecimal current, BigDecimal previous) {
+        if (previous.compareTo(BigDecimal.ZERO) == 0) {
+            return current.compareTo(BigDecimal.ZERO) > 0 ? "+100%" : "0%";
+        }
+        BigDecimal diff = current.subtract(previous);
+        // Calculate percentage: (diff / previous) * 100
+        BigDecimal percent = diff.divide(previous, 2, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        return (percent.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "") + percent + "%";
+    }
+
     private boolean isIncomeType(Transaction.TransactionType type) {
         return type == Transaction.TransactionType.PROCESSING_FEE ||
                 type == Transaction.TransactionType.REGISTRATION_FEE ||
@@ -104,7 +214,6 @@ public class ReportingService {
         String orgEmail = config.getOrDefault("ORGANIZATION_EMAIL", "info@sacco.com");
         String orgLogo = config.getOrDefault("ORGANIZATION_LOGO", "");
 
-        // Section 32 Compliance: Reproducible from Transactions
         List<Transaction> allTransactions = transactionRepository.findByMemberIdOrderByTransactionDateDesc(memberId);
 
         BigDecimal openingBalance = BigDecimal.ZERO;

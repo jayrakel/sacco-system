@@ -19,7 +19,8 @@
     "react-dom": "^18.2.0",
     "react-qr-code": "^2.0.18",
     "react-router-dom": "^6.20.0",
-    "recharts": "^3.6.0"
+    "recharts": "^3.6.0",
+    "tailwind-scrollbar-hide": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

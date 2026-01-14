@@ -2,10 +2,70 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Default Fallbacks (Emerald & Slate) */
+/* Google Fonts Import (Inter is standard for modern UI) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 :root {
-  --color-primary: 5 150 105; /* #059669 */
-  --color-secondary: 15 23 42; /* #0f172a */
+  --color-primary: 5 150 105; /* Emerald 600 */
+  --color-secondary: 15 23 42; /* Slate 900 */
 }
 
-/* ... keep existing styles ... */
+@layer base {
+  body {
+    @apply font-sans text-slate-800 antialiased bg-slate-50;
+    /* Rich subtle background pattern to emphasize glass depth */
+    background-image:
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  /* REALISTIC 3D GLASS CARD
+     Usage: <div className="glass-card">...</div>
+  */
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass rounded-[2rem] relative overflow-hidden transition-all duration-300;
+  }
+
+  /* Add this inside your card for the "glossy" reflection */
+  .glass-shine::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(125deg, rgba(255,255,255,0.3) 0%, transparent 40%, transparent 100%);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* 3D Hover Effect */
+  .hover-3d {
+    @apply hover:-translate-y-2 hover:shadow-3d-hover transition-all duration-300 ease-out;
+  }
+
+  /* Top Edge Light (Simulates physical thickness) */
+  .edge-light {
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.7);
+  }
+}
+
+/* Custom Scrollbar for a cleaner look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

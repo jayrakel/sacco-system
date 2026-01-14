@@ -30,6 +30,12 @@ public class ReportingController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Dashboard stats fetched", reportingService.getDashboardStats()));
     }
 
+    // ✅ NEW ENDPOINT
+    @GetMapping("/system-diagnostics")
+    public ResponseEntity<ApiResponse<Object>> getSystemDiagnostics() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "System diagnostics fetched", reportingService.getSystemDiagnostics()));
+    }
+
     @GetMapping("/member-statement/{memberId}")
     public ResponseEntity<Map<String, Object>> getMemberStatement(
             @PathVariable UUID memberId,
