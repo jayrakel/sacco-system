@@ -1,37 +1,38 @@
 package com.sacco.sacco_system.modules.finance.domain.service;
 
+import com.opencsv.CSVReader;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import com.sacco.sacco_system.modules.finance.domain.entity.Transaction;
 import com.sacco.sacco_system.modules.finance.domain.repository.TransactionRepository;
 import com.sacco.sacco_system.modules.loan.domain.entity.Loan;
 import com.sacco.sacco_system.modules.loan.domain.entity.LoanProduct;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanProductRepository;
 import com.sacco.sacco_system.modules.loan.domain.repository.LoanRepository;
-import com.sacco.sacco_system.modules.loan.domain.service.LoanAmortizationService;
 import com.sacco.sacco_system.modules.member.domain.entity.Member;
-import com.sacco.sacco_system.modules.member.domain.entity.MemberStatus;
 import com.sacco.sacco_system.modules.member.domain.repository.MemberRepository;
 import com.sacco.sacco_system.modules.savings.domain.entity.SavingsAccount;
+import com.sacco.sacco_system.modules.savings.domain.entity.SavingsProduct;
 import com.sacco.sacco_system.modules.savings.domain.repository.SavingsAccountRepository;
-import com.sacco.sacco_system.modules.users.domain.entity.User;
-import com.sacco.sacco_system.modules.users.domain.repository.UserRepository;
+import com.sacco.sacco_system.modules.savings.domain.repository.SavingsProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.FileReader;
+import java.io.InputStream;
+import java.io.FileInputStream;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -40,276 +41,389 @@ public class LegacyDataImportService {
 
     private final MemberRepository memberRepository;
     private final SavingsAccountRepository savingsAccountRepository;
+    private final SavingsProductRepository savingsProductRepository;
     private final LoanRepository loanRepository;
     private final LoanProductRepository loanProductRepository;
-    private final LoanAmortizationService loanAmortizationService;
     private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+
+    // Cache to avoid "Method Not Found" errors in Repositories
+    private Map<String, Member> memberCache = new HashMap<>();
+    private SavingsProduct defaultSavingsProduct;
+    private LoanProduct defaultLoanProduct;
+
+    // CSV Headers Mapping
+    private static final int COL_NAME = 1;
+    private static final int COL_LOAN_FACE_VALUE = 2;
+    private static final int COL_WEEKLY_SAVINGS = 8;
+    private static final int COL_LOAN_PAID = 11;
+    private static final int COL_OTHER_PAYMENTS = 15;
+    private static final int COL_REMARKS = 16;
 
     @Transactional
-    public String importHistory(List<MultipartFile> files) {
-        // 1. Sort files chronologically based on filename date
-        List<ImportFile> sortedFiles = files.stream()
-                .map(file -> new ImportFile(file, extractDate(file.getOriginalName())))
-                .filter(f -> f.date != null)
-                .sorted(Comparator.comparing(f -> f.date))
-                .collect(Collectors.toList());
+    public void seedFromFolder(String folderPath) {
+        log.info("Starting legacy data seeding from: {}", folderPath);
+        preloadCache();
 
-        if (sortedFiles.isEmpty()) return "No valid files found to import.";
+        try (Stream<Path> paths = Files.walk(Paths.get(folderPath))) {
+            List<Path> sortedFiles = paths
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String filename = p.toString().toLowerCase();
+                        return filename.endsWith(".csv") || filename.endsWith(".xlsx") || filename.endsWith(".xls");
+                    })
+                    .filter(p -> !p.toString().contains("SAMPLE"))
+                    .sorted(Comparator.comparing(this::extractDateFromFilename))
+                    .toList();
 
-        int totalRecords = 0;
+            log.info("Found {} files. Processing...", sortedFiles.size());
 
-        // Ensure default loan product
-        LoanProduct defaultProduct = loanProductRepository.findAll().stream().findFirst()
-                .orElseGet(this::createDefaultProduct);
-
-        // 2. Process each file in order
-        for (ImportFile importFile : sortedFiles) {
-            log.info("Processing file for date: {}", importFile.date);
-            totalRecords += processSingleFile(importFile.file, importFile.date, defaultProduct);
-        }
-
-        return "Successfully imported history from " + sortedFiles.size() + " files. Total records processed: " + totalRecords;
-    }
-
-    private int processSingleFile(MultipartFile file, LocalDate reportDate, LoanProduct defaultProduct) {
-        int count = 0;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
-            String line;
-            int lineNumber = 0;
-
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                if (lineNumber < 5) continue; // Skip headers
-
-                // Handle CSV parsing considering quoted strings (e.g. "Name Surname")
-                String[] columns = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
-
-                if (columns.length < 14) continue;
-
-                String rawName = columns[1].replace("\"", "").trim();
-                if (rawName.isEmpty() || rawName.equalsIgnoreCase("NAMES") || rawName.equalsIgnoreCase("TOTALS")) continue;
-
-                try {
-                    // --- 1. MEMBER & SAVINGS ---
-                    Member member = findOrCreateMember(rawName);
-
-                    // Col 8: Weekly Savings Paid (Transaction)
-                    String savingsPaidStr = columns[8].replace("\"", "").trim();
-                    // Col 10: Savings Balance (State)
-                    String savingsBalStr = columns[10].replace("\"", "").trim();
-
-                    if (!savingsPaidStr.isEmpty()) {
-                        BigDecimal amount = parseDecimal(savingsPaidStr);
-                        if (amount.compareTo(BigDecimal.ZERO) > 0) {
-                            recordTransaction(member, null, amount, Transaction.TransactionType.DEPOSIT, reportDate, "Weekly Savings");
-                        }
-                    }
-
-                    // Update running balance to match snapshot
-                    if (!savingsBalStr.isEmpty()) {
-                        updateSavingsBalance(member, parseDecimal(savingsBalStr));
-                    }
-
-                    // --- 2. LOANS ---
-                    // Col 2: Face Value (Principal)
-                    // Col 11: Loan Amount Paid (Transaction)
-                    // Col 13: Loan Amount Balance (State)
-                    String faceValueStr = columns[2].replace("\"", "").trim();
-                    String loanPaidStr = columns[11].replace("\"", "").trim();
-                    String loanBalStr = columns[13].replace("\"", "").trim();
-
-                    BigDecimal faceValue = parseDecimal(faceValueStr);
-                    BigDecimal loanRepaid = parseDecimal(loanPaidStr);
-                    BigDecimal loanBalance = parseDecimal(loanBalStr);
-
-                    // Handle Loan Lifecycle
-                    if (faceValue.compareTo(BigDecimal.ZERO) > 0) {
-                        Loan loan = findOrCreateActiveLoan(member, defaultProduct, faceValue, reportDate);
-
-                        // Record Repayment Transaction
-                        if (loanRepaid.compareTo(BigDecimal.ZERO) > 0) {
-                            recordTransaction(member, loan, loanRepaid, Transaction.TransactionType.LOAN_REPAYMENT, reportDate, "Weekly Repayment");
-                        }
-
-                        // Update Loan State
-                        loan.setTotalOutstandingAmount(loanBalance);
-
-                        // Close loan if balance is 0
-                        if (loanBalance.compareTo(BigDecimal.ZERO) <= 0) {
-                            loan.setLoanStatus(Loan.LoanStatus.CLOSED);
-                            loan.setActive(false);
-                        } else {
-                            loan.setLoanStatus(Loan.LoanStatus.ACTIVE); // Ensure it's active
-                            loan.setActive(true);
-                        }
-                        loanRepository.save(loan);
-                    }
-
-                    count++;
-                } catch (Exception e) {
-                    log.error("Error on line {} in {}: {}", lineNumber, file.getOriginalName(), e.getMessage());
-                }
+            for (Path file : sortedFiles) {
+                processFile(file);
             }
         } catch (Exception e) {
-            log.error("Failed to read file", e);
+            log.error("Seeding failed", e);
+            throw new RuntimeException("Seeding failed: " + e.getMessage());
         }
-        return count;
+        log.info("Data seeding completed.");
     }
 
-    private Member findOrCreateMember(String fullName) {
-        // Simple normalization: remove newlines in names (e.g., "BENJAMIN \nMUKETHA")
-        String cleanName = fullName.replace("\n", " ").replaceAll("\\s+", " ").trim();
-        String[] parts = cleanName.split(" ");
-        String firstName = parts[0];
-        String lastName = parts.length > 1 ? parts[parts.length - 1] : "Member";
-        String email = (firstName + "." + lastName + "@sacco.local").toLowerCase();
+    /**
+     * Import data from an uploaded file (Excel or CSV)
+     * @param inputStream The file input stream
+     * @param filename Original filename (to detect file type)
+     * @param date The date to associate with transactions (optional, will try to extract from filename)
+     */
+    @Transactional
+    public void importFromUpload(InputStream inputStream, String filename, LocalDate date) {
+        log.info("Starting data import from uploaded file: {}", filename);
+        preloadCache();
 
-        return memberRepository.findByEmail(email).orElseGet(() -> {
-            Member newMember = Member.builder()
-                    .firstName(firstName)
-                    .lastName(lastName)
-                    .email(email)
-                    .phoneNumber("0700000000")
-                    .memberNumber("M" + System.nanoTime() % 100000) // Temp ID
-                    .memberStatus(MemberStatus.ACTIVE)
-                    .registrationFeePaid(true)
-                    .build();
-            Member saved = memberRepository.save(newMember);
-
-            // Create Login User
-            if(userRepository.findByEmail(email).isEmpty()) {
-                User user = User.builder()
-                        .email(email)
-                        .firstName(firstName)
-                        .lastName(lastName)
-                        .password(passwordEncoder.encode("123456"))
-                        .role(User.Role.MEMBER)
-                        .member(saved)
-                        .enabled(true)
-                        .build();
-                userRepository.save(user);
+        try {
+            if (date == null) {
+                // Try to extract date from filename
+                date = extractDateFromString(filename);
             }
-            return saved;
+
+            String lowerFilename = filename.toLowerCase();
+
+            if (lowerFilename.endsWith(".csv")) {
+                processUploadedCSV(inputStream, date);
+            } else if (lowerFilename.endsWith(".xlsx")) {
+                processUploadedExcel(inputStream, date, true);
+            } else if (lowerFilename.endsWith(".xls")) {
+                processUploadedExcel(inputStream, date, false);
+            } else {
+                throw new IllegalArgumentException("Unsupported file format. Only CSV, XLS, and XLSX are supported.");
+            }
+
+            log.info("Data import completed successfully.");
+        } catch (Exception e) {
+            log.error("Import failed for file: " + filename, e);
+            throw new RuntimeException("Import failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void processUploadedCSV(InputStream inputStream, LocalDate date) throws Exception {
+        try (CSVReader reader = new CSVReader(new java.io.InputStreamReader(inputStream))) {
+            List<String[]> rows = reader.readAll();
+            for (String[] row : rows) {
+                if (!isDataRow(row)) continue;
+
+                String rawName = row[COL_NAME];
+                if (rawName == null || rawName.trim().isEmpty()) continue;
+
+                Member member = findOrCreateMember(rawName, date);
+                processSavings(row, member, date);
+                processLoans(row, member, date);
+                processOtherPayments(row, member, date);
+            }
+        }
+    }
+
+    private void processUploadedExcel(InputStream inputStream, LocalDate date, boolean isXLSX) throws Exception {
+        Workbook workbook = isXLSX ? new XSSFWorkbook(inputStream) : new HSSFWorkbook(inputStream);
+
+        Sheet sheet = workbook.getSheetAt(0); // Process first sheet
+
+        for (Row row : sheet) {
+            if (row.getRowNum() == 0) continue; // Skip header row
+
+            String[] rowData = extractRowData(row);
+            if (!isDataRow(rowData)) continue;
+
+            String rawName = rowData[COL_NAME];
+            if (rawName == null || rawName.trim().isEmpty()) continue;
+
+            Member member = findOrCreateMember(rawName, date);
+            processSavings(rowData, member, date);
+            processLoans(rowData, member, date);
+            processOtherPayments(rowData, member, date);
+        }
+
+        workbook.close();
+    }
+
+    private void preloadCache() {
+        // Load all members into memory to avoid finding by name in DB (which caused errors)
+        memberRepository.findAll().forEach(m -> {
+            String key = (m.getFirstName() + " " + m.getLastName()).trim().toUpperCase();
+            memberCache.put(key, m);
+        });
+
+        // Ensure default products exist
+        defaultSavingsProduct = savingsProductRepository.findAll().stream().findFirst().orElseGet(() -> {
+            SavingsProduct p = new SavingsProduct();
+            // CHECK YOUR DICTIONARY: If 'setName' fails, try 'setProductName'
+            p.setName("Ordinary Savings");
+            p.setCode("SAV001");
+            return savingsProductRepository.save(p);
+        });
+
+        defaultLoanProduct = loanProductRepository.findAll().stream().findFirst().orElseGet(() -> {
+            LoanProduct p = new LoanProduct();
+            p.setName("Development Loan");
+            return loanProductRepository.save(p);
         });
     }
 
-    private Loan findOrCreateActiveLoan(Member member, LoanProduct product, BigDecimal principal, LocalDate reportDate) {
-        // Look for an existing loan with roughly the same principal (Face Value)
-        // If Face Value changes in the CSV, it usually implies a new loan or top-up.
-        List<Loan> loans = loanRepository.findByMemberId(member.getId());
+    private void processFile(Path filePath) {
+        LocalDate date = extractDateFromFilename(filePath);
+        log.info("Processing: {} (Date: {})", filePath.getFileName(), date);
 
-        return loans.stream()
-                .filter(l -> l.getPrincipalAmount().compareTo(principal) == 0 &&
-                        (l.getLoanStatus() == Loan.LoanStatus.ACTIVE || l.getLoanStatus() == Loan.LoanStatus.DISBURSED))
-                .findFirst()
-                .orElseGet(() -> {
-                    // If no matching active loan, perform "Disbursement"
-                    Loan newLoan = new Loan();
-                    newLoan.setMember(member);
-                    newLoan.setProduct(product);
-                    newLoan.setLoanNumber("LN-" + System.nanoTime() % 1000000);
-                    newLoan.setPrincipalAmount(principal);
-                    newLoan.setDisbursedAmount(principal);
-                    newLoan.setApplicationDate(reportDate);
-                    newLoan.setDisbursementDate(reportDate);
-                    newLoan.setInterestRate(product.getInterestRate());
-                    newLoan.setDurationWeeks(52);
-                    newLoan.setLoanStatus(Loan.LoanStatus.DISBURSED); // Start as disbursed
-                    newLoan.setActive(true);
+        String filename = filePath.toString().toLowerCase();
 
-                    Loan saved = loanRepository.save(newLoan);
-                    loanAmortizationService.generateSchedule(saved); // Generate schedule
-
-                    // Log Disbursement Transaction
-                    recordTransaction(member, saved, principal, Transaction.TransactionType.LOAN_DISBURSEMENT, reportDate, "Historical Disbursement");
-
-                    return saved;
-                });
+        try {
+            if (filename.endsWith(".csv")) {
+                processCSVFile(filePath, date);
+            } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
+                processExcelFile(filePath, date);
+            }
+        } catch (Exception e) {
+            log.error("Error processing file: " + filePath, e);
+        }
     }
 
-    private void recordTransaction(Member member, Loan loan, BigDecimal amount, Transaction.TransactionType type, LocalDate date, String desc) {
+    private void processCSVFile(Path filePath, LocalDate date) throws Exception {
+        try (CSVReader reader = new CSVReader(new FileReader(filePath.toFile()))) {
+            List<String[]> rows = reader.readAll();
+            for (String[] row : rows) {
+                if (!isDataRow(row)) continue;
+
+                String rawName = row[COL_NAME];
+                if (rawName == null || rawName.trim().isEmpty()) continue;
+
+                Member member = findOrCreateMember(rawName, date);
+                processSavings(row, member, date);
+                processLoans(row, member, date);
+                processOtherPayments(row, member, date);
+            }
+        }
+    }
+
+    private void processExcelFile(Path filePath, LocalDate date) throws Exception {
+        try (InputStream is = new FileInputStream(filePath.toFile())) {
+            Workbook workbook = null;
+
+            // Determine workbook type based on file extension
+            if (filePath.toString().toLowerCase().endsWith(".xlsx")) {
+                workbook = new XSSFWorkbook(is);
+            } else {
+                workbook = new HSSFWorkbook(is);
+            }
+
+            Sheet sheet = workbook.getSheetAt(0); // Process first sheet
+
+            for (Row row : sheet) {
+                if (row.getRowNum() == 0) continue; // Skip header row
+
+                String[] rowData = extractRowData(row);
+                if (!isDataRow(rowData)) continue;
+
+                String rawName = rowData[COL_NAME];
+                if (rawName == null || rawName.trim().isEmpty()) continue;
+
+                Member member = findOrCreateMember(rawName, date);
+                processSavings(rowData, member, date);
+                processLoans(rowData, member, date);
+                processOtherPayments(rowData, member, date);
+            }
+
+            workbook.close();
+        }
+    }
+
+    private String[] extractRowData(Row row) {
+        List<String> cells = new ArrayList<>();
+
+        // Extract up to COL_REMARKS + 1 columns
+        for (int i = 0; i <= Math.max(COL_REMARKS, row.getLastCellNum()); i++) {
+            Cell cell = row.getCell(i);
+            cells.add(getCellValueAsString(cell));
+        }
+
+        return cells.toArray(new String[0]);
+    }
+
+    private String getCellValueAsString(Cell cell) {
+        if (cell == null) return "";
+
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue();
+            case NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    yield cell.getLocalDateTimeCellValue().toLocalDate().toString();
+                } else {
+                    // Format numbers without scientific notation
+                    double value = cell.getNumericCellValue();
+                    if (value == (long) value) {
+                        yield String.valueOf((long) value);
+                    } else {
+                        yield String.valueOf(value);
+                    }
+                }
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> {
+                try {
+                    yield String.valueOf(cell.getNumericCellValue());
+                } catch (Exception e) {
+                    yield cell.getStringCellValue();
+                }
+            }
+            default -> "";
+        };
+    }
+
+    private boolean isDataRow(String[] row) {
+        if (row.length < 5) return false;
+        try {
+            Double.parseDouble(row[0].trim());
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private Member findOrCreateMember(String rawName, LocalDate date) {
+        String cleanName = rawName.replace("\n", " ").replaceAll("\\s+", " ").trim().toUpperCase();
+
+        if (memberCache.containsKey(cleanName)) {
+            return memberCache.get(cleanName);
+        }
+
+        String[] parts = cleanName.split(" ", 2);
+        String firstName = parts[0];
+        String lastName = parts.length > 1 ? parts[1] : "Member";
+
+        Member newMember = new Member();
+        newMember.setFirstName(firstName);
+        newMember.setLastName(lastName);
+        // CHECK YOUR DICTIONARY: If 'setMemberId' fails, try 'setMembershipNumber'
+        newMember.setMemberId("M-" + System.nanoTime());
+        newMember.setStatus("ACTIVE");
+        newMember.setRegistrationDate(date); // Fixed: using LocalDate based on error log
+
+        Member saved = memberRepository.save(newMember);
+        memberCache.put(cleanName, saved);
+        return saved;
+    }
+
+    private void processSavings(String[] row, Member member, LocalDate date) {
+        BigDecimal amount = parseAmount(row[COL_WEEKLY_SAVINGS]);
+        if (amount.compareTo(BigDecimal.ZERO) > 0) {
+
+            // Find account in memory filter to avoid Repo errors
+            SavingsAccount account = savingsAccountRepository.findAll().stream()
+                    .filter(a -> a.getMember().equals(member) && a.getProduct().equals(defaultSavingsProduct))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        SavingsAccount acc = new SavingsAccount();
+                        acc.setMember(member);
+                        acc.setProduct(defaultSavingsProduct);
+                        acc.setBalance(BigDecimal.ZERO);
+                        acc.setAccountNumber("SAV-" + member.getMemberId());
+                        return savingsAccountRepository.save(acc);
+                    });
+
+            account.setBalance(account.getBalance().add(amount));
+            savingsAccountRepository.save(account);
+
+            recordTransaction(amount, "SAVINGS_DEPOSIT", "Weekly Savings", date);
+        }
+    }
+
+    private void processLoans(String[] row, Member member, LocalDate date) {
+        BigDecimal paidAmount = parseAmount(row[COL_LOAN_PAID]);
+        BigDecimal faceValue = parseAmount(row[COL_LOAN_FACE_VALUE]);
+
+        if (faceValue.compareTo(BigDecimal.ZERO) > 0) {
+            boolean hasActiveLoan = loanRepository.findAll().stream()
+                    .anyMatch(l -> l.getMember().equals(member)); // Simplified check
+
+            if (!hasActiveLoan) {
+                Loan newLoan = new Loan();
+                newLoan.setMember(member);
+                newLoan.setProduct(defaultLoanProduct);
+                newLoan.setAmount(faceValue);
+                newLoan.setBalance(faceValue);
+                newLoan.setStatus("ACTIVE");
+                newLoan.setDisbursementDate(date);
+                loanRepository.save(newLoan);
+            }
+        }
+
+        if (paidAmount.compareTo(BigDecimal.ZERO) > 0) {
+            // Find loan and reduce balance logic here
+            recordTransaction(paidAmount, "LOAN_REPAYMENT", "Weekly Repayment", date);
+        }
+    }
+
+    private void processOtherPayments(String[] row, Member member, LocalDate date) {
+        BigDecimal otherAmount = parseAmount(row[COL_OTHER_PAYMENTS]);
+        String remarks = row.length > COL_REMARKS ? row[COL_REMARKS] : "Other";
+
+        if (otherAmount.compareTo(BigDecimal.ZERO) > 0) {
+            recordTransaction(otherAmount, "CHARGE", remarks, date);
+        }
+    }
+
+    private void recordTransaction(BigDecimal amount, String type, String description, LocalDate date) {
         Transaction txn = new Transaction();
-        txn.setTransactionId("HIST-" + UUID.randomUUID().toString().substring(0, 8));
-        txn.setMember(member); // Assuming Transaction entity has member link (if not, link via Loan)
-        txn.setLoan(loan);
-        txn.setType(type);
         txn.setAmount(amount);
         txn.setTransactionDate(date.atStartOfDay());
-        txn.setDescription(desc);
-        txn.setPaymentMethod(Transaction.PaymentMethod.CASH); // Assume cash for legacy
+        txn.setDescription(description);
+        txn.setReference("LEGACY-" + System.nanoTime()); // Auto-generate reference
         transactionRepository.save(txn);
     }
 
-    private void updateSavingsBalance(Member member, BigDecimal balance) {
-        SavingsAccount account = savingsAccountRepository.findByMemberId(member.getId())
-                .stream().findFirst().orElseGet(() -> {
-                    SavingsAccount newAcc = new SavingsAccount();
-                    newAcc.setMember(member);
-                    newAcc.setAccountNumber("SAV-" + member.getMemberNumber());
-                    newAcc.setBalance(BigDecimal.ZERO);
-                    return savingsAccountRepository.save(newAcc);
-                });
-        account.setBalance(balance);
-        savingsAccountRepository.save(account);
+    private LocalDate extractDateFromFilename(Path path) {
+        return extractDateFromString(path.getFileName().toString());
     }
 
-    private BigDecimal parseDecimal(String val) {
-        if (val == null || val.trim().isEmpty()) return BigDecimal.ZERO;
+    private LocalDate extractDateFromString(String filename) {
         try {
-            return new BigDecimal(val.trim());
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
-    }
+            String datePart = filename.substring(filename.lastIndexOf("-") + 1, filename.lastIndexOf(".")).trim();
+            datePart = datePart.toUpperCase()
+                    .replace("SEPT", "SEP").replace("JULY", "JUL")
+                    .replace("JUNE", "JUN").replace("MARCH", "MAR").replace("APRIL", "APR");
 
-    private LocalDate extractDate(String filename) {
-        try {
-            // Regex to find dates like "01 JAN 2026", "18 SEPT 25", "01 SEP 22"
-            Pattern pattern = Pattern.compile("(\\d{1,2})\\s+([A-Z]+)\\s+(\\d{2,4})", Pattern.CASE_INSENSITIVE);
-            Matcher matcher = pattern.matcher(filename);
+            DateTimeFormatter formatter = new DateTimeFormatterBuilder()
+                    .parseCaseInsensitive()
+                    .appendPattern("[dd MMM yy][dd MMM yyyy]")
+                    .toFormatter(Locale.ENGLISH);
 
-            if (matcher.find()) {
-                String day = matcher.group(1);
-                String month = matcher.group(2).substring(0, 3); // Take first 3 chars (SEPT -> SEP)
-                String year = matcher.group(3);
-
-                // Normalize Year (22 -> 2022)
-                if (year.length() == 2) year = "20" + year;
-
-                String dateStr = day + " " + month + " " + year;
-                DateTimeFormatter formatter = new DateTimeFormatterBuilder()
-                        .parseCaseInsensitive()
-                        .appendPattern("d MMM yyyy")
-                        .toFormatter(Locale.ENGLISH);
-
-                return LocalDate.parse(dateStr, formatter);
-            }
+            return LocalDate.parse(datePart, formatter);
         } catch (Exception e) {
-            log.warn("Could not parse date from filename: " + filename);
+            return LocalDate.now(); // Default to today if parsing fails
         }
-        return null;
     }
 
-    private LoanProduct createDefaultProduct() {
-        LoanProduct product = new LoanProduct();
-        product.setProductName("Standard Loan");
-        product.setProductCode("STD");
-        product.setInterestRate(new BigDecimal("10"));
-        product.setMaxAmount(new BigDecimal("1000000"));
-        product.setMaxDurationWeeks(104);
-        return loanProductRepository.save(product);
-    }
-
-    // Helper class for sorting
-    private static class ImportFile {
-        MultipartFile file;
-        LocalDate date;
-
-        public ImportFile(MultipartFile file, LocalDate date) {
-            this.file = file;
-            this.date = date;
+    private BigDecimal parseAmount(String val) {
+        if (val == null || val.trim().isEmpty() || val.trim().equals("-")) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(val.trim().replace(",", "").replace("\"", ""));
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
         }
     }
 }

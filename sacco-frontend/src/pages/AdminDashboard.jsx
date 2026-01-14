@@ -16,6 +16,7 @@ import {
 import DashboardHeader from '../components/DashboardHeader';
 import AddMember from './members/AddMember';
 import SystemSettings from './admin/SystemSettings';
+import DataImport from './admin/DataImport';
 import TransactionModal from '../components/TransactionModal';
 import AccountingReports from '../features/finance/components/AccountingReports';
 import LoanManager from '../features/loans/components/LoanManager';
@@ -226,6 +227,14 @@ const AdminSidebar = ({ activeTab, closeMobile }) => {
                 label="Configuration"
                 icon={Settings}
                 active={activeTab === 'settings'}
+                onClick={closeMobile}
+            />
+
+            <SidebarItem
+                to="?tab=import"
+                label="Import Data"
+                icon={Upload}
+                active={activeTab === 'import'}
                 onClick={closeMobile}
             />
 
