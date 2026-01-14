@@ -173,15 +173,22 @@ public class LegacyDataImportService {
         // Ensure default products exist
         defaultSavingsProduct = savingsProductRepository.findAll().stream().findFirst().orElseGet(() -> {
             SavingsProduct p = new SavingsProduct();
-            // CHECK YOUR DICTIONARY: If 'setName' fails, try 'setProductName'
-            p.setName("Ordinary Savings");
-            p.setCode("SAV001");
+            p.setProductName("Ordinary Savings");
+            p.setProductCode("SAV001");
+            p.setCurrencyCode("KES");
+            p.setActive(true);
             return savingsProductRepository.save(p);
         });
 
         defaultLoanProduct = loanProductRepository.findAll().stream().findFirst().orElseGet(() -> {
             LoanProduct p = new LoanProduct();
-            p.setName("Development Loan");
+            p.setProductName("Development Loan");
+            p.setProductCode("LOAN001");
+            p.setInterestRate(BigDecimal.valueOf(10.0));
+            p.setMaxAmount(BigDecimal.valueOf(1000000));
+            p.setMaxDurationWeeks(52);
+            p.setCurrencyCode("KES");
+            p.setActive(true);
             return loanProductRepository.save(p);
         });
     }
@@ -318,10 +325,12 @@ public class LegacyDataImportService {
         Member newMember = new Member();
         newMember.setFirstName(firstName);
         newMember.setLastName(lastName);
-        // CHECK YOUR DICTIONARY: If 'setMemberId' fails, try 'setMembershipNumber'
-        newMember.setMemberId("M-" + System.nanoTime());
-        newMember.setStatus("ACTIVE");
-        newMember.setRegistrationDate(date); // Fixed: using LocalDate based on error log
+        newMember.setMemberNumber("MEM-" + System.nanoTime());
+        newMember.setEmail(firstName.toLowerCase() + "." + lastName.toLowerCase() + "@legacy.local");
+        newMember.setPhoneNumber("+254700" + String.format("%06d", System.nanoTime() % 1000000));
+        newMember.setNationalId("ID-" + System.nanoTime());
+        newMember.setMemberStatus(Member.MemberStatus.ACTIVE);
+        newMember.setActive(true);
 
         Member saved = memberRepository.save(newMember);
         memberCache.put(cleanName, saved);
@@ -340,12 +349,13 @@ public class LegacyDataImportService {
                         SavingsAccount acc = new SavingsAccount();
                         acc.setMember(member);
                         acc.setProduct(defaultSavingsProduct);
-                        acc.setBalance(BigDecimal.ZERO);
-                        acc.setAccountNumber("SAV-" + member.getMemberId());
+                        acc.setBalanceAmount(BigDecimal.ZERO);
+                        acc.setAccountNumber("SAV-" + member.getMemberNumber());
+                        acc.setActive(true);
                         return savingsAccountRepository.save(acc);
                     });
 
-            account.setBalance(account.getBalance().add(amount));
+            account.setBalanceAmount(account.getBalanceAmount().add(amount));
             savingsAccountRepository.save(account);
 
             recordTransaction(amount, "SAVINGS_DEPOSIT", "Weekly Savings", date);
@@ -364,10 +374,12 @@ public class LegacyDataImportService {
                 Loan newLoan = new Loan();
                 newLoan.setMember(member);
                 newLoan.setProduct(defaultLoanProduct);
-                newLoan.setAmount(faceValue);
-                newLoan.setBalance(faceValue);
-                newLoan.setStatus("ACTIVE");
+                newLoan.setPrincipalAmount(faceValue);
+                newLoan.setOutstandingPrincipal(faceValue);
+                newLoan.setLoanStatus(Loan.LoanStatus.ACTIVE);
                 newLoan.setDisbursementDate(date);
+                newLoan.setLoanNumber("LOAN-" + System.nanoTime());
+                newLoan.setInterestRate(BigDecimal.valueOf(10.0)); // Default 10%
                 loanRepository.save(newLoan);
             }
         }
@@ -392,7 +404,7 @@ public class LegacyDataImportService {
         txn.setAmount(amount);
         txn.setTransactionDate(date.atStartOfDay());
         txn.setDescription(description);
-        txn.setReference("LEGACY-" + System.nanoTime()); // Auto-generate reference
+        txn.setReferenceCode("LEGACY-" + System.nanoTime()); // Auto-generate reference
         transactionRepository.save(txn);
     }
 
